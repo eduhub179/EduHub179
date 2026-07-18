@@ -1,0 +1,8 @@
+[package]
+name = "backend-bin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+presentation = { path = "crates/presentation" }
+application = { path = "crates/application" }
