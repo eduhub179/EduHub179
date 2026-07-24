@@ -32,5 +32,3 @@
 - Дополнить backend/crates/* реальными реализациями: модульные файлы, трейты в domain, use-cases в application, адаптеры Postgres/Redis/S3 в infrastructure.
 - Добавить CI (workflow) для сборки workspace и проверки миграций.
 - Решить открытые вопросы из .github/copilot-instructions.md, в частности модуль messenger vs mesh-sync.
-
-Если нужно — могу создать дополнительные файлы (заглушки модулей, тесты, GitHub Actions) и открыть PR с этими изменениями.
