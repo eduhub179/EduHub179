@@ -18,8 +18,11 @@ CREATE TYPE homework_status AS ENUM ('draft', 'published', 'archived');
 -- - Если учитель взаимодействовал с ДЗ → только учитель может менять
 --
 -- Анонимность:
--- - Кто из школьников редактировал — видно только админу
+-- - Кто из школьников создал или редактировал — видно только админу
 -- - Если учитель взаимодействовал — это видно всем
+--
+-- Проверка контента (хотя бы текст или файл) — на уровне приложения (use case).
+-- Триггер на уровне БД не используется, чтобы избежать проблем с загрузкой файлов.
 -- ============================================
 CREATE TABLE homeworks
 (
@@ -28,7 +31,7 @@ CREATE TABLE homeworks
     -- Урок, к которому относится ДЗ (ровно одно ДЗ на урок)
     lesson_id             UUID            NOT NULL REFERENCES lessons (lesson_id) ON DELETE RESTRICT,
 
-    -- Кто создал ДЗ (учитель или школьник)
+    -- Кто создал ДЗ (для аудита, если ученик, видно только админу)
     created_by            UUID            NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
 
     -- Роль создателя (для быстрой проверки прав без JOIN)
@@ -44,15 +47,11 @@ CREATE TABLE homeworks
 
     -- Флаг блокировки учителем
     -- Если true → школьники больше не могут редактировать
-    -- Если false и created_by_role = 'student' → школьники могут редактировать
+    -- Если false → школьники могут редактировать
     locked_by_teacher     BOOLEAN         NOT NULL DEFAULT FALSE,
 
-    -- Когда учитель последний раз взаимодействовал с ДЗ
-    -- NULL — учитель ещё не взаимодействовал
-    -- NOT NULL — учитель взаимодействовал (создал, отредактировал, заблокировал)
-    teacher_interacted_at TIMESTAMPTZ NULL,
-
-    -- Кто последний редактировал (для аудита, видно только админу)
+    -- Кто последний редактировал (для аудита, если ученик, видно только админу)
+    -- NULL при создании. Автор не считается редактором
     last_edited_by        UUID NULL REFERENCES users(user_id) ON DELETE RESTRICT,
 
     -- Временные метки
@@ -69,18 +68,10 @@ CREATE UNIQUE INDEX idx_homeworks_lesson_unique
 CREATE INDEX idx_homeworks_lesson
     ON homeworks (lesson_id) WHERE status = 'published';
 
--- Быстрый поиск ДЗ, созданных учителем (для учителя)
-CREATE INDEX idx_homeworks_created_by_teacher
-    ON homeworks (created_by) WHERE created_by_role = 'teacher';
-
--- Быстрый поиск ДЗ, созданных школьниками (для админа)
-CREATE INDEX idx_homeworks_created_by_student
-    ON homeworks (created_by) WHERE created_by_role = 'student';
-
 -- Быстрый поиск ДЗ, с которыми взаимодействовал учитель
 -- Используется для отображения статуса "учитель проверил"
 CREATE INDEX idx_homeworks_teacher_interacted
-    ON homeworks (teacher_interacted_at) WHERE status = 'published' AND teacher_interacted_at IS NOT NULL;
+    ON homeworks (lesson_id) WHERE status = 'published' AND locked_by_teacher = TRUE;
 
 
 -- ============================================
@@ -122,33 +113,7 @@ CREATE INDEX idx_homework_files_homework
 
 
 -- ============================================
--- 4. ТРИГГЕР: ПРОВЕРКА НАЛИЧИЯ КОНТЕНТА
--- Гарантирует, что ДЗ содержит хотя бы текст или файл.
--- ============================================
-CREATE
-OR REPLACE FUNCTION check_homework_has_content()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF
-NEW.text_content IS NULL AND NOT EXISTS (
-        SELECT 1 FROM homework_files WHERE homework_id = NEW.homework_id
-    ) THEN
-        RAISE EXCEPTION 'Homework must have either text_content or at least one file';
-END IF;
-RETURN NEW;
-END;
-$$
-LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_check_homework_has_content
-    BEFORE INSERT OR
-UPDATE ON homeworks
-    FOR EACH ROW
-    EXECUTE FUNCTION check_homework_has_content();
-
-
--- ============================================
--- 5. ТРИГГЕРЫ ДЛЯ ОБНОВЛЕНИЯ updated_at
+-- 4. ТРИГГЕРЫ ДЛЯ ОБНОВЛЕНИЯ updated_at
 -- ============================================
 CREATE TRIGGER trigger_homeworks_updated_at
     BEFORE UPDATE
