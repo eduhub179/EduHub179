@@ -1,6 +1,5 @@
--- 0005_create_schedule.sql
--- ВНИМАНИЕ: этот файл должен выполняться ПЕРЕД 0003_create_homework.sql,
--- потому что homeworks ссылается на lesson_instances.
+-- 0003_create_schedule.sql
+
 
 -- ============================================
 -- 1. ДНИ НЕДЕЛИ
