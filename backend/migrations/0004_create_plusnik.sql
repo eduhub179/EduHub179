@@ -1,3 +1,5 @@
+-- 0004_create_plusnik.sql
+
 -- ============================================
 -- 1. СТАТУСЫ ЛИСТКА
 -- draft     — черновик, виден только учителю-создателю
@@ -30,7 +32,8 @@ CREATE TABLE plusnik_sheets
     issue_date DATE         NOT NULL,
 
     -- Дедлайн сдачи листка (опционально)
-    -- По завершению дедлайна ничего автоматического не происходит — это просто информационное поле для отображения ученикам и учителям
+    -- По завершению дедлайна ничего автоматического не происходит —
+    -- это просто информационное поле для отображения ученикам и учителям
     deadline   TIMESTAMPTZ NULL,
 
     -- Статус листка (черновик / опубликован / архив)
@@ -42,12 +45,10 @@ CREATE TABLE plusnik_sheets
 );
 
 -- Быстрый поиск всех листков конкретного урока
--- Используется, когда ученик открывает список листков по предмету
 CREATE INDEX idx_plusnik_sheets_lesson
     ON plusnik_sheets (lesson_id) WHERE status = 'published';
 
 -- Быстрый поиск листков конкретного учителя (для редактирования)
--- Используется, когда учитель открывает список своих листков
 CREATE INDEX idx_plusnik_sheets_created_by
     ON plusnik_sheets (created_by);
 
@@ -59,8 +60,7 @@ CREATE INDEX idx_plusnik_sheets_drafts
 CREATE INDEX idx_plusnik_sheets_issue_date
     ON plusnik_sheets (lesson_id, issue_date DESC) WHERE status = 'published';
 
--- Быстрый поиск листков с дедлайном в определённом диапазоне
--- Используется для напоминаний и push-уведомлений
+-- Быстрый поиск листков с дедлайном (для напоминаний)
 CREATE INDEX idx_plusnik_sheets_deadline
     ON plusnik_sheets (deadline) WHERE status = 'published' AND deadline IS NOT NULL;
 
@@ -94,7 +94,6 @@ CREATE UNIQUE INDEX idx_plusnik_tasks_unique
     ON plusnik_tasks (sheet_id, task_number);
 
 -- Быстрый поиск всех задач конкретного листка в правильном порядке
--- Используется при отображении листка ученику или учителю
 CREATE INDEX idx_plusnik_tasks_sheet_order
     ON plusnik_tasks (sheet_id, sort_order);
 
@@ -108,7 +107,6 @@ CREATE INDEX idx_plusnik_tasks_sheet_order
 -- - revoked_at / revoked_by  — кто и когда отозвал
 -- Отзыв не удаляет строку, а заполняет revoked_at.
 -- Это снимает споры "кто и когда поставил" (§11.4 мастер-документа).
--- TODO: запись именно добавление или удаление плюса
 -- ============================================
 CREATE TABLE plusnik_records
 (
@@ -145,7 +143,6 @@ CREATE UNIQUE INDEX idx_plusnik_records_active_unique
     ON plusnik_records (student_id, task_id) WHERE revoked_at IS NULL;
 
 -- Быстрый поиск всех активных записей ученика (для дашборда ученика)
--- Используется, когда ученик открывает свой прогресс
 CREATE INDEX idx_plusnik_records_student_active
     ON plusnik_records (student_id, granted_at DESC) WHERE revoked_at IS NULL;
 
@@ -154,7 +151,6 @@ CREATE INDEX idx_plusnik_records_student_all
     ON plusnik_records (student_id, granted_at DESC);
 
 -- Быстрый поиск всех активных записей конкретного листка (для матрицы учителя)
--- Используется, когда учитель открывает плюсник и видит таблицу задач × ученики
 CREATE INDEX idx_plusnik_records_sheet_active
     ON plusnik_records (sheet_id) WHERE revoked_at IS NULL;
 

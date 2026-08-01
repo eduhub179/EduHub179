@@ -1,3 +1,6 @@
+-- 0003_create_homework.sql
+
+
 -- ============================================
 -- 1. СТАТУСЫ ДОМАШНЕГО ЗАДАНИЯ
 -- draft     — черновик, виден только создателю
@@ -9,16 +12,17 @@ CREATE TYPE homework_status AS ENUM ('draft', 'published', 'archived');
 
 -- ============================================
 -- 2. ДОМАШНИЕ ЗАДАНИЯ
--- Под одним уроком ровно одно ДЗ (UNIQUE по lesson_id).
+-- Под одним уроком (на конкретную дату) ровно одно ДЗ
+-- (UNIQUE по lesson_instance_id).
 -- Создать ДЗ может учитель или школьник (дежурный).
 --
 -- Правила редактирования:
 -- - Если ДЗ создал учитель → только учитель может менять
 -- - Если ДЗ создал школьник и учитель не взаимодействовал → любой школьник может менять
--- - Если учитель взаимодействовал с ДЗ → только учитель может менять
+-- - Если учитель взаимодействовал с ДЗ (locked_by_teacher = true) → только учитель может менять
 --
 -- Анонимность:
--- - Кто из школьников создал или редактировал — видно только админу
+-- - Кто из школьников редактировал — видно только админу
 -- - Если учитель взаимодействовал — это видно всем
 --
 -- Проверка контента (хотя бы текст или файл) — на уровне приложения (use case).
@@ -26,52 +30,50 @@ CREATE TYPE homework_status AS ENUM ('draft', 'published', 'archived');
 -- ============================================
 CREATE TABLE homeworks
 (
-    homework_id           UUID PRIMARY KEY         DEFAULT gen_random_uuid(),
+    homework_id        UUID PRIMARY KEY         DEFAULT gen_random_uuid(),
 
-    -- Урок, к которому относится ДЗ (ровно одно ДЗ на урок)
-    lesson_id             UUID            NOT NULL REFERENCES lessons (lesson_id) ON DELETE RESTRICT,
+    -- Конкретный урок на конкретную дату (ровно одно ДЗ на урок)
+    lesson_instance_id UUID            NOT NULL REFERENCES lesson_instances (instance_id) ON DELETE RESTRICT,
 
-    -- Кто создал ДЗ (для аудита, если ученик, видно только админу)
-    created_by            UUID            NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
+    -- Кто создал ДЗ (виден всем — это автор)
+    created_by         UUID            NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
 
     -- Роль создателя (для быстрой проверки прав без JOIN)
     -- 'teacher' — создал учитель
     -- 'student' — создал школьник
-    created_by_role       user_role       NOT NULL,
+    created_by_role    user_role       NOT NULL,
 
     -- Текстовое содержимое ДЗ (опционально — может быть только файл)
-    text_content          TEXT NULL,
+    text_content       TEXT NULL,
 
     -- Статус ДЗ
-    status                homework_status NOT NULL DEFAULT 'draft',
+    status             homework_status NOT NULL DEFAULT 'draft',
 
-    -- Флаг блокировки учителем
+    -- Флаг блокировки учителем (односторонний переключатель)
     -- Если true → школьники больше не могут редактировать
     -- Если false → школьники могут редактировать
-    locked_by_teacher     BOOLEAN         NOT NULL DEFAULT FALSE,
+    locked_by_teacher  BOOLEAN         NOT NULL DEFAULT FALSE,
 
     -- Кто последний редактировал (для аудита, если ученик, видно только админу)
     -- NULL при создании. Автор не считается редактором
-    last_edited_by        UUID NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    last_edited_by     UUID NULL REFERENCES users(user_id) ON DELETE RESTRICT,
 
     -- Временные метки
-    created_at            TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    updated_at            TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    created_at         TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
--- Ровно одно ДЗ на урок
-CREATE UNIQUE INDEX idx_homeworks_lesson_unique
-    ON homeworks (lesson_id);
+-- Ровно одно ДЗ на конкретный урок
+CREATE UNIQUE INDEX idx_homeworks_instance_unique
+    ON homeworks (lesson_instance_id);
 
 -- Быстрый поиск ДЗ конкретного урока
--- Используется, когда ученик открывает список ДЗ по предмету
-CREATE INDEX idx_homeworks_lesson
-    ON homeworks (lesson_id) WHERE status = 'published';
+CREATE INDEX idx_homeworks_instance
+    ON homeworks (lesson_instance_id) WHERE status = 'published';
 
 -- Быстрый поиск ДЗ, с которыми взаимодействовал учитель
--- Используется для отображения статуса "учитель проверил"
 CREATE INDEX idx_homeworks_teacher_interacted
-    ON homeworks (lesson_id) WHERE status = 'published' AND locked_by_teacher = TRUE;
+    ON homeworks (lesson_instance_id) WHERE status = 'published' AND locked_by_teacher = TRUE;
 
 
 -- ============================================

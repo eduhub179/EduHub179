@@ -1,18 +1,19 @@
+-- 0002_create_subjects_and_classes.sql
+
 -- ============================================
--- 1. НАЗВАНИЯ КЛАССОВ
+-- 1. НАЗВАНИЯ КЛАССОВ (БУКВЫ)
 -- ============================================
---TODO: реальные названия + подгружать из .env
-CREATE TYPE class_letter AS ENUM ('б', 'в', 'и');
+CREATE TYPE class_letter AS ENUM ('б', 'в', 'и'); --TODO: реальные названия
 
 
 -- ============================================
 -- 2. КЛАССЫ ШКОЛЫ
+-- Номер класса вычисляется аналитически из graduation_year и текущей даты.
 -- ============================================
 CREATE TABLE classes
 (
     class_id        UUID PRIMARY KEY      DEFAULT gen_random_uuid(),
 
-    -- Идентификатор класса
     graduation_year INT          NOT NULL,
     letter          class_letter NOT NULL,
 
@@ -31,7 +32,7 @@ CREATE UNIQUE INDEX idx_classes_year_letter
 -- Быстрый поиск активных классов (для админки)
 CREATE INDEX idx_classes_active ON classes (is_active) WHERE is_active = TRUE;
 
--- Быстрый поиск по году выпуска (например, "покажи все классы, которые выпустятся в 2027")
+-- Быстрый поиск по году выпуска
 CREATE INDEX idx_classes_graduation_year ON classes (graduation_year) WHERE is_active = TRUE;
 
 
@@ -40,7 +41,7 @@ CREATE INDEX idx_classes_graduation_year ON classes (graduation_year) WHERE is_a
 -- ============================================
 CREATE TABLE subjects
 (
-    subject_id UUID PRIMARY KEY      DEFAULT gen_random_uuid(),
+    subject_id UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
 
     -- Название предмета: "Алгебра", "Спецмат", "Информатика"
     name       VARCHAR(100) NOT NULL,
@@ -56,11 +57,12 @@ CREATE UNIQUE INDEX idx_subjects_name ON subjects (name);
 -- ============================================
 -- 4. ГРУППЫ УЧЕНИКОВ
 -- Группа — это произвольное подмножество учеников школы.
--- TODO: не очень нравится идея что группа уникальна по названию, надо придумать какой-то другой способ
+-- Группа НЕ привязана к одному классу: она может объединять учеников
+-- из разных классов (например, "Английский B1" — ученики из 10а, 10б, 10в).
 -- ============================================
 CREATE TABLE student_groups
 (
-    group_id   UUID PRIMARY KEY      DEFAULT gen_random_uuid(),
+    group_id   UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
 
     -- Уникальное название группы: "Английский B1", "Информатика базовая"
     name       VARCHAR(100) NOT NULL,
@@ -77,24 +79,25 @@ CREATE UNIQUE INDEX idx_student_groups_name ON student_groups (name);
 -- ============================================
 -- 5. СОСТАВ ГРУПП
 -- Связь "ученик ↔ группа". Ученик может состоять в нескольких группах
+-- одновременно (наприм
 -- ============================================
 CREATE TABLE group_members
 (
     member_id  UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
 
     -- Ученик и группа
-    student_id UUID        NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
-    group_id   UUID        NOT NULL REFERENCES student_groups (group_id) ON DELETE CASCADE,
+    student_id UUID         NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    group_id   UUID         NOT NULL REFERENCES student_groups(group_id) ON DELETE CASCADE,
 
     -- Временные метки
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 -- Ученик не может быть в одной группе дважды
 CREATE UNIQUE INDEX idx_group_members_unique
     ON group_members (student_id, group_id);
 
--- Быстрый поиск всех групп, в которых состоит ученик (для расписания ученика)
+-- Быстрый поиск всех групп, в которых состоит ученик (для расписания)
 CREATE INDEX idx_group_members_student
     ON group_members (student_id);
 
@@ -106,7 +109,9 @@ CREATE INDEX idx_group_members_group
 -- ============================================
 -- 6. УРОКИ (класс/группа + предмет)
 -- Урок — это связка (класс ИЛИ группа) + предмет.
--- дз и расписание привязываются к уроку, а не к конкретному учителю.
+-- Учителя, ведущие урок, хранятся в отдельной таблице lesson_teachers.
+-- Это позволяет нескольким учителям вести один урок, при этом ДЗ, плюсы,
+-- расписание привязываются к уроку, а не к конкретному учителю.
 -- ============================================
 CREATE TABLE lessons
 (
@@ -149,12 +154,10 @@ CREATE UNIQUE INDEX idx_lessons_group_unique
     WHERE group_id IS NOT NULL;
 
 -- Быстрый поиск всех уроков конкретного класса
--- Используется, когда ученик открывает список предметов своего класса
 CREATE INDEX idx_lessons_class
     ON lessons (class_id) WHERE is_active = TRUE AND class_id IS NOT NULL;
 
 -- Быстрый поиск всех уроков конкретной группы
--- Используется, когда ученик открывает список предметов своей группы
 CREATE INDEX idx_lessons_group
     ON lessons (group_id) WHERE is_active = TRUE AND group_id IS NOT NULL;
 
@@ -209,7 +212,6 @@ CREATE INDEX idx_users_students
 
 -- ============================================
 -- 9. ТРИГГЕРЫ ДЛЯ ОБНОВЛЕНИЯ updated_at
--- Автоматически обновляют поле updated_at при любом изменении строки.
 -- ============================================
 CREATE TRIGGER trigger_classes_updated_at
     BEFORE UPDATE ON classes
