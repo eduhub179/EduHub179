@@ -34,11 +34,7 @@ CREATE TABLE users
 
 -- 2. Для админа: поиск по фамилии во всей школе
 CREATE INDEX idx_users_last_name ON users (last_name);
-
--- 3. Быстрый поиск по email при входе
-CREATE INDEX idx_users_email ON users (email);
-
--- 4. Фильтрация активных пользователей по роли
+-- 3. Фильтрация активных пользователей по роли
 CREATE INDEX idx_users_role_active ON users (role, is_active) WHERE is_active = TRUE;
 
 
