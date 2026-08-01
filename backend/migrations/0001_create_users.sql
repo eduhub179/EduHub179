@@ -1,5 +1,9 @@
+-- 0001_create_users.sql
+
+-- роли в MVP
 CREATE TYPE user_role AS ENUM ('student', 'teacher', 'admin');
 
+-- Таблица пользователей
 CREATE TABLE users
 (
     user_id       UUID PRIMARY KEY             DEFAULT gen_random_uuid(),
