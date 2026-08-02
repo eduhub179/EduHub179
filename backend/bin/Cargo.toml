@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-presentation = { path = "crates/presentation" }
-application = { path = "crates/application" }
+presentation = { path = "../crates/presentation" }
+application = { path = "../crates/application" }
+infrastructure = { path = "../crates/infrastructure" }
+domain = { path = "../crates/domain" }

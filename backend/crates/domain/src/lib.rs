@@ -2,15 +2,16 @@
 
 pub mod entities {
     pub mod user;
-    pub mod subject;
-    pub mod homework;
-    pub mod plusnik_record;
-    pub mod message;
+    // pub mod subject; TODO: сделать
+    // pub mod homework; TODO: сделать
+    // pub mod plusnik_record; TODO: сделать
+    // pub mod message; TODO: сделать
 }
 
 pub mod value_objects {
-    pub mod deadline;
     pub mod role;
+    // pub mod deadline; TODO: сделать
+
 }
 
 pub mod repositories;

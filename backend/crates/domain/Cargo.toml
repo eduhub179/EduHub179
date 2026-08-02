@@ -6,3 +6,7 @@ edition = "2021"
 [lib]
 name = "domain"
 path = "src/lib.rs"
+
+[dependencies]
+uuid = { version = "1.10", features = ["v4"] }
+async-trait = "0.1"
