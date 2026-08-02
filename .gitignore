@@ -1,0 +1,6 @@
+# Локальные дампы для анализа и передачи контекста
+project_dump.txt
+project_dump*.txt
+dump*.txt
+.env
+backend/target*
