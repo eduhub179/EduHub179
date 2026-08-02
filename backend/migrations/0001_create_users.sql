@@ -1,5 +1,13 @@
 -- 0001_create_users.sql
 
+-- ============================================================================
+-- ФАЙЛ: 0001_create_users.sql
+-- НАЗНАЧЕНИЕ: Создание базовой таблицы пользователей и ролей.
+-- ЗАВИСИМОСТИ: Нет.
+-- МАСТЕР-ДОКУМЕНТ: Раздел 2.1
+-- ============================================================================
+
+
 -- роли в MVP
 CREATE TYPE user_role AS ENUM ('student', 'teacher', 'admin');
 
@@ -30,11 +38,9 @@ CREATE TABLE users
 
 -- ИНДЕКСЫ
 
--- 1. Для учителя: поиск учеников в конкретном классе по фамилии
-
--- 2. Для админа: поиск по фамилии во всей школе
-CREATE INDEX idx_users_last_name ON users (last_name);
--- 3. Фильтрация активных пользователей по роли
+-- 1. Для учителя: поиск учеников в конкретном классе по фамилии TODO: пока только по фамилии исправить!
+CREATE INDEX idx_users_class_last_name ON users (last_name) WHERE role = 'student' AND is_active = TRUE;
+-- 2. Фильтрация активных пользователей по роли
 CREATE INDEX idx_users_role_active ON users (role, is_active) WHERE is_active = TRUE;
 
 
