@@ -2,6 +2,7 @@
 
 pub mod entities {
     pub mod user;
+    pub mod class;
     // pub mod subject; TODO: сделать
     // pub mod homework; TODO: сделать
     // pub mod plusnik_record; TODO: сделать
