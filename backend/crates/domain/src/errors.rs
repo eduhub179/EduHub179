@@ -26,6 +26,21 @@ pub enum DomainError {
 
     /// User account is blocked or inactive.
     UserIsInactive,
+
+    /// Class with the specified ID was not found.
+    ClassNotFound,
+    /// Invalid class letter (not 'б', 'в', or 'и').
+    InvalidClassLetter,
+    /// Class with the same (graduation_year, class_letter) already exists (unique violation).
+    ClassAlreadyExists,
+
+    /// Graduation year is out of acceptable bounds (e.g., < 1900 or > 2200).
+    InvalidGraduationYear,
+
+    /// Subject with the specified ID was not found.
+    SubjectNotFound,
+    /// Subject with the same name already exists (unique violation).
+    SubjectAlreadyExists,
 }
 
 impl fmt::Display for DomainError {
@@ -39,6 +54,12 @@ impl fmt::Display for DomainError {
             DomainError::InvalidNameFormat => write!(f, "Invalid name format"),
             DomainError::InsufficientPermissions => write!(f, "Insufficient permissions"),
             DomainError::UserIsInactive => write!(f, "User account is inactive"),
+            DomainError::ClassNotFound => write!(f, "Class not found"),
+            DomainError::InvalidClassLetter => write!(f, "Invalid class letter"),
+            DomainError::ClassAlreadyExists => write!(f, "Class already exists"),
+            DomainError::InvalidGraduationYear => write!(f, "Invalid graduation year"),
+            DomainError::SubjectNotFound => write!(f, "Subject not found"),
+            DomainError::SubjectAlreadyExists => write!(f, "Subject already exists"),
         }
     }
 }
