@@ -10,7 +10,8 @@
 //! - `get_active_by_year` relies on partial index
 //!   `idx_classes_graduation_year` (graduation_year) WHERE is_active=TRUE.
 //! - `save` uses `ON CONFLICT (class_id)` for atomic upsert.
-use domain::entities::class::{Class, ClassLetter};
+use domain::entities::class::Class;
+use domain::value_objects::class_letter::ClassLetter;
 use domain::errors::DomainError;
 use domain::repositories::class_repository::ClassRepository;
 use sqlx::{PgPool, Type};

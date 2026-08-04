@@ -41,6 +41,8 @@ pub enum DomainError {
     SubjectNotFound,
     /// Subject with the same name already exists (unique violation).
     SubjectAlreadyExists,
+    /// Must be non-empty and max 100 characters (DB constraint).
+    InvalidSubjectNameFormat,
 }
 
 impl fmt::Display for DomainError {
@@ -60,6 +62,7 @@ impl fmt::Display for DomainError {
             DomainError::InvalidGraduationYear => write!(f, "Invalid graduation year"),
             DomainError::SubjectNotFound => write!(f, "Subject not found"),
             DomainError::SubjectAlreadyExists => write!(f, "Subject already exists"),
+            DomainError::InvalidSubjectNameFormat => write!(f, "Invalid subject name format"),
         }
     }
 }
