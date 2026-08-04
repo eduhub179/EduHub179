@@ -9,7 +9,8 @@
 //! - Requires `DATABASE_URL` environment variable.
 //! - Uses `sqlx::test` macro for automatic test database management.
 
-use domain::entities::class::{Class, ClassLetter};
+use domain::entities::class::Class;
+use domain::value_objects::class_letter::ClassLetter;
 use domain::errors::DomainError;
 use domain::repositories::class_repository::ClassRepository;
 use infrastructure::postgres::ClassRepositoryPg;
