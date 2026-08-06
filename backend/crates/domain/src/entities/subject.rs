@@ -35,8 +35,8 @@ impl Subject {
     /// This prevents invalid entities from reaching the repository layer.
     pub fn try_new(id: Uuid, name: String) -> Result<Self, DomainError> {
         let trimmed = name.trim();
-
-        if trimmed.is_empty() || trimmed.len() > 100 {
+        let char_count = trimmed.chars().count();
+        if trimmed.is_empty() || char_count > 100{
             return Err(DomainError::InvalidSubjectNameFormat);
         }
 
