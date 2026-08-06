@@ -43,6 +43,13 @@ pub enum DomainError {
     SubjectAlreadyExists,
     /// Must be non-empty and max 100 characters (DB constraint).
     InvalidSubjectNameFormat,
+
+    /// StudentGroup with the specified ID was not found.
+    StudentGroupNotFound,
+    /// Must be non-empty and max 100 characters (DB constraint).
+    InvalidStudentGroupNameFormat,
+    /// StudentGroup with the same (name) already exists (unique violation).
+    StudentGroupAlreadyExists,
 }
 
 impl fmt::Display for DomainError {
@@ -63,6 +70,9 @@ impl fmt::Display for DomainError {
             DomainError::SubjectNotFound => write!(f, "Subject not found"),
             DomainError::SubjectAlreadyExists => write!(f, "Subject already exists"),
             DomainError::InvalidSubjectNameFormat => write!(f, "Invalid subject name format"),
+            DomainError::StudentGroupNotFound => write!(f, "Student group not found"),
+            DomainError::InvalidStudentGroupNameFormat => write!(f, "Invalid student group name format"),
+            DomainError::StudentGroupAlreadyExists => write!(f, "Student group already exists"),
         }
     }
 }
