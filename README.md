@@ -19,7 +19,7 @@
    - flutter pub get
    - flutter run
 
-Структура репозитория (выдержана из .github/copilot-instructions.md):
+Структура репозитория (выдержана из docs/copilot-instructions.md):
 - backend/ — Rust workspace: domain, application, infrastructure, presentation, bin
 - mobile/ — Flutter-приложение (lib/, pubspec.yaml)
 - infra/ — docker-compose.yml, .env.example
@@ -31,4 +31,4 @@
 Что далее (рекомендации)
 - Дополнить backend/crates/* реальными реализациями: модульные файлы, трейты в domain, use-cases в application, адаптеры Postgres/Redis/S3 в infrastructure.
 - Добавить CI (workflow) для сборки workspace и проверки миграций.
-- Решить открытые вопросы из .github/copilot-instructions.md, в частности модуль messenger vs mesh-sync.
+- Решить открытые вопросы из docs/copilot-instructions.md, в частности модуль messenger vs mesh-sync.
