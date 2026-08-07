@@ -99,12 +99,12 @@ impl ClassRepositoryPg {
                 match db_err.code().as_deref() {
                     // 23505 = unique_violation (idx_classes_year_letter)
                     Some("23505") => DomainError::ClassAlreadyExists,
-                    // 42P01 = undefined_table (таблица не существует)
+                    // 42P01 = undefined_table (table does not exist)
                     Some("42P01") => {
                         eprintln!("DATABASE ERROR: Table 'classes' does not exist. Did you run migrations?");
                         DomainError::ClassNotFound
                     }
-                    // 42704 = undefined_object (ENUM тип не существует)
+                    // 42704 = undefined_object (ENUM type does not exist)
                     Some("42704") => {
                         eprintln!("DATABASE ERROR: Type 'class_letter' does not exist. Did you run migrations?");
                         DomainError::ClassNotFound

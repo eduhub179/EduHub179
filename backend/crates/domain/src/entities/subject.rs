@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 /// Representation of a school subject (catalog entry).
 ///
-/// Examples: "Алгебра", "Физика", "Информатика".
+/// Examples: "Алгебра" (Algebra), "Физика" (Physics), "Информатика" (Informatics).
 /// Subjects are referenced by `lessons` to define what is being taught.
 /// Unlike `Class`, subjects do not have an `is_active` flag in the current schema;
 /// they are managed purely through the catalog.
@@ -20,7 +20,7 @@ use uuid::Uuid;
 pub struct Subject {
     /// Unique subject identifier (UUID v4).
     pub id: Uuid,
-    /// Subject name (e.g., "Алгебра").
+    /// Subject name (e.g., "Алгебра"/Algebra).
     /// Must be non-empty and max 100 characters (DB constraint).
     pub name: String,
 }

@@ -1,174 +1,174 @@
 -- 0005_create_plusnik.sql
 
 -- ============================================
--- 1. СТАТУСЫ ЛИСТКА
--- draft     — черновик, виден только учителю-создателю
--- published — опубликован, виден ученикам
--- archived  — архивирован, скрыт из активного списка, но история сохраняется
+-- 1. SHEET STATUSES
+-- draft     — draft, visible only to the creating teacher
+-- published — published, visible to students
+-- archived  — archived, hidden from the active list, but history is preserved
 -- ============================================
 CREATE TYPE sheet_status AS ENUM ('draft', 'published', 'archived');
 
 
 -- ============================================
--- 2. ЛИСТКИ ЗАДАЧ (СПЕЦМАТ / ПЛЮСНИК)
--- Листок привязывается к уроку (lesson_id), а не к учителю.
--- Если урок ведут несколько учителей — листок общий,
--- все учителя могут ставить плюсы за задачи из этого листка.
+-- 2. PROBLEM SHEETS (SPECIAL MATH / PLUSNIK)
+-- A sheet is tied to a lesson (lesson_id), not to a teacher.
+-- If several teachers teach the lesson, the sheet is shared —
+-- all teachers can award pluses for problems from this sheet.
 -- ============================================
 CREATE TABLE plusnik_sheets
 (
     sheet_id   UUID PRIMARY KEY      DEFAULT gen_random_uuid(),
 
-    -- Урок, к которому относится листок
+    -- Lesson the sheet belongs to
     lesson_id  UUID         NOT NULL REFERENCES lessons (lesson_id) ON DELETE RESTRICT,
 
-    -- Автор листка (учитель, который его создал)
+    -- Sheet author (the teacher who created it)
     created_by UUID         NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
 
-    -- Название листка: "Листок 12: Производные"
+    -- Sheet title: "Листок 12: Производные" (Sheet 12: Derivatives)
     name       VARCHAR(255) NOT NULL,
 
-    -- Дата выдачи листка ученикам
+    -- Date the sheet was issued to students
     issue_date DATE         NOT NULL,
 
-    -- Дедлайн сдачи листка (опционально)
-    -- По завершению дедлайна ничего автоматического не происходит —
-    -- это просто информационное поле для отображения ученикам и учителям
+    -- Submission deadline (optional)
+    -- Nothing automatic happens when the deadline passes —
+    -- it is just an informational field for display to students and teachers
     deadline   TIMESTAMPTZ NULL,
 
-    -- Статус листка (черновик / опубликован / архив)
+    -- Sheet status (draft / published / archived)
     status     sheet_status NOT NULL DEFAULT 'draft',
 
-    -- Временные метки
+    -- Timestamps
     created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
--- Быстрый поиск всех листков конкретного урока
+-- Fast lookup of all sheets of a concrete lesson
 CREATE INDEX idx_plusnik_sheets_lesson
     ON plusnik_sheets (lesson_id) WHERE status = 'published';
 
--- Быстрый поиск листков конкретного учителя (для редактирования)
+-- Fast lookup of a teacher's sheets (for editing)
 CREATE INDEX idx_plusnik_sheets_created_by
     ON plusnik_sheets (created_by);
 
--- Быстрый поиск черновиков учителя (для продолжения работы)
+-- Fast lookup of a teacher's drafts (to continue work)
 CREATE INDEX idx_plusnik_sheets_drafts
     ON plusnik_sheets (created_by, created_at DESC) WHERE status = 'draft';
 
--- Быстрый поиск листков по дате выдачи (для сортировки в UI)
+-- Fast lookup of sheets by issue date (for UI sorting)
 CREATE INDEX idx_plusnik_sheets_issue_date
     ON plusnik_sheets (lesson_id, issue_date DESC) WHERE status = 'published';
 
--- Быстрый поиск листков с дедлайном (для напоминаний)
+-- Fast lookup of sheets with a deadline (for reminders)
 CREATE INDEX idx_plusnik_sheets_deadline
     ON plusnik_sheets (deadline) WHERE status = 'published' AND deadline IS NOT NULL;
 
 
 -- ============================================
--- 3. ЗАДАЧИ ВНУТРИ ЛИСТКА
--- Каждая задача — отдельная строка. Номера короткие: "1а", "2б*", "3".
--- sort_order определяет порядок отображения и позволяет
--- добавлять/удалять задачи из любого места (O(n) для n < 50 = ~1 мс).
+-- 3. PROBLEMS WITHIN A SHEET
+-- Each problem is a separate row. Numbers are short: "1а", "2б*", "3".
+-- sort_order defines the display order and allows
+-- adding/removing problems anywhere (O(n) for n < 50 = ~1 ms).
 -- ============================================
 CREATE TABLE plusnik_tasks
 (
     task_id     UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
 
-    -- Листок, к которому относится задача
+    -- Sheet the problem belongs to
     sheet_id    UUID        NOT NULL REFERENCES plusnik_sheets (sheet_id) ON DELETE CASCADE,
 
-    -- Номер задачи: "1а", "1б", "2", "3а*", "10"
+    -- Problem number: "1а", "1б", "2", "3а*", "10"
     task_number VARCHAR(20) NOT NULL,
 
-    -- Порядок отображения задач в листке
-    -- Обновляется при добавлении/удалении задач из середины
+    -- Display order of problems within the sheet
+    -- Updated when problems are added/removed from the middle
     sort_order  INT         NOT NULL,
 
-    -- Временные метки
+    -- Timestamps
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Нельзя создать две задачи с одинаковым номером в одном листке
+-- Two problems with the same number cannot exist in one sheet
 CREATE UNIQUE INDEX idx_plusnik_tasks_unique
     ON plusnik_tasks (sheet_id, task_number);
 
--- Быстрый поиск всех задач конкретного листка в правильном порядке
+-- Fast lookup of all problems of a concrete sheet in the correct order
 CREATE INDEX idx_plusnik_tasks_sheet_order
     ON plusnik_tasks (sheet_id, sort_order);
 
 
 -- ============================================
--- 4. ЗАПИСИ ПЛЮСНИКА (КТО СДАЛ КАКУЮ ЗАДАЧУ)
--- Каждая запись — один "плюс" за конкретную задачу.
+-- 4. PLUSNIK RECORDS (WHO SOLVED WHICH PROBLEM)
+-- Each record is one "plus" for a concrete problem.
 --
--- История изменений хранится прямо в записи:
--- - granted_at / granted_by  — кто и когда поставил
--- - revoked_at / revoked_by  — кто и когда отозвал
--- Отзыв не удаляет строку, а заполняет revoked_at.
--- Это снимает споры "кто и когда поставил" (§11.4 мастер-документа).
+-- Change history is stored directly in the record:
+-- - granted_at / granted_by  — who awarded and when
+-- - revoked_at / revoked_by  — who revoked and when
+-- Revoking does not delete the row, it fills in revoked_at.
+-- This settles disputes over "who awarded and when" (§11.4 of the master document).
 -- ============================================
 CREATE TABLE plusnik_records
 (
     record_id      UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
 
-    -- Ученик, которому поставлен плюс
+    -- Student who received the plus
     student_id     UUID        NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
 
-    -- Листок, к которому относится задача
+    -- Sheet the problem belongs to
     sheet_id       UUID        NOT NULL REFERENCES plusnik_sheets (sheet_id) ON DELETE RESTRICT,
 
-    -- Конкретная задача (обязательно — плюс ставится только за задачу)
+    -- Concrete problem (required — a plus is awarded only for a problem)
     task_id        UUID        NOT NULL REFERENCES plusnik_tasks (task_id) ON DELETE RESTRICT,
 
-    -- Учитель, который поставил плюс
+    -- Teacher who awarded the plus
     granted_by     UUID        NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
 
-    -- Когда плюс поставлен
+    -- When the plus was awarded
     granted_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    -- Когда плюс отозван (NULL, если активен)
+    -- When the plus was revoked (NULL if active)
     revoked_at     TIMESTAMPTZ NULL,
 
-    -- Кто отозвал плюс (NULL, если активен)
+    -- Who revoked the plus (NULL if active)
     revoked_by     UUID NULL REFERENCES users(user_id) ON DELETE RESTRICT,
 
-    -- Комментарий при отзыве (опционально)
+    -- Comment on revocation (optional)
     revoke_comment TEXT NULL
 );
 
--- Нельзя поставить два активных плюса за одну задачу одному ученику
--- Частичный индекс: только для активных (не отозванных) записей
+-- Two active pluses cannot be awarded for the same problem to one student
+-- Partial index: only for active (non-revoked) records
 CREATE UNIQUE INDEX idx_plusnik_records_active_unique
     ON plusnik_records (student_id, task_id) WHERE revoked_at IS NULL;
 
--- Быстрый поиск всех активных записей ученика (для дашборда ученика)
+-- Fast lookup of all active records of a student (for the student dashboard)
 CREATE INDEX idx_plusnik_records_student_active
     ON plusnik_records (student_id, granted_at DESC) WHERE revoked_at IS NULL;
 
--- Быстрый поиск всех записей ученика включая отозванные (для истории)
+-- Fast lookup of all records of a student including revoked (for history)
 CREATE INDEX idx_plusnik_records_student_all
     ON plusnik_records (student_id, granted_at DESC);
 
--- Быстрый поиск всех активных записей конкретного листка (для матрицы учителя)
+-- Fast lookup of all active records of a concrete sheet (for the teacher's matrix)
 CREATE INDEX idx_plusnik_records_sheet_active
     ON plusnik_records (sheet_id) WHERE revoked_at IS NULL;
 
--- Быстрый поиск всех активных записей конкретной задачи (для статистики)
+-- Fast lookup of all active records of a concrete problem (for statistics)
 CREATE INDEX idx_plusnik_records_task_active
     ON plusnik_records (task_id) WHERE revoked_at IS NULL;
 
--- Быстрый поиск записей, поставленных учителем (для истории действий)
+-- Fast lookup of records awarded by a teacher (for action history)
 CREATE INDEX idx_plusnik_records_granted_by
     ON plusnik_records (granted_by, granted_at DESC);
 
--- Если плюс отозван — обязательно указан, кто отозвал
+-- If a plus is revoked, the revoker must be specified
 ALTER TABLE plusnik_records
     ADD CONSTRAINT chk_revoked_has_reviewer CHECK (
         revoked_at IS NULL OR revoked_by IS NOT NULL
         );
 
--- Нельзя отозвать плюс в будущем
+-- A plus cannot be revoked in the future
 ALTER TABLE plusnik_records
     ADD CONSTRAINT chk_revoke_not_future CHECK (
         revoked_at IS NULL OR revoked_at <= NOW()
@@ -176,9 +176,9 @@ ALTER TABLE plusnik_records
 
 
 -- ============================================
--- 5. ТРИГГЕР: ПРОВЕРКА ПРИНАДЛЕЖНОСТИ ЗАДАЧИ ЛИСТКУ
--- Гарантирует, что task_id принадлежит тому же листку, что и sheet_id.
--- Нельзя выразить через обычный FOREIGN KEY, поэтому используем триггер.
+-- 5. TRIGGER: CHECK THAT A PROBLEM BELONGS TO THE SHEET
+-- Guarantees that task_id belongs to the same sheet as sheet_id.
+-- Cannot be expressed with a regular FOREIGN KEY, so we use a trigger.
 -- ============================================
 CREATE
 OR REPLACE FUNCTION check_task_belongs_to_sheet()
@@ -205,7 +205,7 @@ UPDATE ON plusnik_records
 
 
 -- ============================================
--- 6. ТРИГГЕРЫ ДЛЯ ОБНОВЛЕНИЯ updated_at
+-- 6. TRIGGERS FOR UPDATING updated_at
 -- ============================================
 CREATE TRIGGER trigger_plusnik_sheets_updated_at
     BEFORE UPDATE
