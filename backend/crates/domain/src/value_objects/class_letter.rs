@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use crate::errors::DomainError;
 
-/// Value Object: Буква класса.
+/// Value Object: Class letter.
 ///
 /// Corresponds to the `class_letter` ENUM in PostgreSQL.
 /// Guarantees: An instance can only be created from a predefined set ('б', 'в', 'и').

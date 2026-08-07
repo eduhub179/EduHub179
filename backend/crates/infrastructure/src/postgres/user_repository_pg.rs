@@ -20,7 +20,7 @@ use uuid::Uuid;
 struct UserRow {
     user_id: Uuid,
     email: String,
-    role: String, // Читаем как String после явного каста в SQL
+    role: String, // Read as String after an explicit cast in SQL
     last_name: String,
     first_name: String,
     middle_name: Option<String>,
@@ -31,11 +31,11 @@ struct UserRow {
 impl UserRow {
     /// Converts the database row into a domain `User` entity.
     fn into_domain(self) -> Result<User, DomainError> {
-        // Парсим строку из БД в наш Value Object
+        // Parse the DB string into our Value Object
         let role = UserRole::from_str(&self.role)
             .map_err(|_| DomainError::UserNotFound)?;
 
-        // Создаем пользователя и восстанавливаем is_active из БД
+        // Create the user and restore is_active from the DB
         User::try_new(
             self.user_id,
             self.email,
