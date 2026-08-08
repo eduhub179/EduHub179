@@ -536,6 +536,77 @@ async fn test_delete_not_found(pool: PgPool) {
     assert!(matches!(result, Err(DomainError::HomeworkNotFound)));
 }
 
+/// Test: created_at survives the save -> get roundtrip exactly.
+/// The repository binds the entity's created_at on INSERT, so the value
+/// must come back identical (no DB-side drift).
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_save_roundtrips_created_at(pool: PgPool) {
+    let (instance_id, teacher_id, _) = seed_lesson_instance(&pool).await;
+    let repo = HomeworkRepositoryPg::new(pool);
+
+    let homework = create_test_homework(instance_id, teacher_id, UserRole::Teacher);
+    repo.save(homework.clone()).await.expect("save should succeed");
+
+    let fetched = repo.get_by_id(homework.id).await.expect("fetch should succeed");
+    // Postgres stores TIMESTAMPTZ with MICROsecond precision, while the entity's
+    // chrono timestamp carries nanoseconds. The INSERT truncates to micros,
+    // so compare at the DB's precision for exact equality.
+    let expected =
+        chrono::DateTime::from_timestamp_micros(homework.created_at.timestamp_micros()).unwrap();
+    assert_eq!(
+        fetched.created_at, expected,
+        "created_at must roundtrip exactly (microsecond precision)"
+    );
+}
+
+/// Test: updating a homework does NOT change created_at (audit trail integrity).
+/// created_at is written only on INSERT; the upsert leaves it untouched.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_save_updates_preserves_created_at(pool: PgPool) {
+    let (instance_id, teacher_id, _) = seed_lesson_instance(&pool).await;
+    let repo = HomeworkRepositoryPg::new(pool);
+
+    let mut homework = create_test_homework(instance_id, teacher_id, UserRole::Teacher);
+    repo.save(homework.clone()).await.expect("first save should succeed");
+    let created_at_original = repo.get_by_id(homework.id).await.unwrap().created_at;
+
+    // Modify a mutable field and save again (upsert path)
+    homework.text_content = Some("Updated text".to_string());
+    repo.save(homework.clone()).await.expect("update should succeed");
+
+    let fetched = repo.get_by_id(homework.id).await.unwrap();
+    assert_eq!(fetched.created_at, created_at_original, "created_at must be preserved on update");
+    assert_eq!(fetched.text_content.as_deref(), Some("Updated text"));
+}
+
+/// Test: save with a creator that does not exist in `users` maps to UserNotFound.
+/// The FK error carries the constraint name, so we can tell WHICH parent is missing
+/// instead of blanket-reporting HomeworkNotFound.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_save_with_non_existent_creator_returns_user_not_found(pool: PgPool) {
+    let (instance_id, _, _) = seed_lesson_instance(&pool).await;
+    let repo = HomeworkRepositoryPg::new(pool);
+
+    let homework = create_test_homework(instance_id, Uuid::new_v4(), UserRole::Teacher);
+
+    let result = repo.save(homework).await;
+
+    assert!(matches!(result, Err(DomainError::UserNotFound)));
+}
+
+/// Test: save with a lesson instance that does not exist maps to HomeworkNotFound.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_save_with_non_existent_lesson_instance_returns_homework_not_found(pool: PgPool) {
+    let (_, teacher_id, _) = seed_lesson_instance(&pool).await;
+    let repo = HomeworkRepositoryPg::new(pool);
+
+    let homework = create_test_homework(Uuid::new_v4(), teacher_id, UserRole::Teacher);
+
+    let result = repo.save(homework).await;
+
+    assert!(matches!(result, Err(DomainError::HomeworkNotFound)));
+}
+
 // ============================================================================
 // TESTS FOR create_with_files
 // ============================================================================
@@ -584,6 +655,25 @@ async fn test_create_with_files_duplicate_lesson_instance_rolls_back(pool: PgPoo
     // No partial state: homework_2 was never persisted, and its files are gone
     assert!(matches!(repo.get_by_id(homework_2.id).await, Err(DomainError::HomeworkNotFound)));
     assert!(repo.get_files(homework_2.id).await.unwrap().is_empty());
+}
+
+/// Test: create_with_files with a file that references a DIFFERENT homework id
+/// fails atomically (FK violation on homework_files.homework_id -> HomeworkNotFound),
+/// and the homework itself must not be persisted (rollback).
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_create_with_files_mismatched_file_homework_rolls_back(pool: PgPool) {
+    let (instance_id, teacher_id, _) = seed_lesson_instance(&pool).await;
+    let repo = HomeworkRepositoryPg::new(pool);
+
+    let homework = create_test_homework(instance_id, teacher_id, UserRole::Teacher);
+    let mut file = create_test_file(homework.id, 0);
+    file.homework_id = Uuid::new_v4(); // file claims to belong to a different homework
+
+    let result = repo.create_with_files(homework.clone(), vec![file]).await;
+
+    assert!(matches!(result, Err(DomainError::HomeworkNotFound)));
+    // Rollback: the homework insert must have been undone too
+    assert!(matches!(repo.get_by_id(homework.id).await, Err(DomainError::HomeworkNotFound)));
 }
 
 // ============================================================================
@@ -643,6 +733,33 @@ fn test_homework_try_new_trims_text() {
     assert_eq!(homework.text_content, Some("Solve problems".to_string()));
 }
 
+/// Test: try_new rejects whitespace-only text ("" and "   " are both empty after trim).
+#[test]
+fn test_homework_try_new_rejects_whitespace_text() {
+    let result = Homework::try_new(
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        UserRole::Teacher,
+        Some("   \t  ".to_string()),
+        HomeworkStatus::Draft,
+        false,
+        None,
+    );
+
+    assert!(matches!(result, Err(DomainError::InvalidHomeworkTextFormat)));
+}
+
+/// Test: try_new stamps created_at to "now" at creation time.
+#[test]
+fn test_homework_created_at_is_set_on_creation() {
+    let before = chrono::Utc::now();
+    let homework = create_test_homework(Uuid::new_v4(), Uuid::new_v4(), UserRole::Teacher);
+    let after = chrono::Utc::now();
+
+    assert!(homework.created_at >= before && homework.created_at <= after);
+}
+
 /// Test: HomeworkFile::try_new rejects an empty storage key.
 #[test]
 fn test_homework_file_rejects_empty_storage_key() {
@@ -684,6 +801,72 @@ fn test_homework_file_rejects_overlong_file_name() {
         Uuid::new_v4(),
         "homeworks/2026/07/a.pdf".to_string(),
         long_name,
+        "application/pdf".to_string(),
+        100,
+        0,
+    );
+
+    assert!(matches!(result, Err(DomainError::InvalidHomeworkFileFormat)));
+}
+
+/// Test: HomeworkFile::try_new accepts values exactly AT the DB limits
+/// (boundary: 500 / 255 / 100 chars, 0 bytes).
+#[test]
+fn test_homework_file_allows_max_lengths() {
+    let result = HomeworkFile::try_new(
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        "s".repeat(500),
+        "f".repeat(255),
+        "m".repeat(100),
+        0,
+        0,
+    );
+
+    assert!(result.is_ok(), "values exactly at the limits must be accepted");
+    assert_eq!(result.unwrap().size_bytes, 0);
+}
+
+/// Test: HomeworkFile::try_new rejects a storage key longer than the DB limit.
+#[test]
+fn test_homework_file_rejects_overlong_storage_key() {
+    let result = HomeworkFile::try_new(
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        "s".repeat(501),
+        "hw.pdf".to_string(),
+        "application/pdf".to_string(),
+        100,
+        0,
+    );
+
+    assert!(matches!(result, Err(DomainError::InvalidHomeworkFileFormat)));
+}
+
+/// Test: HomeworkFile::try_new rejects a MIME type longer than the DB limit.
+#[test]
+fn test_homework_file_rejects_overlong_mime_type() {
+    let result = HomeworkFile::try_new(
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        "homeworks/2026/07/a.pdf".to_string(),
+        "hw.pdf".to_string(),
+        "m".repeat(101),
+        100,
+        0,
+    );
+
+    assert!(matches!(result, Err(DomainError::InvalidHomeworkFileFormat)));
+}
+
+/// Test: HomeworkFile::try_new rejects a whitespace-only file name.
+#[test]
+fn test_homework_file_rejects_whitespace_file_name() {
+    let result = HomeworkFile::try_new(
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+        "homeworks/2026/07/a.pdf".to_string(),
+        "   ".to_string(),
         "application/pdf".to_string(),
         100,
         0,
