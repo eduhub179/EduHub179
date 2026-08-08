@@ -1,12 +1,14 @@
-use std::str::FromStr;
-use crate::errors::DomainError;
-
-/// Value Object: Class letter.
+/// Value Object for class letter.
 ///
-/// Corresponds to the `class_letter` ENUM in PostgreSQL.
 /// Guarantees: An instance can only be created from a predefined set ('б', 'в', 'и').
 /// Any attempt to parse an unknown string from the DB will return `Err`,
 /// preventing "garbage" letters from entering the system.
+
+use std::str::FromStr;
+use crate::errors::DomainError;
+
+/// Class letter in the system
+/// Corresponds to the `class_letter` ENUM in PostgreSQL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClassLetter {
     /// 'б'
