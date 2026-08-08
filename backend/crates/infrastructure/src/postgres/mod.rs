@@ -1,4 +1,4 @@
-//! PostgreSQL infrastructure module.
+#! PostgreSQL infrastructure module.
 //!
 //! Contains repository implementations and connection management.
 //! All types here are internal to the infrastructure layer;
@@ -6,11 +6,13 @@
 
 pub mod user_repository_pg;
 pub mod class_repository_pg;
+pub mod homework_repository_pg;
 pub mod subject_repository_pg;
 pub mod student_group_repository_pg;
 
 // Re-export for convenience in the `bin` crate (DI composition root).
 pub use user_repository_pg::UserRepositoryPg;
 pub use class_repository_pg::ClassRepositoryPg;
+pub use homework_repository_pg::HomeworkRepositoryPg;
 pub use subject_repository_pg::SubjectRepositoryPg;
 pub use student_group_repository_pg::StudentGroupRepositoryPg;
