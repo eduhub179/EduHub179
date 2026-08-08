@@ -44,9 +44,9 @@ impl HomeworkRow {
         let status = HomeworkStatus::from_str(&self.status)
             .map_err(|_| DomainError::InvalidHomeworkStatus)?;
         
-        // Create the homework entity, then restore the DB-issued `created_at`
-        // (try_new stamps the current time, but the row may be older).
-        let mut homework = Homework::try_new(
+        // Create the homework entity; the DB-issued `created_at` is passed
+        // straight into `try_new` (no post-construction mutation).
+        Homework::try_new(
             self.homework_id,
             self.lesson_instance_id,
             self.created_by,
@@ -55,9 +55,8 @@ impl HomeworkRow {
             status,
             self.locked_by_teacher,
             self.last_edited_by,
-        )?;
-        homework.created_at = self.created_at;
-        Ok(homework)
+            self.created_at,
+        )
     }
 }
 
@@ -109,20 +108,29 @@ impl HomeworkRepositoryPg {
     /// Maps low-level `sqlx::Error` to domain-level `DomainError`.
     /// This is the single point of error translation, ensuring
     /// business logic never sees database-specific errors.
+    ///
+    /// Constraint violations (FK 23503) are mapped by constraint NAME so each
+    /// missing parent entity gets its own error. Create-time failures
+    /// deliberately NEVER fall back to `HomeworkNotFound`: the caller must be
+    /// able to tell WHICH dependency is missing.
     fn map_db_error(err: sqlx::Error) -> DomainError {
         match err {
+            // Read/update/delete paths: no row for the requested homework.
             sqlx::Error::RowNotFound => DomainError::HomeworkNotFound,
             sqlx::Error::Database(db_err) => match db_err.code().as_deref() {
                 // 23505 = unique_violation (idx_homeworks_instance_unique)
                 Some("23505") => DomainError::HomeworkAlreadyExists,
-                // 23503 = foreign_key_violation. The constraint name tells us WHICH
-                // parent record is missing, so the error is placed accurately:
-                // - users FK (created_by / last_edited_by) -> the author/editor is gone
-                // - lesson_instances FK -> the lesson is gone
-                // - homework_files FK (homework_id) -> the owning homework is gone
+                // 23503 = foreign_key_violation. The constraint name tells us
+                // WHICH parent record is missing:
+                // - homeworks.lesson_instance_id -> the lesson is gone
+                // - homeworks.created_by / last_edited_by -> the user is gone
+                // - homework_files.homework_id -> the owning homework is gone
                 Some("23503") => match db_err.constraint() {
+                    Some("homeworks_lesson_instance_id_fkey") => DomainError::LessonInstanceNotFound,
                     Some("homeworks_created_by_fkey")
                     | Some("homeworks_last_edited_by_fkey") => DomainError::UserNotFound,
+                    Some("homework_files_homework_id_fkey") => DomainError::HomeworkFileParentNotFound,
+                    // Unknown constraint: keep the MVP catch-all.
                     _ => DomainError::HomeworkNotFound,
                 },
                 _ => DomainError::HomeworkNotFound,

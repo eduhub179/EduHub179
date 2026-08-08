@@ -50,6 +50,7 @@ fn create_test_homework(lesson_instance_id: Uuid, created_by: Uuid, role: UserRo
         HomeworkStatus::Draft,
         false,
         None,
+        chrono::Utc::now(),
     )
     .expect("Test homework should be valid and satisfy domain invariants")
 }
@@ -312,6 +313,7 @@ async fn test_save_roundtrips_status_lock_and_editor(pool: PgPool) {
         HomeworkStatus::Published,
         true,
         Some(student_id), // the student edited last; visible only to admins (audit)
+        chrono::Utc::now(),
     )
     .expect("Valid homework");
 
@@ -346,6 +348,7 @@ async fn test_save_updates_existing_homework(pool: PgPool) {
         HomeworkStatus::Published,
         true,
         Some(teacher_id),
+        chrono::Utc::now(),
     )
     .expect("Valid updated homework");
 
@@ -453,7 +456,8 @@ async fn test_add_file_success(pool: PgPool) {
     assert_eq!(files[0].size_bytes, 1024);
 }
 
-/// Test: add_file to a non-existent homework returns HomeworkNotFound (FK violation).
+/// Test: add_file to a non-existent homework returns HomeworkFileParentNotFound
+/// (FK violation on homework_files.homework_id).
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_add_file_non_existent_homework(pool: PgPool) {
     let repo = HomeworkRepositoryPg::new(pool);
@@ -462,7 +466,7 @@ async fn test_add_file_non_existent_homework(pool: PgPool) {
     let file = create_test_file(fake_homework_id, 0);
     let result = repo.add_file(file).await;
 
-    assert!(matches!(result, Err(DomainError::HomeworkNotFound)));
+    assert!(matches!(result, Err(DomainError::HomeworkFileParentNotFound)));
 }
 
 // ============================================================================
@@ -594,9 +598,10 @@ async fn test_save_with_non_existent_creator_returns_user_not_found(pool: PgPool
     assert!(matches!(result, Err(DomainError::UserNotFound)));
 }
 
-/// Test: save with a lesson instance that does not exist maps to HomeworkNotFound.
+/// Test: save with a lesson instance that does not exist maps to LessonInstanceNotFound
+/// (FK violation on homeworks.lesson_instance_id — a create-time dependency error).
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_save_with_non_existent_lesson_instance_returns_homework_not_found(pool: PgPool) {
+async fn test_save_with_non_existent_lesson_instance_returns_lesson_instance_not_found(pool: PgPool) {
     let (_, teacher_id, _) = seed_lesson_instance(&pool).await;
     let repo = HomeworkRepositoryPg::new(pool);
 
@@ -604,7 +609,7 @@ async fn test_save_with_non_existent_lesson_instance_returns_homework_not_found(
 
     let result = repo.save(homework).await;
 
-    assert!(matches!(result, Err(DomainError::HomeworkNotFound)));
+    assert!(matches!(result, Err(DomainError::LessonInstanceNotFound)));
 }
 
 // ============================================================================
@@ -671,7 +676,7 @@ async fn test_create_with_files_mismatched_file_homework_rolls_back(pool: PgPool
 
     let result = repo.create_with_files(homework.clone(), vec![file]).await;
 
-    assert!(matches!(result, Err(DomainError::HomeworkNotFound)));
+    assert!(matches!(result, Err(DomainError::HomeworkFileParentNotFound)));
     // Rollback: the homework insert must have been undone too
     assert!(matches!(repo.get_by_id(homework.id).await, Err(DomainError::HomeworkNotFound)));
 }
@@ -692,6 +697,7 @@ fn test_homework_try_new_rejects_empty_text() {
         HomeworkStatus::Draft,
         false,
         None,
+        chrono::Utc::now(),
     );
 
     assert!(matches!(result, Err(DomainError::InvalidHomeworkTextFormat)));
@@ -709,6 +715,7 @@ fn test_homework_try_new_allows_no_text() {
         HomeworkStatus::Draft,
         false,
         None,
+        chrono::Utc::now(),
     );
 
     assert!(result.is_ok());
@@ -727,6 +734,7 @@ fn test_homework_try_new_trims_text() {
         HomeworkStatus::Draft,
         false,
         None,
+        chrono::Utc::now(),
     )
     .expect("Valid homework");
 
@@ -745,12 +753,14 @@ fn test_homework_try_new_rejects_whitespace_text() {
         HomeworkStatus::Draft,
         false,
         None,
+        chrono::Utc::now(),
     );
 
     assert!(matches!(result, Err(DomainError::InvalidHomeworkTextFormat)));
 }
 
-/// Test: try_new stamps created_at to "now" at creation time.
+/// Test: try_new accepts a caller-provided created_at (e.g. Utc::now() for new
+/// homework, or the DB row value when reconstructing from storage).
 #[test]
 fn test_homework_created_at_is_set_on_creation() {
     let before = chrono::Utc::now();
