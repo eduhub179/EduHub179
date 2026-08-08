@@ -53,6 +53,12 @@ pub enum DomainError {
 
     /// Homework with the specified ID was not found.
     HomeworkNotFound,
+    /// The lesson instance a homework refers to does not exist
+    /// (FK violation on `homeworks.lesson_instance_id` during create).
+    LessonInstanceNotFound,
+    /// The homework a file is attached to does not exist
+    /// (FK violation on `homework_files.homework_id` during `add_file`/`create_with_files`).
+    HomeworkFileParentNotFound,
     /// Homework file with the specified ID was not found.
     HomeworkFileNotFound,
     /// A homework for this lesson instance already exists (unique violation on lesson_instance_id).
@@ -89,6 +95,8 @@ impl fmt::Display for DomainError {
             DomainError::InvalidStudentGroupNameFormat => write!(f, "Invalid student group name format"),
             DomainError::StudentGroupAlreadyExists => write!(f, "Student group already exists"),
             DomainError::HomeworkNotFound => write!(f, "Homework not found"),
+            DomainError::LessonInstanceNotFound => write!(f, "Lesson instance not found"),
+            DomainError::HomeworkFileParentNotFound => write!(f, "Homework file parent homework not found"),
             DomainError::HomeworkFileNotFound => write!(f, "Homework file not found"),
             DomainError::HomeworkAlreadyExists => write!(f, "Homework already exists"),
             DomainError::InvalidHomeworkTextFormat => write!(f, "Invalid homework text format"),

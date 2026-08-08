@@ -47,7 +47,8 @@ pub struct Homework {
     /// Last editor's user ID for audit trail.
     /// NULL on creation; the author is NOT counted as an editor.
     pub last_edited_by: Option<Uuid>,
-    /// Creation timestamp (UTC). Set by `try_new`; immutable after creation.
+    /// Creation timestamp (UTC). Provided by the caller (typically `Utc::now()`
+    /// at the use-case layer); immutable after creation.
     /// Corresponds to `created_at TIMESTAMPTZ DEFAULT NOW()` in the DB.
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -59,7 +60,9 @@ impl Homework {
     /// and the trimmed value is empty. The trimmed value is stored.
     /// `None` is allowed (file-only homework; "at least text or file" rule is
     /// enforced at the use-case layer, per migration comment).
-    /// No validation on UUIDs, booleans, or status (status is already a closed enum).
+    /// No validation on UUIDs, booleans, status (status is already a closed enum),
+    /// or `created_at` (caller-provided timestamp, e.g. `Utc::now()` for new homework
+    /// or the DB row value when reconstructing from storage).
     pub fn try_new(
         id: Uuid,
         lesson_instance_id: Uuid,
@@ -69,6 +72,7 @@ impl Homework {
         status: HomeworkStatus,
         locked_by_teacher: bool,
         last_edited_by: Option<Uuid>,
+        created_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<Self, DomainError> {
         // Validate text_content if present: trim and reject empty/whitespace-only.
         // Store the trimmed version.
@@ -92,7 +96,7 @@ impl Homework {
             status,
             locked_by_teacher,
             last_edited_by,
-            created_at: chrono::Utc::now(),
+            created_at,
         })
     }
 }
