@@ -39,7 +39,7 @@ pub trait StudentGroupRepository: Send + Sync {
     /// Adds a student to a group.
     ///
     /// Idempotent: adding a student who is already a member is a no-op
-    /// (реализация через `INSERT ... ON CONFLICT DO NOTHING`).
+    /// (implemented via `INSERT ... ON CONFLICT DO NOTHING`).
     /// Fail-safe: Returns `StudentGroupNotFound` if the group doesn't exist.
     async fn add_member(&self, group_id: Uuid, student_id: Uuid) -> Result<(), DomainError>;
 
@@ -52,14 +52,14 @@ pub trait StudentGroupRepository: Send + Sync {
     /// Fetches the IDs of all students in a group.
     ///
     /// Performance: relies on `idx_group_members_group`.
-    /// Returns `Vec<Uuid>` (не `User`), чтобы не связывать репозиторий групп
-    /// с доменной моделью пользователя — полные объекты при необходимости
-    /// добирается через `UserRepository` в use-case'е.
+    /// Returns `Vec<Uuid>` (not `User`) to avoid coupling the group repository
+    /// to the user domain model — full objects can be fetched via
+    /// `UserRepository` in the use case when needed.
     async fn get_member_ids(&self, group_id: Uuid) -> Result<Vec<Uuid>, DomainError>;
 
     /// Fetches all groups a student belongs to, sorted by group name.
     ///
     /// Performance: relies on `idx_group_members_student`.
-    /// Используется, например, при построении расписания ученика.
+    /// Used, for example, when building a student's schedule.
     async fn get_groups_by_student(&self, student_id: Uuid) -> Result<Vec<StudentGroup>, DomainError>;
 }

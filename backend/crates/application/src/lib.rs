@@ -1,7 +1,7 @@
-//! Application crate: use-cases и сервисы
+//! Application crate: use cases and services
 
 // pub mod use_cases;
 // pub mod ports;
 //
-// // Ре-экспорт типов из domain по мере необходимости
+// // Re-export types from domain as needed
 // pub use domain::*;
