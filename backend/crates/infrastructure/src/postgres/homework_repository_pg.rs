@@ -31,6 +31,7 @@ struct HomeworkRow {
     status: String,            // read as TEXT after explicit cast in SQL
     locked_by_teacher: bool,
     last_edited_by: Option<Uuid>,
+    created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl HomeworkRow {
@@ -43,8 +44,9 @@ impl HomeworkRow {
         let status = HomeworkStatus::from_str(&self.status)
             .map_err(|_| DomainError::InvalidHomeworkStatus)?;
         
-        // Create the homework entity
-        Homework::try_new(
+        // Create the homework entity, then restore the DB-issued `created_at`
+        // (try_new stamps the current time, but the row may be older).
+        let mut homework = Homework::try_new(
             self.homework_id,
             self.lesson_instance_id,
             self.created_by,
@@ -53,7 +55,9 @@ impl HomeworkRow {
             status,
             self.locked_by_teacher,
             self.last_edited_by,
-        )
+        )?;
+        homework.created_at = self.created_at;
+        Ok(homework)
     }
 }
 
@@ -111,9 +115,16 @@ impl HomeworkRepositoryPg {
             sqlx::Error::Database(db_err) => match db_err.code().as_deref() {
                 // 23505 = unique_violation (idx_homeworks_instance_unique)
                 Some("23505") => DomainError::HomeworkAlreadyExists,
-                // 23503 = foreign_key_violation (lesson_instance/users missing).
-                // The use-case layer is expected to validate beforehand (MVP).
-                Some("23503") => DomainError::HomeworkNotFound,
+                // 23503 = foreign_key_violation. The constraint name tells us WHICH
+                // parent record is missing, so the error is placed accurately:
+                // - users FK (created_by / last_edited_by) -> the author/editor is gone
+                // - lesson_instances FK -> the lesson is gone
+                // - homework_files FK (homework_id) -> the owning homework is gone
+                Some("23503") => match db_err.constraint() {
+                    Some("homeworks_created_by_fkey")
+                    | Some("homeworks_last_edited_by_fkey") => DomainError::UserNotFound,
+                    _ => DomainError::HomeworkNotFound,
+                },
                 _ => DomainError::HomeworkNotFound,
             },
             _ => DomainError::HomeworkNotFound,
@@ -129,7 +140,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         let row = sqlx::query_as::<_, HomeworkRow>(
             r#"
             SELECT homework_id, lesson_instance_id, created_by, created_by_role::TEXT AS created_by_role,
-                   text_content, status::TEXT AS status, locked_by_teacher, last_edited_by
+                   text_content, status::TEXT AS status, locked_by_teacher, last_edited_by, created_at
             FROM homeworks
             WHERE homework_id = $1
             "#,
@@ -148,7 +159,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         let row = sqlx::query_as::<_, HomeworkRow>(
             r#"
             SELECT homework_id, lesson_instance_id, created_by, created_by_role::TEXT AS created_by_role,
-                   text_content, status::TEXT AS status, locked_by_teacher, last_edited_by
+                   text_content, status::TEXT AS status, locked_by_teacher, last_edited_by, created_at
             FROM homeworks
             WHERE lesson_instance_id = $1
             "#,
@@ -187,16 +198,17 @@ impl HomeworkRepository for HomeworkRepositoryPg {
     /// If a homework with the same `lesson_instance_id` exists (but different `homework_id`),
     /// it raises a unique violation, mapped to `DomainError::HomeworkAlreadyExists`.
     ///
-    /// Note: `lesson_instance_id`, `created_by`, `created_by_role` are immutable after creation
-    /// (deliberately omitted from the UPDATE list). `updated_at` is maintained by the trigger.
+    /// Note: `lesson_instance_id`, `created_by`, `created_by_role`, `created_at` are
+    /// immutable after creation (deliberately omitted from the UPDATE list;
+    /// `created_at` is written on INSERT only). `updated_at` is maintained by the trigger.
     async fn save(&self, homework: Homework) -> Result<Homework, DomainError> {
         let role_str = homework.created_by_role.to_string();
         let status_str = homework.status.to_string();
 
         sqlx::query(
             r#"
-            INSERT INTO homeworks (homework_id, lesson_instance_id, created_by, created_by_role, text_content, status, locked_by_teacher, last_edited_by)
-            VALUES ($1, $2, $3, $4::user_role, $5, $6::homework_status, $7, $8)
+            INSERT INTO homeworks (homework_id, lesson_instance_id, created_by, created_by_role, text_content, status, locked_by_teacher, last_edited_by, created_at)
+            VALUES ($1, $2, $3, $4::user_role, $5, $6::homework_status, $7, $8, $9)
             ON CONFLICT (homework_id) DO UPDATE SET
                 text_content = EXCLUDED.text_content,
                 status = EXCLUDED.status,
@@ -213,6 +225,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .bind(&status_str)
         .bind(homework.locked_by_teacher)
         .bind(homework.last_edited_by)
+        .bind(homework.created_at)
         .execute(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
@@ -311,8 +324,8 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         
         sqlx::query(
             r#"
-            INSERT INTO homeworks (homework_id, lesson_instance_id, created_by, created_by_role, text_content, status, locked_by_teacher, last_edited_by)
-            VALUES ($1, $2, $3, $4::user_role, $5, $6::homework_status, $7, $8)
+            INSERT INTO homeworks (homework_id, lesson_instance_id, created_by, created_by_role, text_content, status, locked_by_teacher, last_edited_by, created_at)
+            VALUES ($1, $2, $3, $4::user_role, $5, $6::homework_status, $7, $8, $9)
             "#,
         )
         .bind(homework.id)
@@ -323,6 +336,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .bind(&status_str)
         .bind(homework.locked_by_teacher)
         .bind(homework.last_edited_by)
+        .bind(homework.created_at)
         .execute(&mut *tx)
         .await
         .map_err(Self::map_db_error)?;

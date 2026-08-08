@@ -9,6 +9,7 @@
 //!   per migration comment "Content validation ... at the application level".
 //! - `locked_by_teacher` is a one-way lock: once true, students can no longer edit submissions.
 //! - `last_edited_by` is NULL on creation; author is not counted as an editor (audit trail).
+//! - `created_at` is set at creation time and is immutable (audit trail).
 //!
 //! Dependencies: Only `crate::errors::DomainError`, `crate::value_objects::role::UserRole`,
 //! `crate::value_objects::homework_status::HomeworkStatus`, and `uuid::Uuid`.
@@ -46,6 +47,9 @@ pub struct Homework {
     /// Last editor's user ID for audit trail.
     /// NULL on creation; the author is NOT counted as an editor.
     pub last_edited_by: Option<Uuid>,
+    /// Creation timestamp (UTC). Set by `try_new`; immutable after creation.
+    /// Corresponds to `created_at TIMESTAMPTZ DEFAULT NOW()` in the DB.
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl Homework {
@@ -88,6 +92,7 @@ impl Homework {
             status,
             locked_by_teacher,
             last_edited_by,
+            created_at: chrono::Utc::now(),
         })
     }
 }
