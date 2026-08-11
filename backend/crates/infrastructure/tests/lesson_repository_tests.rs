@@ -258,7 +258,7 @@ async fn test_save_multiple_lessons_same_class(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_save_updates_existing_lesson(pool: PgPool) {
     let env = TestEnv::new(pool);
-    let (_class, subject_algebra, lesson) = env.setup_class_lesson("Алгебра").await;
+    let (_class, _subject_algebra, lesson) = env.setup_class_lesson("Алгебра").await;
     env.lesson_repo.save(lesson.clone()).await.unwrap();
 
     // Change subject to Physics (same class, different subject)

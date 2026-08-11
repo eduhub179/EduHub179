@@ -2,17 +2,18 @@
 
 pub mod entities {
     pub mod class;
+    pub mod homework;
     pub mod lesson;
     pub mod student_group;
     pub mod subject;
     pub mod user;
-    // pub mod homework; TODO: сделать
     // pub mod plusnik_record; TODO: сделать
     // pub mod message; TODO: сделать
 }
 
 pub mod value_objects {
     pub mod class_letter;
+    pub mod homework_status;
     pub mod lesson_target;
     pub mod role;
     // pub mod deadline; TODO: сделать

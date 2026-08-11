@@ -26,9 +26,9 @@ struct HomeworkRow {
     homework_id: Uuid,
     lesson_instance_id: Uuid,
     created_by: Uuid,
-    created_by_role: String,   // read as TEXT after explicit cast in SQL
+    created_by_role: String, // read as TEXT after explicit cast in SQL
     text_content: Option<String>,
-    status: String,            // read as TEXT after explicit cast in SQL
+    status: String, // read as TEXT after explicit cast in SQL
     locked_by_teacher: bool,
     last_edited_by: Option<Uuid>,
     created_at: chrono::DateTime<chrono::Utc>,
@@ -43,7 +43,7 @@ impl HomeworkRow {
             .map_err(|_| DomainError::InvalidNameFormat)?;
         let status = HomeworkStatus::from_str(&self.status)
             .map_err(|_| DomainError::InvalidHomeworkStatus)?;
-        
+
         // Create the homework entity; the DB-issued `created_at` is passed
         // straight into `try_new` (no post-construction mutation).
         Homework::try_new(
@@ -126,10 +126,15 @@ impl HomeworkRepositoryPg {
                 // - homeworks.created_by / last_edited_by -> the user is gone
                 // - homework_files.homework_id -> the owning homework is gone
                 Some("23503") => match db_err.constraint() {
-                    Some("homeworks_lesson_instance_id_fkey") => DomainError::LessonInstanceNotFound,
-                    Some("homeworks_created_by_fkey")
-                    | Some("homeworks_last_edited_by_fkey") => DomainError::UserNotFound,
-                    Some("homework_files_homework_id_fkey") => DomainError::HomeworkFileParentNotFound,
+                    Some("homeworks_lesson_instance_id_fkey") => {
+                        DomainError::LessonInstanceNotFound
+                    }
+                    Some("homeworks_created_by_fkey") | Some("homeworks_last_edited_by_fkey") => {
+                        DomainError::UserNotFound
+                    }
+                    Some("homework_files_homework_id_fkey") => {
+                        DomainError::HomeworkFileParentNotFound
+                    }
                     // Unknown constraint: keep the MVP catch-all.
                     _ => DomainError::HomeworkNotFound,
                 },
@@ -157,13 +162,16 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .fetch_one(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         row.into_domain()
     }
 
     /// Fetches homework by lesson instance ID.
     /// Performance: Uses `idx_homeworks_instance_unique` (O(log n)).
-    async fn get_by_lesson_instance(&self, lesson_instance_id: Uuid) -> Result<Homework, DomainError> {
+    async fn get_by_lesson_instance(
+        &self,
+        lesson_instance_id: Uuid,
+    ) -> Result<Homework, DomainError> {
         let row = sqlx::query_as::<_, HomeworkRow>(
             r#"
             SELECT homework_id, lesson_instance_id, created_by, created_by_role::TEXT AS created_by_role,
@@ -176,7 +184,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .fetch_one(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         row.into_domain()
     }
 
@@ -195,7 +203,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .fetch_all(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         rows.into_iter().map(HomeworkFileRow::into_domain).collect()
     }
 
@@ -237,10 +245,10 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .execute(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         Ok(homework)
     }
-    
+
     /// Adds a file to a homework.
     ///
     /// Uses PostgreSQL `INSERT ... ON CONFLICT` for idempotent upsert.
@@ -270,7 +278,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .execute(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         Ok(file)
     }
 
@@ -286,11 +294,11 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .execute(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         if result.rows_affected() == 0 {
             return Err(DomainError::HomeworkFileNotFound);
         }
-        
+
         Ok(())
     }
 
@@ -307,29 +315,33 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .execute(&self.pool)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         if result.rows_affected() == 0 {
             return Err(DomainError::HomeworkNotFound);
         }
-        
+
         Ok(())
     }
 
     /// Creates a homework with its files in a single transaction.
-    /// 
+    ///
     /// Fail-safe behavior: Uses a transaction; on any error the whole transaction
     /// is rolled back (no partial homework/files persisted).
-    /// 
-    /// Plain INSERT (no conflict clause) → duplicate `lesson_instance_id` yields 
+    ///
+    /// Plain INSERT (no conflict clause) → duplicate `lesson_instance_id` yields
     /// `HomeworkAlreadyExists`.
-    async fn create_with_files(&self, homework: Homework, files: Vec<HomeworkFile>) -> Result<Homework, DomainError> {
+    async fn create_with_files(
+        &self,
+        homework: Homework,
+        files: Vec<HomeworkFile>,
+    ) -> Result<Homework, DomainError> {
         // Begin transaction
         let mut tx = self.pool.begin().await.map_err(Self::map_db_error)?;
-        
+
         // Insert homework (plain INSERT - no ON CONFLICT)
         let role_str = homework.created_by_role.to_string();
         let status_str = homework.status.to_string();
-        
+
         sqlx::query(
             r#"
             INSERT INTO homeworks (homework_id, lesson_instance_id, created_by, created_by_role, text_content, status, locked_by_teacher, last_edited_by, created_at)
@@ -348,7 +360,7 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         .execute(&mut *tx)
         .await
         .map_err(Self::map_db_error)?;
-        
+
         // Insert all files
         for file in files {
             sqlx::query(
@@ -368,10 +380,11 @@ impl HomeworkRepository for HomeworkRepositoryPg {
             .await
             .map_err(Self::map_db_error)?;
         }
-        
+
         // Commit transaction
         tx.commit().await.map_err(Self::map_db_error)?;
-        
+
         Ok(homework)
     }
 }
+
