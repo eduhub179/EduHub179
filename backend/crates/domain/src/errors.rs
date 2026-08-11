@@ -50,6 +50,15 @@ pub enum DomainError {
     InvalidStudentGroupNameFormat,
     /// StudentGroup with the same (name) already exists (unique violation).
     StudentGroupAlreadyExists,
+    /// Lesson with the specified ID was not found.
+    LessonNotFound,
+    /// Lesson with the same name already exists (unique violation).
+    LessonAlreadyExists,
+    // Lesson references a non-existent class, group, subject, or teacher.
+    /// Raised when a foreign key constraint is violated during save or
+    /// teacher assignment — the lesson data itself is structurally valid,
+    /// but one of its references points to a missing entity.
+    InvalidLessonReference,
 }
 
 impl fmt::Display for DomainError {
@@ -71,8 +80,13 @@ impl fmt::Display for DomainError {
             DomainError::SubjectAlreadyExists => write!(f, "Subject already exists"),
             DomainError::InvalidSubjectNameFormat => write!(f, "Invalid subject name format"),
             DomainError::StudentGroupNotFound => write!(f, "Student group not found"),
-            DomainError::InvalidStudentGroupNameFormat => write!(f, "Invalid student group name format"),
+            DomainError::InvalidStudentGroupNameFormat => {
+                write!(f, "Invalid student group name format")
+            }
             DomainError::StudentGroupAlreadyExists => write!(f, "Student group already exists"),
+            DomainError::LessonNotFound => write!(f, "Lesson not found"),
+            DomainError::LessonAlreadyExists => write!(f, "Lesson already exists"),
+            DomainError::InvalidLessonReference => write!(f, "Invalid lesson references"),
         }
     }
 }
