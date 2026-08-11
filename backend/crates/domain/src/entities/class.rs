@@ -13,6 +13,7 @@ use uuid::Uuid;
 /// Representation of a school class.
 ///
 /// A class is defined by its graduation year and letter (e.g., "2027б").
+/// The letter is a Russian school-class letter (б, в, и).
 /// The `is_active` flag allows soft-deleting classes without breaking
 /// historical data (e.g., past homework or grades).
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +46,7 @@ impl Class {
 
     /// Returns the full class name (e.g., "2027б").
     /// Useful for UI display and logging.
+    /// The letter is a Russian school-class letter (б, в, и).
     pub fn full_name(&self) -> String {
         format!("{}{}", self.graduation_year, self.letter)
     }

@@ -1,50 +1,50 @@
 -- 0001_create_users.sql
 
 -- ============================================================================
--- ФАЙЛ: 0001_create_users.sql
--- НАЗНАЧЕНИЕ: Создание базовой таблицы пользователей и ролей.
--- ЗАВИСИМОСТИ: Нет.
--- МАСТЕР-ДОКУМЕНТ: Раздел 2.1
+-- FILE: 0001_create_users.sql
+-- PURPOSE: Create the base users and roles tables.
+-- DEPENDENCIES: None.
+-- MASTER DOCUMENT: Section 2.1
 -- ============================================================================
 
 
--- роли в MVP
+-- roles in MVP
 CREATE TYPE user_role AS ENUM ('student', 'teacher', 'admin');
 
--- Таблица пользователей
+-- Users table
 CREATE TABLE users
 (
     user_id       UUID PRIMARY KEY             DEFAULT gen_random_uuid(),
 
-    -- Аутентификация
+    -- Authentication
     email         VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NULL,
 
-    -- Роль
+    -- Role
     role          user_role           NOT NULL,
 
-    -- Имя (разделение для поиска и сортировки)
+    -- Name (split for search and sorting)
     last_name     VARCHAR(100)        NOT NULL,
     first_name    VARCHAR(100)        NOT NULL,
     middle_name   VARCHAR(100) NULL,
 
-    -- Состояние
+    -- State
     is_active     BOOLEAN             NOT NULL DEFAULT TRUE,
 
-    -- Временные метки
+    -- Timestamps
     created_at    TIMESTAMPTZ         NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ         NOT NULL DEFAULT NOW()
 );
 
--- ИНДЕКСЫ
+-- INDEXES
 
--- 1. Для учителя: поиск учеников в конкретном классе по фамилии TODO: пока только по фамилии исправить!
+-- 1. For teachers: search students in a specific class by last name TODO: currently only by last name, fix!
 CREATE INDEX idx_users_class_last_name ON users (last_name) WHERE role = 'student' AND is_active = TRUE;
--- 2. Фильтрация активных пользователей по роли
+-- 2. Filter active users by role
 CREATE INDEX idx_users_role_active ON users (role, is_active) WHERE is_active = TRUE;
 
 
--- Триггер для updated_at
+-- Trigger for updated_at
 CREATE
 OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
