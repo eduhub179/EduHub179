@@ -22,6 +22,7 @@ use uuid::Uuid;
 /// Internal structure for mapping rows from PostgreSQL (`student_groups`).
 /// Kept private to isolate database schema from domain model.
 /// Contains the technical `created_at` field that is not part of the domain.
+#[allow(dead_code)]
 #[derive(Debug, sqlx::FromRow)]
 struct StudentGroupRow {
     group_id: Uuid,

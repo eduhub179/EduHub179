@@ -19,6 +19,7 @@ use uuid::Uuid;
 /// Internal structure for mapping rows from PostgreSQL.
 /// Kept private to isolate database schema from domain model.
 /// Contains technical fields (created_at) that are not part of the domain.
+#[allow(dead_code)]
 #[derive(Debug, sqlx::FromRow)]
 struct SubjectRow {
     subject_id: Uuid,
@@ -89,10 +90,10 @@ impl SubjectRepository for SubjectRepositoryPg {
             WHERE subject_id = $1
             "#,
         )
-            .bind(subject_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(Self::map_db_error)?;
+        .bind(subject_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
 
         row.into_domain()
     }
@@ -109,13 +110,11 @@ impl SubjectRepository for SubjectRepositoryPg {
             ORDER BY name
             "#,
         )
-            .fetch_all(&self.pool)
-            .await
-            .map_err(Self::map_db_error)?;
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
 
-        rows.into_iter()
-            .map(SubjectRow::into_domain)
-            .collect()
+        rows.into_iter().map(SubjectRow::into_domain).collect()
     }
 
     /// Saves or updates a subject.
@@ -133,11 +132,11 @@ impl SubjectRepository for SubjectRepositoryPg {
                 name = EXCLUDED.name
             "#,
         )
-            .bind(subject.id)
-            .bind(&subject.name)
-            .execute(&self.pool)
-            .await
-            .map_err(Self::map_db_error)?;
+        .bind(subject.id)
+        .bind(&subject.name)
+        .execute(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
 
         // Return the same subject (it's now persisted).
         // In a stricter design, we could re-fetch to get the exact `created_at`,
