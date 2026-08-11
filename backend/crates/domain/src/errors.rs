@@ -50,6 +50,27 @@ pub enum DomainError {
     InvalidStudentGroupNameFormat,
     /// StudentGroup with the same (name) already exists (unique violation).
     StudentGroupAlreadyExists,
+
+    /// Homework with the specified ID was not found.
+    HomeworkNotFound,
+    /// The lesson instance a homework refers to does not exist
+    /// (FK violation on `homeworks.lesson_instance_id` during create).
+    LessonInstanceNotFound,
+    /// The homework a file is attached to does not exist
+    /// (FK violation on `homework_files.homework_id` during `add_file`/`create_with_files`).
+    HomeworkFileParentNotFound,
+    /// Homework file with the specified ID was not found.
+    HomeworkFileNotFound,
+    /// A homework for this lesson instance already exists (unique violation on lesson_instance_id).
+    HomeworkAlreadyExists,
+    /// Homework text content must be non-empty if provided (empty/whitespace-only is rejected).
+    InvalidHomeworkTextFormat,
+    /// Homework file metadata must be non-empty and within DB limits (storage_key ≤ 500, file_name ≤ 255, mime_type ≤ 100 chars).
+    InvalidHomeworkFileFormat,
+    /// Homework file size must be non-negative (DB CHECK size_bytes >= 0).
+    InvalidHomeworkFileSize,
+    /// Unknown homework_status value in the database (cannot be parsed into HomeworkStatus).
+    InvalidHomeworkStatus,
     /// Lesson with the specified ID was not found.
     LessonNotFound,
     /// Lesson with the same name already exists (unique violation).
@@ -80,10 +101,17 @@ impl fmt::Display for DomainError {
             DomainError::SubjectAlreadyExists => write!(f, "Subject already exists"),
             DomainError::InvalidSubjectNameFormat => write!(f, "Invalid subject name format"),
             DomainError::StudentGroupNotFound => write!(f, "Student group not found"),
-            DomainError::InvalidStudentGroupNameFormat => {
-                write!(f, "Invalid student group name format")
-            }
+            DomainError::InvalidStudentGroupNameFormat => write!(f, "Invalid student group name format"),
             DomainError::StudentGroupAlreadyExists => write!(f, "Student group already exists"),
+            DomainError::HomeworkNotFound => write!(f, "Homework not found"),
+            DomainError::LessonInstanceNotFound => write!(f, "Lesson instance not found"),
+            DomainError::HomeworkFileParentNotFound => write!(f, "Homework file parent homework not found"),
+            DomainError::HomeworkFileNotFound => write!(f, "Homework file not found"),
+            DomainError::HomeworkAlreadyExists => write!(f, "Homework already exists"),
+            DomainError::InvalidHomeworkTextFormat => write!(f, "Invalid homework text format"),
+            DomainError::InvalidHomeworkFileFormat => write!(f, "Invalid homework file format"),
+            DomainError::InvalidHomeworkFileSize => write!(f, "Invalid homework file size"),
+            DomainError::InvalidHomeworkStatus => write!(f, "Invalid homework status"),
             DomainError::LessonNotFound => write!(f, "Lesson not found"),
             DomainError::LessonAlreadyExists => write!(f, "Lesson already exists"),
             DomainError::InvalidLessonReference => write!(f, "Invalid lesson references"),
