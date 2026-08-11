@@ -2,120 +2,120 @@
 
 
 -- ============================================
--- 1. СТАТУСЫ ДОМАШНЕГО ЗАДАНИЯ
--- draft     — черновик, виден только создателю
--- published — опубликовано, виден всем ученикам урока
--- archived  — архивировано, скрыто из активного списка
+-- 1. HOMEWORK STATUSES
+-- draft     — draft, visible only to the creator
+-- published — published, visible to all students of the lesson
+-- archived  — archived, hidden from the active list
 -- ============================================
 CREATE TYPE homework_status AS ENUM ('draft', 'published', 'archived');
 
 
 -- ============================================
--- 2. ДОМАШНИЕ ЗАДАНИЯ
--- Под одним уроком (на конкретную дату) ровно одно ДЗ
--- (UNIQUE по lesson_instance_id).
--- Создать ДЗ может учитель или школьник (дежурный).
+-- 2. HOMEWORK
+-- Under one lesson (on a concrete date) there is exactly one homework
+-- (UNIQUE on lesson_instance_id).
+-- Homework can be created by a teacher or a student (the duty officer).
 --
--- Правила редактирования:
--- - Если ДЗ создал учитель → только учитель может менять
--- - Если ДЗ создал школьник и учитель не взаимодействовал → любой школьник может менять
--- - Если учитель взаимодействовал с ДЗ (locked_by_teacher = true) → только учитель может менять
+-- Editing rules:
+-- - If a teacher created the homework → only the teacher can edit it
+-- - If a student created it and the teacher has not interacted → any student can edit
+-- - If a teacher has interacted with the homework (locked_by_teacher = true) → only the teacher can edit
 --
--- Анонимность:
--- - Кто из школьников редактировал — видно только админу
--- - Если учитель взаимодействовал — это видно всем
+-- Anonymity:
+-- - Which student edited — visible only to the admin
+-- - If a teacher has interacted — visible to everyone
 --
--- Проверка контента (хотя бы текст или файл) — на уровне приложения (use case).
--- Триггер на уровне БД не используется, чтобы избежать проблем с загрузкой файлов.
+-- Content validation (at least text or a file) is done at the application level (use case).
+-- A DB-level trigger is not used to avoid problems with file uploads.
 -- ============================================
 CREATE TABLE homeworks
 (
     homework_id        UUID PRIMARY KEY         DEFAULT gen_random_uuid(),
 
-    -- Конкретный урок на конкретную дату (ровно одно ДЗ на урок)
+    -- Concrete lesson on a concrete date (exactly one homework per lesson)
     lesson_instance_id UUID            NOT NULL REFERENCES lesson_instances (instance_id) ON DELETE RESTRICT,
 
-    -- Кто создал ДЗ (виден всем — это автор)
+    -- Who created the homework (visible to everyone — this is the author)
     created_by         UUID            NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
 
-    -- Роль создателя (для быстрой проверки прав без JOIN)
-    -- 'teacher' — создал учитель
-    -- 'student' — создал школьник
+    -- Creator's role (for fast permission checks without JOIN)
+    -- 'teacher' — created by a teacher
+    -- 'student' — created by a student
     created_by_role    user_role       NOT NULL,
 
-    -- Текстовое содержимое ДЗ (опционально — может быть только файл)
+    -- Text content of the homework (optional — may be file-only)
     text_content       TEXT NULL,
 
-    -- Статус ДЗ
+    -- Homework status
     status             homework_status NOT NULL DEFAULT 'draft',
 
-    -- Флаг блокировки учителем (односторонний переключатель)
-    -- Если true → школьники больше не могут редактировать
-    -- Если false → школьники могут редактировать
+    -- Teacher lock flag (one-way switch)
+    -- If true → students can no longer edit
+    -- If false → students can edit
     locked_by_teacher  BOOLEAN         NOT NULL DEFAULT FALSE,
 
-    -- Кто последний редактировал (для аудита, если ученик, видно только админу)
-    -- NULL при создании. Автор не считается редактором
+    -- Who last edited (for audit; if a student, visible only to the admin)
+    -- NULL on creation. The author is not counted as an editor
     last_edited_by     UUID NULL REFERENCES users(user_id) ON DELETE RESTRICT,
 
-    -- Временные метки
+    -- Timestamps
     created_at         TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
--- Ровно одно ДЗ на конкретный урок
+-- Exactly one homework per concrete lesson
 CREATE UNIQUE INDEX idx_homeworks_instance_unique
     ON homeworks (lesson_instance_id);
 
--- Быстрый поиск ДЗ конкретного урока
+-- Fast lookup of homework of a concrete lesson
 CREATE INDEX idx_homeworks_instance
     ON homeworks (lesson_instance_id) WHERE status = 'published';
 
--- Быстрый поиск ДЗ, с которыми взаимодействовал учитель
+-- Fast lookup of homework a teacher has interacted with
 CREATE INDEX idx_homeworks_teacher_interacted
     ON homeworks (lesson_instance_id) WHERE status = 'published' AND locked_by_teacher = TRUE;
 
 
 -- ============================================
--- 3. ФАЙЛЫ ДОМАШНЕГО ЗАДАНИЯ
--- Одно ДЗ может иметь несколько файлов (PDF, фото условия, сканы).
--- В базе хранятся только метаданные и ссылка на S3/MinIO,
--- сами файлы — в объектном хранилище (§5 мастер-документа).
+-- 3. HOMEWORK FILES
+-- One homework can have several files (PDF, photos of the assignment, scans).
+-- Only metadata and a link to S3/MinIO are stored in the DB;
+-- the files themselves live in object storage (§5 of the master document).
 -- ============================================
 CREATE TABLE homework_files
 (
     file_id     UUID PRIMARY KEY      DEFAULT gen_random_uuid(),
 
-    -- ДЗ, к которому относится файл
+    -- Homework the file belongs to
     homework_id UUID         NOT NULL REFERENCES homeworks (homework_id) ON DELETE CASCADE,
 
-    -- Путь/ключ файла в S3-хранилище (например "homeworks/2026/07/abc123.pdf")
+    -- File path/key in S3 storage (e.g. "homeworks/2026/07/abc123.pdf")
     storage_key VARCHAR(500) NOT NULL,
 
-    -- Оригинальное имя файла для отображения пользователю
+    -- Original file name for display to the user
     file_name   VARCHAR(255) NOT NULL,
 
-    -- MIME-тип файла (application/pdf, image/jpeg и т.д.)
+    -- MIME type (application/pdf, image/jpeg, etc.)
     mime_type   VARCHAR(100) NOT NULL,
 
-    -- Размер файла в байтах (для отображения и лимитов)
+    -- File size in bytes (for display and limits)
     size_bytes  BIGINT       NOT NULL CHECK (size_bytes >= 0),
 
-    -- Порядок отображения файлов (если их несколько)
+    -- Display order of files (if there are several)
     sort_order  INT          NOT NULL DEFAULT 0,
 
-    -- Временные метки
+    -- Timestamps
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
--- Быстрый поиск всех файлов конкретного ДЗ
--- Используется при отображении ДЗ ученику
+-- Fast lookup of all files of a concrete homework
+-- Used when displaying homework to a student
 CREATE INDEX idx_homework_files_homework
     ON homework_files (homework_id, sort_order);
 
 
 -- ============================================
--- 4. ТРИГГЕРЫ ДЛЯ ОБНОВЛЕНИЯ updated_at
+-- 4. TRIGGERS FOR UPDATING updated_at
 -- ============================================
 CREATE TRIGGER trigger_homeworks_updated_at
     BEFORE UPDATE
