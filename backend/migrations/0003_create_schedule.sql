@@ -50,7 +50,7 @@ CREATE INDEX idx_cabinets_floor ON cabinets (floor);
 -- 4. LESSON TEMPLATES
 -- A lesson template is a "subject-time-cabinet" combination that is always valid.
 -- Created once, used in the schedule.
--- Changing a template automatically updates all schedule slots.
+-- Changing a template automatically updates all lessons generated from it.
 --
 -- Flags:
 -- - is_active: TRUE — used in the current schedule, participates in availability checks
@@ -124,10 +124,10 @@ CREATE INDEX idx_lesson_templates_lesson
 -- - Preserving history
 -- - Week-level overrides (swapping the template for one week, cancelling, ...)
 --
--- NOTE: a separate "schedule slot" table was considered but merged into this
--- one: a template has exactly one day of the week, so "the lesson of week W"
--- is fully determined by (template, week_start_date). A slot table would only
--- duplicate this row and add a second status to keep in sync.
+-- NOTE: why instances are the only per-week record: a template has exactly
+-- one day of the week, so "the lesson of week W" is fully determined by
+-- (template, week_start_date) — one row per template per week, one status
+-- to keep in sync.
 -- ============================================
 CREATE TABLE lesson_instances
 (
