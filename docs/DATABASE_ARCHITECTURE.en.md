@@ -137,7 +137,7 @@ The system is designed with:
 **Tables:**
 - `cabinets` — classrooms
 - `lesson_templates` — lesson templates
-- `lesson_instances` — specific lessons on dates (carries `template_id` + `week_start_date` directly — no separate slot table)
+- `lesson_instances` — specific lessons on dates
 - `events` — events (lectures, activities)
 - `event_attendees` — event participants
 
