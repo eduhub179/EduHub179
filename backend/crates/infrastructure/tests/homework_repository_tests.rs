@@ -162,9 +162,8 @@ async fn seed_lesson_instance(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
     .await
     .expect("Insert lesson template should succeed");
 
-    // 5. Concrete lesson instance on 2026-09-07 (week of 2026-09-07)
-    //    (schedule_slots was merged into lesson_instances:
-    //    the instance carries template_id + week_start_date directly)
+    // 5. Concrete lesson instance on 2026-09-07 (week of 2026-09-07);
+    //    the instance carries template_id + week_start_date directly
     let instance_id = Uuid::new_v4();
     sqlx::query(
         r#"

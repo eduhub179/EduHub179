@@ -1,10 +1,9 @@
 //! Integration tests for the `get_student_schedule_for_date` SQL function.
 //!
-//! Regression coverage for the schedule layer (post-merge of `schedule_slots` into
-//! `lesson_instances`):
+//! Regression coverage for the schedule layer:
 //! - a 'scheduled' instance appears in the student's schedule;
-//! - a 'cancelled' instance does NOT appear (previously the slot-level
-//!   cancellation was silently ignored — the student still saw the lesson);
+//! - a 'cancelled' instance does NOT appear (previously the cancellation
+//!   was silently ignored — the student still saw the lesson);
 //! - an event that overlaps the lesson overrides it (event shown, lesson hidden).
 
 use sqlx::PgPool;
@@ -144,7 +143,7 @@ async fn test_scheduled_lesson_appears(pool: PgPool) {
 }
 
 /// A cancelled instance must NOT appear (the merge made the single
-/// status authoritative — previously the slot-level cancel was ignored).
+/// status authoritative — previously the cancellation was ignored).
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_cancelled_lesson_disappears(pool: PgPool) {
     let seed = seed_student_with_lesson(&pool, "cancelled").await;
