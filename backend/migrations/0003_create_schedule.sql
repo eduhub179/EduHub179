@@ -113,57 +113,31 @@ CREATE INDEX idx_lesson_templates_lesson
 
 
 -- ============================================
--- 5. LESSON SCHEDULE (FOR SPECIFIC WEEKS)
--- Each record is a schedule slot for a specific week.
--- References a lesson_template.
--- ============================================
-CREATE TABLE schedule_slots
-(
-    slot_id         UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
-
-    -- Lesson template (can be regular or a replacement)
-    template_id     UUID        NOT NULL REFERENCES lesson_templates (template_id) ON DELETE RESTRICT,
-
-    -- Start of the week this slot belongs to
-    week_start_date DATE        NOT NULL,
-
-    -- Slot status
-    status          VARCHAR(20) NOT NULL DEFAULT 'scheduled'
-        CHECK (status IN ('scheduled', 'cancelled')),
-
-    -- Timestamps
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- One template cannot appear twice in the same week
-CREATE UNIQUE INDEX idx_schedule_slots_no_dup
-    ON schedule_slots (template_id, week_start_date);
-
--- Fast lookup of slots for a specific week
-CREATE INDEX idx_schedule_slots_week
-    ON schedule_slots (week_start_date);
-
--- Fast lookup of slots of a specific template
-CREATE INDEX idx_schedule_slots_template
-    ON schedule_slots (template_id);
-
-
--- ============================================
--- 6. CONCRETE LESSONS (ON SPECIFIC DATES)
+-- 5. CONCRETE LESSONS (ON SPECIFIC DATES)
 -- lesson_instance is a concrete lesson on a concrete date.
+-- It carries the template it was generated from + the week it belongs to
+-- (week_start_date) + the concrete date (lesson_date).
 -- Homework is tied to lesson_instance, not to lesson.
 -- This allows:
 -- - Having different homework for different lessons of the same subject
 -- - Archiving homework after the lesson
 -- - Preserving history
+-- - Week-level overrides (swapping the template for one week, cancelling, ...)
+--
+-- NOTE: a separate "schedule slot" table was considered but merged into this
+-- one: a template has exactly one day of the week, so "the lesson of week W"
+-- is fully determined by (template, week_start_date). A slot table would only
+-- duplicate this row and add a second status to keep in sync.
 -- ============================================
 CREATE TABLE lesson_instances
 (
     instance_id UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
 
-    -- Schedule slot (reference to template + week date)
-    slot_id     UUID        NOT NULL REFERENCES schedule_slots (slot_id) ON DELETE RESTRICT,
+    -- Lesson template (regular or a replacement)
+    template_id     UUID        NOT NULL REFERENCES lesson_templates (template_id) ON DELETE RESTRICT,
+
+    -- Start of the week this lesson belongs to
+    week_start_date DATE        NOT NULL,
 
     -- Lesson date (computed from week_start_date + day, but stored for convenience)
     lesson_date DATE        NOT NULL,
@@ -177,21 +151,25 @@ CREATE TABLE lesson_instances
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Two lessons cannot be created on the same date for one slot
+-- A template cannot produce two lessons in the same week
 CREATE UNIQUE INDEX idx_lesson_instances_unique
-    ON lesson_instances (slot_id, lesson_date);
+    ON lesson_instances (template_id, week_start_date);
 
 -- Fast lookup of lessons on a specific date
 CREATE INDEX idx_lesson_instances_date
     ON lesson_instances (lesson_date);
 
--- Fast lookup of lessons of a specific slot
-CREATE INDEX idx_lesson_instances_slot
-    ON lesson_instances (slot_id);
+-- Fast lookup of lessons of a specific week
+CREATE INDEX idx_lesson_instances_week
+    ON lesson_instances (week_start_date);
+
+-- Fast lookup of lessons of a specific template
+CREATE INDEX idx_lesson_instances_template
+    ON lesson_instances (template_id);
 
 
 -- ============================================
--- 7. EVENTS (LECTURES, MEETINGS, ELECTIVES)
+-- 6. EVENTS (LECTURES, MEETINGS, ELECTIVES)
 -- An event is a one-time or recurring activity
 -- that is not a lesson but takes up students' time.
 -- Unlike groups, events do not change the class structure.
@@ -234,7 +212,7 @@ CREATE INDEX idx_events_organizer
 
 
 -- ============================================
--- 8. EVENT ATTENDEES
+-- 7. EVENT ATTENDEES
 -- student ↔ event relationship. A student can participate
 -- in several events, an event can include
 -- students from different classes.
@@ -263,7 +241,7 @@ CREATE INDEX idx_event_attendees_event
 
 
 -- ============================================
--- 9. FUNCTION: TEACHER AVAILABILITY CHECK
+-- 8. FUNCTION: TEACHER AVAILABILITY CHECK
 -- Checks whether a teacher is busy at the given time.
 -- Works only with active templates (is_active = TRUE).
 -- Used by the admin when building the schedule.
@@ -293,7 +271,7 @@ LANGUAGE plpgsql;
 
 
 -- ============================================
--- 10. FUNCTION: FULL STUDENT SCHEDULE FOR A DATE
+-- 9. FUNCTION: FULL STUDENT SCHEDULE FOR A DATE
 -- Returns all lessons and events of a student on a concrete date,
 -- taking into account that events "override" lessons.
 -- ============================================
@@ -328,8 +306,7 @@ SELECT lt.start_time,
        FALSE  AS is_event,
        lt.cabinet_id
 FROM lesson_instances li
-         JOIN schedule_slots ss ON li.slot_id = ss.slot_id
-         JOIN lesson_templates lt ON ss.template_id = lt.template_id
+         JOIN lesson_templates lt ON li.template_id = lt.template_id
          JOIN lessons l ON lt.lesson_id = l.lesson_id
          JOIN subjects s ON l.subject_id = s.subject_id
 WHERE li.lesson_date = p_date
@@ -355,17 +332,11 @@ LANGUAGE plpgsql;
 
 
 -- ============================================
--- 11. TRIGGERS FOR UPDATING updated_at
+-- 10. TRIGGERS FOR UPDATING updated_at
 -- ============================================
 CREATE TRIGGER trigger_lesson_templates_updated_at
     BEFORE UPDATE
     ON lesson_templates
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER trigger_schedule_slots_updated_at
-    BEFORE UPDATE
-    ON schedule_slots
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
