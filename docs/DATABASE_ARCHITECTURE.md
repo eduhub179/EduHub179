@@ -137,7 +137,7 @@
 **Таблицы:**
 - `cabinets` — кабинеты
 - `lesson_templates` — шаблоны уроков
-- `lesson_instances` — конкретные уроки на даты (хранит `template_id` + `week_start_date` напрямую — отдельной таблицы слотов нет)
+- `lesson_instances` — конкретные уроки на даты
 - `events` — события (лекции, мероприятия)
 - `event_attendees` — участники событий
 
