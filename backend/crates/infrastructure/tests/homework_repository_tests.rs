@@ -12,7 +12,7 @@
 //! - Domain invariant validation (pure unit tests, no DB).
 //!
 //! DB fixture note: `homeworks` references `lesson_instances`, which requires
-//! the full chain lessons -> lesson_templates -> schedule_slots -> lesson_instances.
+//! the full chain lessons -> lesson_templates -> lesson_instances.
 //! The `seed_lesson_instance` helper builds it via raw SQL (no repository exists
 //! yet for the schedule layer).
 use domain::entities::class::Class;
@@ -99,7 +99,7 @@ fn create_test_student() -> User {
 
 /// Seeds the full FK chain required by `homeworks`:
 /// users (teacher + student), class, subject, lesson, lesson_template,
-/// schedule_slot and lesson_instance.
+/// lesson_instance.
 ///
 /// Returns `(lesson_instance_id, teacher_id, student_id)`.
 ///
@@ -162,31 +162,18 @@ async fn seed_lesson_instance(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
     .await
     .expect("Insert lesson template should succeed");
 
-    // 5. Schedule slot for the week of 2026-09-07
-    let slot_id = Uuid::new_v4();
-    sqlx::query(
-        r#"
-        INSERT INTO schedule_slots (slot_id, template_id, week_start_date)
-        VALUES ($1, $2, $3::DATE)
-        "#,
-    )
-    .bind(slot_id)
-    .bind(template_id)
-    .bind("2026-09-07")
-    .execute(pool)
-    .await
-    .expect("Insert schedule slot should succeed");
-
-    // 6. Concrete lesson instance on 2026-09-07
+    // 5. Concrete lesson instance on 2026-09-07 (week of 2026-09-07);
+    //    the instance carries template_id + week_start_date directly
     let instance_id = Uuid::new_v4();
     sqlx::query(
         r#"
-        INSERT INTO lesson_instances (instance_id, slot_id, lesson_date)
-        VALUES ($1, $2, $3::DATE)
+        INSERT INTO lesson_instances (instance_id, template_id, week_start_date, lesson_date)
+        VALUES ($1, $2, $3::DATE, $4::DATE)
         "#,
     )
     .bind(instance_id)
-    .bind(slot_id)
+    .bind(template_id)
+    .bind("2026-09-07")
     .bind("2026-09-07")
     .execute(pool)
     .await

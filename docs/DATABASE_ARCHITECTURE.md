@@ -64,8 +64,7 @@
 |----------|------------|
 | `cabinets` | Кабинеты (3-значный номер, этаж) |
 | `lesson_templates` | Шаблоны уроков (время + кабинет + день недели) |
-| `schedule_slots` | Расписание на конкретные недели |
-| `lesson_instances` | Конкретные уроки на конкретные даты |
+| `lesson_instances` | Конкретные уроки на конкретные даты (шаблон + неделя + дата) |
 | `events` | События (лекции, мероприятия) |
 | `event_attendees` | Участники событий |
 | `day_of_week` (ENUM) | Дни недели |
@@ -131,14 +130,13 @@
 
 ---
 
-### `0005_create_schedule.sql` ⚠️
+### `0003_create_schedule.sql` ⚠️
 
-**ВНИМАНИЕ:** выполняется ПЕРЕД `0003`, так как `homeworks` ссылается на `lesson_instances`.
+**ВНИМАНИЕ:** выполняется ПЕРЕД `0004` (`homeworks`), так как `homeworks` ссылается на `lesson_instances`.
 
 **Таблицы:**
 - `cabinets` — кабинеты
 - `lesson_templates` — шаблоны уроков
-- `schedule_slots` — расписание на недели
 - `lesson_instances` — конкретные уроки на даты
 - `events` — события (лекции, мероприятия)
 - `event_attendees` — участники событий
@@ -245,16 +243,13 @@ lesson_templates (шаблоны уроков)
   ├── cabinet_id → cabinets
   ├── is_active (флаг активности)
   ├── is_override (флаг замены)
-  └── ← schedule_slots.template_id
-
-schedule_slots (расписание на недели)
-  ├── template_id → lesson_templates
-  ├── week_start_date
-  └── ← lesson_instances.slot_id
+  └── ← lesson_instances.template_id
 
 lesson_instances (конкретные уроки на даты)
-  ├── slot_id → schedule_slots
+  ├── template_id → lesson_templates
+  ├── week_start_date
   ├── lesson_date
+  ├── status (scheduled / completed / cancelled)
   └── ← homeworks.lesson_instance_id
 
 cabinets (кабинеты)
@@ -318,15 +313,10 @@ plusnik_records (плюсы)
 - Пример: "Спецмат в 10б, пн 10:50-11:35, каб. 412"
 - Используется для: расписания, проверки занятости
 
-**Уровень 3: Слот расписания (`schedule_slots`)**
-- Что: шаблон + неделя
-- Пример: "Шаблон T1 на неделю 28.07.2026"
-- Используется для: расписания на конкретную неделю
-
-**Уровень 4: Конкретный урок (`lesson_instances`)**
-- Что: слот + дата
-- Пример: "Спецмат в 10б, 28.07.2026"
-- Используется для: ДЗ, истории
+**Уровень 3: Конкретный урок (`lesson_instances`)**
+- Что: шаблон + неделя + дата
+- Пример: "Спецмат в 10б, 28.07.2026 (шаблон T1, неделя 28.07.2026)"
+- Используется для: ДЗ, истории, замен на уровне недели
 
 ### 5.2 Несколько учителей на один урок
 
@@ -448,9 +438,9 @@ SELECT check_teacher_available('teacher_id', 'пн', '10:50', '11:35');
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id)
 VALUES ('lesson_id', 'пн', '10:50', '11:35', 'cabinet_id');
 
--- Создаём слот на неделю
-INSERT INTO schedule_slots (template_id, week_start_date)
-VALUES ('template_id', '2026-07-27');
+-- Создаём экземпляр урока на неделю
+INSERT INTO lesson_instances (template_id, week_start_date, lesson_date)
+VALUES ('template_id', '2026-07-27', '2026-07-27');
 ```
 
 ### 6.5 Замена урока (учитель заболел)
@@ -460,10 +450,10 @@ VALUES ('template_id', '2026-07-27');
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id, is_override, comment)
 VALUES ('new_lesson_id', 'пн', '10:50', '11:35', 'cabinet_id', TRUE, 'Иванов заболел');
 
--- Обновляем слот
-UPDATE schedule_slots
+-- Переводим урок этой недели на шаблон замены
+UPDATE lesson_instances
 SET template_id = 'new_template_id'
-WHERE slot_id = 'slot_id' AND week_start_date = '2026-07-27';
+WHERE instance_id = 'instance_id';
 ```
 
 ### 6.6 Часть класса уходит на лекцию
@@ -492,11 +482,11 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
     ↓
 0002_create_subjects_and_classes.sql ← зависит от 0001
     ↓
-0005_create_schedule.sql           ← зависит от 0002
+0003_create_schedule.sql           ← зависит от 0002
     ↓
-0003_create_homework.sql           ← зависит от 0005 (lesson_instances)
+0004_create_homework.sql           ← зависит от 0003 (lesson_instances)
     ↓
-0004_create_plusnik.sql            ← зависит от 0002 (lessons)
+0005_create_plusnik.sql            ← зависит от 0002 (lessons)
 ```
 
 **Важно:** `0003` и `0004` можно выполнять в любом порядке после `0005`, но `0003` должен выполняться ПОСЛЕ `0005`.

@@ -16,7 +16,7 @@ use uuid::Uuid;
 ///
 /// A lesson is the combination of (class OR group) + subject.
 /// It is "abstract" because it is not tied to a specific date — scheduling
-/// (`lesson_templates` → `schedule_slots` → `lesson_instances`) builds on top of it,
+/// (`lesson_templates` → `lesson_instances`) builds on top of it,
 /// and homework / plusnik reference it either directly (plusnik) or via instances (homework).
 ///
 /// Examples: "Спецмат в 10б", "Английский B1 (группа)".

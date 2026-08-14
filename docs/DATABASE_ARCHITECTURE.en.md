@@ -64,8 +64,7 @@ The system is designed with:
 |--------|---------|
 | `cabinets` | Classrooms (3-digit number, floor) |
 | `lesson_templates` | Lesson templates (time + classroom + day of week) |
-| `schedule_slots` | Schedule for specific weeks |
-| `lesson_instances` | Specific lessons on specific dates |
+| `lesson_instances` | Specific lessons on specific dates (template + week + date) |
 | `events` | Events (lectures, activities) |
 | `event_attendees` | Event participants |
 | `day_of_week` (ENUM) | Days of the week |
@@ -131,14 +130,13 @@ The system is designed with:
 
 ---
 
-### `0005_create_schedule.sql` ⚠️
+### `0003_create_schedule.sql` ⚠️
 
-**WARNING:** runs BEFORE `0003`, because `homeworks` references `lesson_instances`.
+**WARNING:** runs BEFORE `0004` (`homeworks`), because `homeworks` references `lesson_instances`.
 
 **Tables:**
 - `cabinets` — classrooms
 - `lesson_templates` — lesson templates
-- `schedule_slots` — schedule for weeks
 - `lesson_instances` — specific lessons on dates
 - `events` — events (lectures, activities)
 - `event_attendees` — event participants
@@ -245,16 +243,13 @@ lesson_templates (lesson templates)
   ├── cabinet_id → cabinets
   ├── is_active (activity flag)
   ├── is_override (substitution flag)
-  └── ← schedule_slots.template_id
-
-schedule_slots (schedule for weeks)
-  ├── template_id → lesson_templates
-  ├── week_start_date
-  └── ← lesson_instances.slot_id
+  └── ← lesson_instances.template_id
 
 lesson_instances (specific lessons on dates)
-  ├── slot_id → schedule_slots
+  ├── template_id → lesson_templates
+  ├── week_start_date
   ├── lesson_date
+  ├── status (scheduled / completed / cancelled)
   └── ← homeworks.lesson_instance_id
 
 cabinets (classrooms)
@@ -318,15 +313,10 @@ plusnik_records (pluses)
 - Example: "Spetsmat in 10б, Mon 10:50-11:35, room 412"
 - Used for: schedule, availability checks
 
-**Level 3: Schedule slot (`schedule_slots`)**
-- What: template + week
-- Example: "Template T1 for the week of 28.07.2026"
-- Used for: the schedule for a specific week
-
-**Level 4: Specific lesson (`lesson_instances`)**
-- What: slot + date
-- Example: "Spetsmat in 10б, 28.07.2026"
-- Used for: homework, history
+**Level 3: Specific lesson (`lesson_instances`)**
+- What: template + week + date
+- Example: "Spetsmat in 10б, 28.07.2026 (template T1, week of 28.07.2026)"
+- Used for: homework, history, week-level overrides
 
 ### 5.2 Multiple teachers per lesson
 
@@ -448,9 +438,9 @@ SELECT check_teacher_available('teacher_id', 'пн', '10:50', '11:35');
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id)
 VALUES ('lesson_id', 'пн', '10:50', '11:35', 'cabinet_id');
 
--- Create a slot for the week
-INSERT INTO schedule_slots (template_id, week_start_date)
-VALUES ('template_id', '2026-07-27');
+-- Create a lesson instance for the week
+INSERT INTO lesson_instances (template_id, week_start_date, lesson_date)
+VALUES ('template_id', '2026-07-27', '2026-07-27');
 ```
 
 ### 6.5 Lesson substitution (teacher is sick)
@@ -460,10 +450,10 @@ VALUES ('template_id', '2026-07-27');
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id, is_override, comment)
 VALUES ('new_lesson_id', 'пн', '10:50', '11:35', 'cabinet_id', TRUE, 'Ivanov is sick');
 
--- Update the slot
-UPDATE schedule_slots
+-- Point this week's lesson at the substitution template
+UPDATE lesson_instances
 SET template_id = 'new_template_id'
-WHERE slot_id = 'slot_id' AND week_start_date = '2026-07-27';
+WHERE instance_id = 'instance_id';
 ```
 
 ### 6.6 Part of the class goes to a lecture
@@ -492,11 +482,11 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
     ↓
 0002_create_subjects_and_classes.sql ← depends on 0001
     ↓
-0005_create_schedule.sql           ← depends on 0002
+0003_create_schedule.sql           ← depends on 0002
     ↓
-0003_create_homework.sql           ← depends on 0005 (lesson_instances)
+0004_create_homework.sql           ← depends on 0003 (lesson_instances)
     ↓
-0004_create_plusnik.sql            ← depends on 0002 (lessons)
+0005_create_plusnik.sql            ← depends on 0002 (lessons)
 ```
 
 **Important:** `0003` and `0004` can run in any order after `0005`, but `0003` must run AFTER `0005`.
