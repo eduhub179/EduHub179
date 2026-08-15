@@ -76,7 +76,9 @@ impl User {
     }
 
     /// Delegates role check to the Value Object for clean business logic.
-    pub fn is_teacher(&self) -> bool { self.role.is_teacher() }
+    pub fn is_teacher(&self) -> bool {
+        self.role.is_teacher()
+    }
 
     /// Delegates role check to the Value Object.
     pub fn is_admin(&self) -> bool {

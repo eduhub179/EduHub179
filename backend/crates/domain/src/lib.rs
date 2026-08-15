@@ -1,6 +1,7 @@
 //! Domain crate: сущности, value objects, трейты репозиториев
 
 pub mod entities {
+    pub mod cabinet;
     pub mod class;
     pub mod homework;
     pub mod lesson;

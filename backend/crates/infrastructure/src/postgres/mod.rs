@@ -4,6 +4,7 @@
 //! All types here are internal to the infrastructure layer;
 //! the domain layer interacts only via traits.
 
+pub mod cabinet_repository_pg;
 pub mod class_repository_pg;
 pub mod homework_repository_pg;
 pub mod lesson_repository_pg;
@@ -18,3 +19,4 @@ pub use lesson_repository_pg::LessonRepositoryPg;
 pub use student_group_repository_pg::StudentGroupRepositoryPg;
 pub use subject_repository_pg::SubjectRepositoryPg;
 pub use user_repository_pg::UserRepositoryPg;
+pub use cabinet_repository_pg::CabinetRepositoryPg;
