@@ -4,7 +4,7 @@
 //! This ensures at compile time that no erroneous state is ignored
 //! (using `Result` is mandatory). No panics are allowed.
 
-use std::fmt;
+use std::fmt::{self};
 
 /// Base domain error. Contains no implementation details (e.g., SQL errors).
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +80,16 @@ pub enum DomainError {
     /// teacher assignment — the lesson data itself is structurally valid,
     /// but one of its references points to a missing entity.
     InvalidLessonReference,
+    // Cabinet with the specified ID was not found
+    CabinetNotFound,
+    // Cabinet with the same number already exists (unique violation)
+    CabinetAlreadyExists,
+    // Cabinet number must be a number from 100 to 999
+    InvalidCabinetNumber,
+    // Cabinet description must be a string (size <= 256)
+    InvalidCabinetDescription,
+    // Cabinet capacity must be a natural number
+    InvalidCabinetCapacity,
 }
 
 impl fmt::Display for DomainError {
@@ -101,11 +111,15 @@ impl fmt::Display for DomainError {
             DomainError::SubjectAlreadyExists => write!(f, "Subject already exists"),
             DomainError::InvalidSubjectNameFormat => write!(f, "Invalid subject name format"),
             DomainError::StudentGroupNotFound => write!(f, "Student group not found"),
-            DomainError::InvalidStudentGroupNameFormat => write!(f, "Invalid student group name format"),
+            DomainError::InvalidStudentGroupNameFormat => {
+                write!(f, "Invalid student group name format")
+            }
             DomainError::StudentGroupAlreadyExists => write!(f, "Student group already exists"),
             DomainError::HomeworkNotFound => write!(f, "Homework not found"),
             DomainError::LessonInstanceNotFound => write!(f, "Lesson instance not found"),
-            DomainError::HomeworkFileParentNotFound => write!(f, "Homework file parent homework not found"),
+            DomainError::HomeworkFileParentNotFound => {
+                write!(f, "Homework file parent homework not found")
+            }
             DomainError::HomeworkFileNotFound => write!(f, "Homework file not found"),
             DomainError::HomeworkAlreadyExists => write!(f, "Homework already exists"),
             DomainError::InvalidHomeworkTextFormat => write!(f, "Invalid homework text format"),
@@ -115,6 +129,11 @@ impl fmt::Display for DomainError {
             DomainError::LessonNotFound => write!(f, "Lesson not found"),
             DomainError::LessonAlreadyExists => write!(f, "Lesson already exists"),
             DomainError::InvalidLessonReference => write!(f, "Invalid lesson references"),
+            DomainError::CabinetNotFound => write!(f, "Cabinet not found"),
+            DomainError::CabinetAlreadyExists => write!(f, "Cabinet already exists"),
+            DomainError::InvalidCabinetNumber => write!(f, "Invalid cabinet number"),
+            DomainError::InvalidCabinetDescription => write!(f, "Invalid cabinet description"),
+            DomainError::InvalidCabinetCapacity => write!(f, "Invalid cabinet capacity"),
         }
     }
 }

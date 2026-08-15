@@ -87,6 +87,7 @@ fn create_group_lesson(group_id: Uuid, subject_id: Uuid) -> Lesson {
 }
 
 /// Helper: sets up a complete test environment with class, subject, and lesson repo.
+#[allow(dead_code)]
 struct TestEnv {
     pool: PgPool,
     lesson_repo: LessonRepositoryPg,
