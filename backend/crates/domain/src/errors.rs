@@ -90,6 +90,20 @@ pub enum DomainError {
     InvalidCabinetDescription,
     // Cabinet capacity must be a natural number
     InvalidCabinetCapacity,
+
+    // LessonTemplate with the specified ID was not found.
+    LessonTemplateNotFound,
+    // A lesson cannot have two templates with the same (lesson_id, day, start_time, end_time, parity)
+    // (unique violation on idx_lesson_templates_no_dup).
+    LessonTemplateAlreadyExists,
+    // Template end_time must be strictly after start_time (DB CHECK chk_template_time).
+    InvalidLessonTemplateTime,
+    // Template references a non-existent lesson or cabinet (FK violation).
+    InvalidLessonTemplateReference,
+    // Unknown day_of_week value in the database (cannot be parsed into DayOfWeek).
+    InvalidDayOfWeek,
+    // Unknown week_parity value in the database (cannot be parsed into WeekParity).
+    InvalidWeekParity,
 }
 
 impl fmt::Display for DomainError {
@@ -134,6 +148,16 @@ impl fmt::Display for DomainError {
             DomainError::InvalidCabinetNumber => write!(f, "Invalid cabinet number"),
             DomainError::InvalidCabinetDescription => write!(f, "Invalid cabinet description"),
             DomainError::InvalidCabinetCapacity => write!(f, "Invalid cabinet capacity"),
+            DomainError::LessonTemplateNotFound => write!(f, "Lesson template not found"),
+            DomainError::LessonTemplateAlreadyExists => {
+                write!(f, "Lesson template already exists")
+            }
+            DomainError::InvalidLessonTemplateTime => write!(f, "Invalid lesson template time"),
+            DomainError::InvalidLessonTemplateReference => {
+                write!(f, "Invalid lesson template references")
+            }
+            DomainError::InvalidDayOfWeek => write!(f, "Invalid day of week"),
+            DomainError::InvalidWeekParity => write!(f, "Invalid week parity"),
         }
     }
 }

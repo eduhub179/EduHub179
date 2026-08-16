@@ -5,6 +5,7 @@ pub mod entities {
     pub mod class;
     pub mod homework;
     pub mod lesson;
+    pub mod lesson_template;
     pub mod student_group;
     pub mod subject;
     pub mod user;
@@ -14,9 +15,11 @@ pub mod entities {
 
 pub mod value_objects {
     pub mod class_letter;
+    pub mod day_of_week;
     pub mod homework_status;
     pub mod lesson_target;
     pub mod role;
+    pub mod week_parity;
     // pub mod deadline; TODO: сделать
 }
 
