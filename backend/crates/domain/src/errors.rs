@@ -104,6 +104,18 @@ pub enum DomainError {
     InvalidDayOfWeek,
     // Unknown week_parity value in the database (cannot be parsed into WeekParity).
     InvalidWeekParity,
+
+    // ScheduleWeek with the specified start date was not found.
+    ScheduleWeekNotFound,
+    // Unknown schedule_weeks.status value (cannot be parsed into WeekStatus).
+    InvalidWeekStatus,
+    // Unknown lesson_instances.status value (cannot be parsed into LessonInstanceStatus).
+    InvalidLessonInstanceStatus,
+    // A template cannot produce two instances in the same week (unique violation
+    // on idx_lesson_instances_unique).
+    LessonInstanceAlreadyExists,
+    // lesson_date must fall within [week_start_date, week_start_date + 7).
+    InvalidLessonInstanceDate,
 }
 
 impl fmt::Display for DomainError {
@@ -158,6 +170,15 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidDayOfWeek => write!(f, "Invalid day of week"),
             DomainError::InvalidWeekParity => write!(f, "Invalid week parity"),
+            DomainError::ScheduleWeekNotFound => write!(f, "Schedule week not found"),
+            DomainError::InvalidWeekStatus => write!(f, "Invalid week status"),
+            DomainError::InvalidLessonInstanceStatus => {
+                write!(f, "Invalid lesson instance status")
+            }
+            DomainError::LessonInstanceAlreadyExists => {
+                write!(f, "Lesson instance already exists")
+            }
+            DomainError::InvalidLessonInstanceDate => write!(f, "Invalid lesson instance date"),
         }
     }
 }

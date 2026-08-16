@@ -63,8 +63,9 @@ The system is designed with:
 | Entity | Purpose |
 |--------|---------|
 | `cabinets` | Classrooms (3-digit number, floor) |
+| `schedule_weeks` | Week container (draft/published, `copied_from`) — the unit of schedule building |
 | `lesson_templates` | Lesson templates (time + classroom + day of week) |
-| `lesson_instances` | Specific lessons on specific dates (template + week + date) |
+| `lesson_instances` | Specific lessons on specific dates (template + week + date + status + cabinet) |
 | `events` | Events (lectures, activities) |
 | `event_attendees` | Event participants |
 | `day_of_week` (ENUM) | Days of the week |
@@ -152,8 +153,29 @@ The system is designed with:
 **Key points:**
 - Lesson template = (lesson + day + time + classroom + periodicity)
 - The `is_active` flag in templates — for quick availability checks
-- The `is_override` flag — for lesson substitutions
-- Events override lessons in the student's schedule
+- The `is_override` flag — for lesson substitutions (to be dropped with the override table)
+- `lesson_instances` — one row per (template, week); `week_start_date` references `schedule_weeks`
+- `cabinet_id` lives on instances (weekly room shuffle); templates keep a default seed
+
+---
+
+
+### `0006_create_schedule_weeks.sql`
+
+**Tables:**
+- `schedule_weeks` — week container: `week_start_date` (PK), `status` (`draft`/`published`), `copied_from` (self-FK)
+
+**Changes to existing tables:**
+- `lesson_instances.cabinet_id` — cabinets move to instances (+ partial index)
+- `lesson_instances.week_start_date` → FK to `schedule_weeks` (existing weeks backfilled as `published`)
+
+**Functions (rewritten):**
+- `check_teacher_available(teacher, week_start_date, day, start, end, exclude_instance_id)` — week-aware: checks the week's instances (status = 'scheduled') first, falls back to active templates for weeks without instances
+- `get_student_schedule_for_date(student, date)` — returns lessons from **published** weeks + attended events together (nothing auto-shadows), with a `status` column so cancelled lessons can be rendered greyed
+
+**Key points:**
+- Students see only published weeks; availability checks see all (drafts included)
+- Overlaps (event vs lesson, club vs lesson) are shown, not hidden — the student decides
 
 ---
 
@@ -366,11 +388,12 @@ LEFT JOIN plusnik_records pr ON ...
 - The matrix is always up to date
 - Schema simplicity
 
-### 5.6 Events override lessons
+### 5.6 Events and lessons are shown together (no auto-shadowing)
 
-If a student participates in an event (lecture) that overlaps with a lesson — the event is shown in the schedule.
-
-**Solution:** the `get_student_schedule_for_date()` function with `NOT EXISTS` to exclude overlaps.
+If a student attends an event that overlaps with a lesson — **both** rows are returned by
+`get_student_schedule_for_date()` and the overlap is marked client-side; the student decides.
+Nothing is hidden automatically (decision 2026-08-16). A lesson replaced by a mandatory event
+is cancelled via instance status, not via shadowing.
 
 ### 5.7 Lesson templates with flags
 
@@ -431,17 +454,27 @@ VALUES ('student_id', 'sheet_id', 'task_id', 'teacher_id');
 ### 6.4 An admin builds the schedule
 
 ```sql
--- Check if the teacher is busy
-SELECT check_teacher_available('teacher_id', 'пн', '10:50', '11:35');
+-- The week must exist first (FK)
+INSERT INTO schedule_weeks (week_start_date, status)
+VALUES ('2026-07-27', 'draft');
+
+-- Check if the teacher is busy THAT WEEK (week-aware check)
+SELECT check_teacher_available('teacher_id', '2026-07-27', 'пн', '10:50', '11:35');
 
 -- Create a lesson template
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id)
 VALUES ('lesson_id', 'пн', '10:50', '11:35', 'cabinet_id');
 
--- Create a lesson instance for the week
+-- Create a lesson instance for the week (cell of the grid)
 INSERT INTO lesson_instances (template_id, week_start_date, lesson_date)
 VALUES ('template_id', '2026-07-27', '2026-07-27');
+
+-- Publish when the week is final
+UPDATE schedule_weeks SET status = 'published' WHERE week_start_date = '2026-07-27';
 ```
+
+**Note:** during the stable period the week is usually built by *copying the previous one*
+(cells are cloned 1:1, overrides are added manually) — see docs/SCHEDULE.en.md.
 
 ### 6.5 Lesson substitution (teacher is sick)
 
@@ -470,8 +503,9 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
 ```
 
 **The student's schedule:**
-- If the student participates in an event → the event is shown
-- Otherwise → the regular lesson is shown
+- If the student participates in an event → **both** the event and the lesson are returned;
+  the overlap is marked client-side and the student decides (nothing auto-shadows,
+  decision 2026-08-16)
 
 ---
 
@@ -487,6 +521,8 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
 0004_create_homework.sql           ← depends on 0003 (lesson_instances)
     ↓
 0005_create_plusnik.sql            ← depends on 0002 (lessons)
+    ↓
+0006_create_schedule_weeks.sql     ← depends on 0003 (week FK, functions)
 ```
 
 **Important:** `0003` and `0004` can run in any order after `0005`, but `0003` must run AFTER `0005`.
@@ -521,12 +557,12 @@ For large schools (>100 teachers) a materialized view `teacher_schedule` could b
 
 | Metric | Value |
 |--------|-------|
-| **Number of tables** | 18 |
+| **Number of tables** | 19 |
 | **Number of ENUMs** | 6 |
 | **Number of functions** | 4 |
-| **Number of triggers** | 10 |
-| **Number of indexes** | ~50 |
-| **Migration files** | 5 |
+| **Number of triggers** | 11 |
+| **Number of indexes** | ~52 |
+| **Migration files** | 6 |
 
 ---
 
