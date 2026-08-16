@@ -2,7 +2,8 @@
 
 > Status: **design, not implemented.** Decision log from 2026-08-16 (Max + Alan).
 > The `lesson_overrides` table does not exist yet — this doc is the spec the implementation PR will follow.
-> When the migration lands, the substitution recipe in `DATABASE_ARCHITECTURE.en.md` §6.5 will be updated to match.
+> When the migration lands, `DATABASE_ARCHITECTURE.en.md` gets updated to match: §6.5 (substitution
+> recipe) and §5.6/§6.1 (event shadowing → replaced by overlap display, see §7).
 
 ## 1. Why this exists
 
@@ -142,11 +143,25 @@ Homework is tied to `lesson_instances`. Rule on override:
 Deferred corner cases: end-of-term orphan (no next occurrence), revocation pull-back of
 relocated homework.
 
-## 7. Display precedence (per student)
+## 7. Display (per student) — nothing auto-shadows
 
-```
-event (student attends)  >  cancelled  >  active override  >  original lesson
-```
+**Every activity a student belongs to is shown; overlaps are marked; the student decides.**
+This applies to lessons AND events AND clubs alike — participation is always the student's
+choice, so the system shows the conflict instead of hiding one side (decision 2026-08-16):
+
+- Lesson row content: active override > original (the override swaps what is taught).
+- Event row: shown if the student is an attendee and the event overlaps the lesson slot.
+- Both rows appear with a conflict marker when they overlap.
+- A lesson replaced by a mandatory event is **cancelled via instance status**
+  (`status = 'cancelled'`) — the view shows "cancelled" + the event. No shadowing needed.
+
+Consequences for `get_student_schedule_for_date`: drop the event `NOT EXISTS` exclusion —
+lessons and attendee events are returned as separate rows; overlap marking is client-side.
+
+**Teachers are different: prevent, not display.** A teacher cannot split across two rooms, so
+overlaps are prevented by the availability check, not shown as a choice. Known gap to close
+later: event organizers are NOT covered by `check_teacher_available` today. Teacher-side
+overlap warnings are a later UI feature — no schema impact.
 
 ## 8. Schema changes (future migration, not yet written)
 
@@ -169,10 +184,9 @@ event (student attends)  >  cancelled  >  active override  >  original lesson
 - **Schedule generation** (copy previous week → next, then apply overrides): separate
   discussion, not designed here.
 - **Club/lesson overlap resolution** (real cases, Max 2026-08-16): a student's club can
-  overlap a regular lesson (or another club). The student decides per occurrence — skip the
-  overlapped part of the club and join later, or skip part of the lesson with the teacher's
-  permission. So clubs must NOT auto-shadow lessons (unlike events, which are a forced
-  replacement for attendees) — the schedule view should eventually SHOW the overlap clearly
-  (both rows + a conflict marker) and let the student choose. Design later.
+  overlap a regular lesson (or another club), and events can overlap lessons too. Unified
+  rule (see §7): show all rows + conflict marker, student decides — nothing auto-shadows.
+  Whether cancelled lessons should appear as greyed rows (vs hidden as today) is a display
+  question for later. Teacher-side overlap warnings + organizer-aware event check: later.
 - **Cabinet double-booking exclusion index** (same room, same time — across lessons, clubs,
   and events): worth building eventually; parked with the cabinet decision.
