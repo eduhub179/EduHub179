@@ -93,3 +93,6 @@ For every active template, create an instance for the target week
 - **Query changes** (when implemented): `get_student_schedule_for_date` gains a JOIN to
   `schedule_weeks` + `status = 'published'` filter, and returns instances including
   `cancelled` ones — greyed rows are a client-side decision (see OVERRIDES.en.md §9).
+- **Parity, if ever un-parked**: `generate_from_templates` and the availability check would
+  need to respect `week_parity` (odd/even weeks). The dedup index already supports odd/even
+  twin templates. No feature today — column parked.
