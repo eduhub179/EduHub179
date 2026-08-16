@@ -557,11 +557,11 @@ For large schools (>100 teachers) a materialized view `teacher_schedule` could b
 
 | Metric | Value |
 |--------|-------|
-| **Number of tables** | 19 |
+| **Number of tables** | 18 |
 | **Number of ENUMs** | 6 |
 | **Number of functions** | 4 |
 | **Number of triggers** | 11 |
-| **Number of indexes** | ~52 |
+| **Number of indexes** | ~49 |
 | **Migration files** | 6 |
 
 ---
