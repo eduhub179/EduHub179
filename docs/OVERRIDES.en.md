@@ -89,6 +89,21 @@ Key properties:
 
 No template surgery, no instance repointing, no dedup-index workaround.
 
+### Example — one-off subject swap between two slots
+
+"This week: Algebra instead of Literature on Monday, Literature instead of Algebra on
+Thursday." Both slots stay where they are; only the content changes:
+
+- **One-off (single week):** two overrides — Monday's instance → the Algebra lesson,
+  Thursday's instance → the Literature lesson. If the swapped lessons belong to the same
+  class and the teachers match, the EXISTING lesson rows are reused directly — no new
+  lessons needed.
+- **Permanent arrangement:** edit the templates (Monday's template points at the Algebra
+  lesson, Thursday's at Literature). This is the "templates change sometimes" layer,
+  not an override.
+
+Both cases stay inside the model — no slot-move machinery involved.
+
 ## 5. Availability check
 
 ```sql
@@ -153,3 +168,11 @@ event (student attends)  >  cancelled  >  active override  >  original lesson
   The dedup index already includes parity, so odd/even twin templates coexist.
 - **Schedule generation** (copy previous week → next, then apply overrides): separate
   discussion, not designed here.
+- **Club/lesson overlap resolution** (real cases, Max 2026-08-16): a student's club can
+  overlap a regular lesson (or another club). The student decides per occurrence — skip the
+  overlapped part of the club and join later, or skip part of the lesson with the teacher's
+  permission. So clubs must NOT auto-shadow lessons (unlike events, which are a forced
+  replacement for attendees) — the schedule view should eventually SHOW the overlap clearly
+  (both rows + a conflict marker) and let the student choose. Design later.
+- **Cabinet double-booking exclusion index** (same room, same time — across lessons, clubs,
+  and events): worth building eventually; parked with the cabinet decision.
