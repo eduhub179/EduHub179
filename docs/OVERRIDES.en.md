@@ -186,7 +186,6 @@ overlap warnings are a later UI feature — no schema impact.
 - **Club/lesson overlap resolution** (real cases, Max 2026-08-16): a student's club can
   overlap a regular lesson (or another club), and events can overlap lessons too. Unified
   rule (see §7): show all rows + conflict marker, student decides — nothing auto-shadows.
-  Whether cancelled lessons should appear as greyed rows (vs hidden as today) is a display
-  question for later. Teacher-side overlap warnings + organizer-aware event check: later.
+  Cancelled lessons: decided 2026-08-16 — shown as greyed rows (display decision, not schema). Teacher-side overlap warnings + organizer-aware event check: later.
 - **Cabinet double-booking exclusion index** (same room, same time — across lessons, clubs,
   and events): worth building eventually; parked with the cabinet decision.
