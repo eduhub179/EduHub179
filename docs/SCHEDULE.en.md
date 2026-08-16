@@ -86,7 +86,10 @@ For every active template, create an instance for the target week
 
 ## 6. Open / flagged
 
-- **Editing a published week**: re-draft it, or live-edit? Decide with the copy flow.
+- **Editing a published week — DECIDED (2026-08-16, hybrid):** re-draft is allowed only for
+  weeks that have not started yet (all lessons still in the future); once the week has begun
+  it is live-edit only — changes appear immediately, no hiding. Pure application-layer rule;
+  `status` column already covers it.
 - **Term / school-year grouping**: later.
 - **`template.cabinet_id` role shrinks to a week-1 seed** (everything after comes from copy
   + adjustments) — ties into the deferred cabinet-column decision.
