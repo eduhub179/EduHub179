@@ -34,6 +34,9 @@ CREATE TABLE schedule_weeks
     status          VARCHAR(20) NOT NULL DEFAULT 'draft'
         CHECK (status IN ('draft', 'published')),
 
+    -- Provenance: which week this one was copied from (NULL = generated from templates / manual)
+    copied_from     DATE NULL REFERENCES schedule_weeks (week_start_date),
+
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -53,12 +56,40 @@ CREATE TABLE schedule_weeks
 - Migration backfill: every week that already has instances gets `status = 'published'`
   so nothing disappears when the gate lands.
 
-## 5. Open / flagged
+## 5. Building a week — operations
 
-- **Copy-previous-week flow** (`copied_from`, bulk instance copy): separate discussion,
-  Max has ideas. The `schedule_weeks` table is its natural anchor.
+Both operations produce a `draft` week; the admin then adjusts (overrides, cancellations,
+cabinet changes) and publishes.
+
+### 5.1 Generate from templates
+
+For every active template, create an instance for the target week
+(`lesson_date = week_start_date + day`). Baseline for the start of the year / unstable period.
+
+### 5.2 Copy a week
+
+`copy_week(source, target)` — the stable-period workflow:
+
+- Target week row created as `draft` if missing; **error if the target already has instances**
+  (copy into empty weeks only, no accidental merges).
+- Source: previous week by default, any week selectable.
+- For each source instance → new instance: same `template_id`, `week_start_date = target`,
+  `lesson_date = source + 7 days`, `status = 'scheduled'` (fresh — cancellations are per-week
+  and do NOT carry over), `cabinet_id` copied as a starting point (admin adjusts; the
+  free-cabinet check is the guard — no automated validation yet, see OVERRIDES.en.md §9).
+- **Overrides are NOT copied** — even a multi-week substitution ("Ivanov out for 3 weeks")
+  is re-created per week, because the substitute teacher may vary week to week
+  (decision 2026-08-16).
+- Safe by construction: cells are 1:1 per (template, week) so `UNIQUE(template_id,
+  week_start_date)` guards duplicates; availability is week-scoped, so no cross-week conflicts.
+- `copied_from` records provenance. All in one transaction.
+
+## 6. Open / flagged
+
 - **Editing a published week**: re-draft it, or live-edit? Decide with the copy flow.
 - **Term / school-year grouping**: later.
+- **`template.cabinet_id` role shrinks to a week-1 seed** (everything after comes from copy
+  + adjustments) — ties into the deferred cabinet-column decision.
 - **Query changes** (when implemented): `get_student_schedule_for_date` gains a JOIN to
   `schedule_weeks` + `status = 'published'` filter, and returns instances including
   `cancelled` ones — greyed rows are a client-side decision (see OVERRIDES.en.md §9).
