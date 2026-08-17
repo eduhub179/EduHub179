@@ -30,7 +30,8 @@ Three layers stay unchanged:
 | `lesson_instances` | each time | concrete lesson on a concrete date, `status` |
 
 **An override is a side-channel attached to one instance:** "this occurrence runs different
-content". It swaps *what is taught and by whom*, never *when/where*:
+content". It swaps *what is taught, by whom, and in which room*, never *when* (the day/time
+slot is the instance's business):
 
 - The slot (day/time) always comes from the instance → template chain. An override cannot move
   a lesson. Moves are the schedule's job (template edit for permanent, instance generation for
@@ -46,6 +47,7 @@ CREATE TABLE lesson_overrides
     override_id UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
     instance_id UUID        NOT NULL REFERENCES lesson_instances (instance_id) ON DELETE CASCADE,
     lesson_id   UUID        NOT NULL REFERENCES lessons (lesson_id) ON DELETE RESTRICT, -- replacement lesson
+    cabinet_id  UUID NULL REFERENCES cabinets (cabinet_id) ON DELETE SET NULL, -- NULL = keep the instance's cabinet
     comment     TEXT NULL,          -- "Ivanov is sick, Petrov covers"
     created_by  UUID        NOT NULL REFERENCES users (user_id),
     revoked_at  TIMESTAMPTZ NULL,   -- NULL = active
@@ -67,10 +69,14 @@ Key properties:
   table, no duplicated validation.
 - **One lesson can back many overrides.** "Petrov covers ALL of Ivanov's Monday lessons this
   week" = 1 lesson row + N override rows (one per instance).
+- **Cabinet is a column on the override**, not on the replacement lesson (a lesson may be
+  reused across overrides with different rooms). NULL = keep the instance's cabinet. Effective
+  cabinet: `COALESCE(override.cabinet_id, instance.cabinet_id, template.cabinet_id)` — the
+  instance is never mutated, so revoking restores the original room too.
 - **Attendance always resolves from the ORIGINAL chain** (instance → template → original
-  lesson's class/group). The override contributes subject + teachers only. Application-level
-  rule: replacement lesson must target the same class/group. This prevents the
-  class-mismatch trap.
+  lesson's class/group). The override contributes subject + teachers + cabinet only.
+  Application-level rule: replacement lesson must target the same class/group. This prevents
+  the class-mismatch trap.
 - **No hard delete.** Restore = set `revoked_at`. History doubles as an admin reference
   ("last time Petrov covered for Ivanov") and as the audit trail.
 - **No day/time fields on the override.** Slot identity is the instance's business.
@@ -83,8 +89,9 @@ Key properties:
 **Substitute for a lesson:**
 1. Check availability (week-aware, see §5).
 2. Create the replacement lesson if it does not exist yet (same class/group; subject and
-   teachers as needed).
-3. `INSERT INTO lesson_overrides (instance_id, lesson_id, comment, created_by)`.
+   teachers as needed). Decide the cabinet: NULL = keep the instance's room, otherwise the
+   new room for this occurrence.
+3. `INSERT INTO lesson_overrides (instance_id, lesson_id, cabinet_id, comment, created_by)`.
 
 **Restore:** `UPDATE lesson_overrides SET revoked_at = now() WHERE override_id = ...`.
 
@@ -130,6 +137,10 @@ Two layers:
 Consequence of lazy generation: an override can only target an instance that already exists
 (weeks are generated one at a time).
 
+Cabinet is not part of teacher availability; the effective cabinet
+(`COALESCE(override.cabinet_id, instance.cabinet_id, template.cabinet_id)`) feeds the
+free-cabinet check instead (see §9).
+
 ## 6. Homework
 
 Homework is tied to `lesson_instances`. Rule on override:
@@ -149,7 +160,8 @@ relocated homework.
 This applies to lessons AND events AND clubs alike — participation is always the student's
 choice, so the system shows the conflict instead of hiding one side (decision 2026-08-16):
 
-- Lesson row content: active override > original (the override swaps what is taught).
+- Lesson row content: active override > original (the override swaps what is taught, by whom,
+  and the room).
 - Event row: shown if the student is an attendee and the event overlaps the lesson slot.
 - Both rows appear with a conflict marker when they overlap.
 - A lesson replaced by a mandatory event is **cancelled via instance status**
@@ -157,21 +169,24 @@ choice, so the system shows the conflict instead of hiding one side (decision 20
 
 Consequences for `get_student_schedule_for_date`: drop the event `NOT EXISTS` exclusion —
 lessons and attendee events are returned as separate rows; overlap marking is client-side.
+`cabinet_id` in the returned rows resolves through the override chain (see §5).
 
 **Teachers are different: prevent, not display.** A teacher cannot split across two rooms, so
 overlaps are prevented by the availability check, not shown as a choice. Known gap to close
 later: event organizers are NOT covered by `check_teacher_available` today. Teacher-side
 overlap warnings are a later UI feature — no schema impact.
 
-## 8. Schema changes (future migration, not yet written)
+## 8. Schema changes
 
-- NEW `lesson_overrides` (+ partial unique index, FKs) — §3.
-- `lesson_instances` + `cabinet_id UUID NULL` — cabinets move to instances (weekly
-  room shuffle without touching templates; truthful "free cabinet" queries). Template
-  keeps its `cabinet_id` for now; whether to drop it is a deferred memory optimization
-  (archives do not need cabinet info).
+**Already delivered by migration 0006** (`feat/schedule-layer`): `lesson_instances.cabinet_id`
+(cabinets move to instances), the week-aware `check_teacher_available` (§5), and the
+published-week gate in `get_student_schedule_for_date`.
+
+**Future migration (0007+, not yet written):**
+- NEW `lesson_overrides` (+ partial unique index, FKs, `cabinet_id`) — §3.
 - `lesson_templates`: drop `is_override` (no override templates anymore).
-- `check_teacher_available`: new week-aware signature (§5).
+- Template keeps its `cabinet_id` for now; whether to drop it is a deferred memory
+  optimization (archives do not need cabinet info).
 
 ## 9. Deferred / flagged for later
 
@@ -188,4 +203,5 @@ overlap warnings are a later UI feature — no schema impact.
   rule (see §7): show all rows + conflict marker, student decides — nothing auto-shadows.
   Cancelled lessons: decided 2026-08-16 — shown as greyed rows (display decision, not schema). Teacher-side overlap warnings + organizer-aware event check: later.
 - **Cabinet double-booking exclusion index** (same room, same time — across lessons, clubs,
-  and events): worth building eventually; parked with the cabinet decision.
+  and events): worth building eventually; parked with the cabinet decision. When built, it
+  checks the EFFECTIVE cabinet (override → instance → template), overrides included.
