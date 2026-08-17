@@ -56,36 +56,32 @@ CREATE TABLE schedule_weeks
 themselves are unlimited — nothing stops N templates for the same class at the same day/time
 (the dedup index is per-lesson, not per-class). The grid closes this hole structurally.
 
-One global grid per school (breaks are school-wide and change only unofficially); a `grid_id`
-can be added later without a breaking migration.
+The slot set is a fixed school-wide fact (the same bell every day): an **enum**, not a table —
+per-deployment schema; a school with a different bell edits the values in its own migration.
 
 ```sql
-CREATE TABLE schedule_grid_slots
-(
-    slot_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    day          day_of_week NOT NULL,
-    slot_number  INT NOT NULL,          -- 1..N, order within the day
-    start_time   TIME NOT NULL,
-    end_time     TIME NOT NULL,
-    is_break     BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT chk_grid_slot_time CHECK (end_time > start_time),
-    CONSTRAINT chk_grid_slot_unique UNIQUE (day, slot_number)
-);
+CREATE TYPE lesson_slot AS ENUM
+    ('lesson_1', 'lesson_2', 'lesson_3', 'lesson_4', 'lesson_5', 'lesson_6', 'lesson_7');
+
+ALTER TABLE lesson_templates ADD COLUMN slot lesson_slot NULL;
 ```
 
-- `lesson_templates.slot_id UUID NULL REFERENCES schedule_grid_slots (slot_id)`:
-  - **Class templates MUST reference a slot** (domain rule). `(day, start_time, end_time)`
-    stay populated and must equal the slot's values — so the dedup index, the availability
-    check and the schedule queries keep working unchanged.
-  - **Group/club templates keep `slot_id = NULL`** — free-form times; clubs rarely fit the
-    bell schedule, and overlaps with the grid are legal ("student decides", OVERRIDES §7).
-- Break slots (`is_break = TRUE`) cannot host templates (domain rule).
-- Same-class double-booking is prevented by a constraint trigger
-  `chk_no_class_double_booking` (a unique index cannot express it — `class_id` lives on
-  `lessons`): no two templates whose lessons target the same class may share a
-  `(slot_id, parity)`.
-- Consequence: instances per (class, week) are bounded by the number of non-break slots —
-  unlimited instances per week become impossible for the regular schedule.
+- `slot` is **optional for every template**. Assigning one marks the template as part of the
+  official schedule; the slot's times are a code constant (`LessonSlot::bell_times()` in Rust)
+  — one source of truth: the app auto-fills and validates the template's `(start_time,
+  end_time)` against it, so admins cannot diverge from the bell schedule.
+- **No `is_regular` flag needed.** The real invariant is uniform: a constraint trigger
+  `chk_no_class_double_booking` blocks any two ACTIVE templates targeting the same class from
+  overlapping in `(day, start_time, end_time)` (parity-compatible) — slotted or not. A
+  whole-class activity at 15:30 works because it overlaps nothing; two class lessons at the
+  same time are impossible.
+- **Group/club templates are never blocked** — overlaps with the grid and with each other are
+  legal ("student decides", OVERRIDES §7).
+- Blocking is at the template level; one-off slot substitutions (a lesson replaced by an
+  event) go through instance `status = 'cancelled'`, overrides, and events themselves
+  (OVERRIDES §7) — not through a second overlapping template.
+- Consequence: slotted templates bound instances per (class, week) to the number of slots, and
+  unslotted class templates cannot overlap anyway — the regular schedule cannot explode.
 
 **Decision (2026-08-17): templates stay ONE table.** The class/group kind already lives on
 `lessons` (class XOR group), and templates inherit it through their FK. Splitting templates
@@ -112,8 +108,8 @@ cabinet changes) and publishes.
 ### 6.1 Generate from templates
 
 For every active template, create an instance for the target week
-(`lesson_date = week_start_date + day`); day/time come from the template (which for class
-templates equals the grid slot's values, §4). Baseline for the start of the year / unstable
+(`lesson_date = week_start_date + day`); day/time come from the template (which for slotted
+templates equals the slot's bell times, §4). Baseline for the start of the year / unstable
 period.
 
 ### 6.2 Copy a week
