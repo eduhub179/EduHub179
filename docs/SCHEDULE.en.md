@@ -66,10 +66,35 @@ CREATE TYPE lesson_slot AS ENUM
 ALTER TABLE lesson_templates ADD COLUMN slot lesson_slot NULL;
 ```
 
+**Times live in code, not in the DB.** The DB stores only the slot *label* (`lesson_1`);
+the bell times are a Rust constant — the single source of truth:
+
+```rust
+// domain — the school's bell schedule. ONE place, can't drift from the DB.
+// Times below are illustrative; each deployment edits them to match its school.
+impl LessonSlot {
+    fn bell_times(&self) -> (Time, Time) {
+        match self {
+            Lesson1 => (08:30, 09:15),
+            Lesson2 => (09:25, 10:10),
+            Lesson3 => (10:20, 11:05),
+            Lesson4 => (11:15, 12:00),
+            Lesson5 => (12:20, 13:05),
+            Lesson6 => (13:15, 14:00),
+            Lesson7 => (14:10, 14:55),
+        }
+    }
+}
+```
+
 - `slot` is **optional for every template**. Assigning one marks the template as part of the
-  official schedule; the slot's times are a code constant (`LessonSlot::bell_times()` in Rust)
-  — one source of truth: the app auto-fills and validates the template's `(start_time,
-  end_time)` against it, so admins cannot diverge from the bell schedule.
+  official schedule; the app auto-fills the template's `(start_time, end_time)` from
+  `bell_times(slot)` and `try_new` validates them (hard error on mismatch) — an admin cannot
+  diverge from the bell schedule. Unslotted templates keep free-form times.
+- **Breaks are implicit** — the gaps between the times above. Nothing to store; `break_1..break_6`
+  can be added to the enum later if the bell UI ever needs them.
+- **Portability:** a school with a different bell edits the enum values (its own migration) and
+  this `match` (its own deployment) — the same per-deployment story as any other school data.
 - **No `is_regular` flag needed.** The real invariant is uniform: a constraint trigger
   `chk_no_class_double_booking` blocks any two ACTIVE templates targeting the same class from
   overlapping in `(day, start_time, end_time)` (parity-compatible) — slotted or not. A
