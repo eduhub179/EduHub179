@@ -275,7 +275,7 @@ async fn test_add_member_non_existent_student(pool: PgPool) {
     let fake_student_id = Uuid::new_v4();
     let result = group_repo.add_member(group.id, fake_student_id).await;
 
-    assert!(result.is_err());
+    assert_eq!(result, Err(DomainError::UserNotFound));
 }
 // ============================================================================
 // TESTS FOR add_members

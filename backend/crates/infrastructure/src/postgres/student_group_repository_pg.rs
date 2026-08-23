@@ -90,7 +90,10 @@ impl StudentGroupRepositoryPg {
                 // 23503 = foreign_key_violation (group or student does not exist).
                 // The use-case layer is expected to validate students beforehand,
                 // so this is reported as "group not found" for the MVP.
-                Some("23503") => DomainError::StudentGroupNotFound,
+                Some("23503") => match db_err.constraint() {
+                    Some("group_members_student_id_fkey") => DomainError::UserNotFound,
+                    Some("group_members_group_id_fkey") | _ => DomainError::StudentGroupNotFound,
+                },
                 _ => DomainError::StudentGroupNotFound,
             },
             _ => DomainError::StudentGroupNotFound,
