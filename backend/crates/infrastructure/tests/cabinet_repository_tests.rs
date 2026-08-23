@@ -10,7 +10,7 @@
 //! - Upsert semantics and unique-number violation.
 //! - Domain invariant validation (pure unit tests, no DB).
 
-use domain::entities::cabinet::{self, Cabinet};
+use domain::entities::cabinet::Cabinet;
 use domain::errors::DomainError;
 use domain::repositories::cabinet_repository::CabinetRepository;
 use infrastructure::postgres::CabinetRepositoryPg;

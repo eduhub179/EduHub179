@@ -180,6 +180,37 @@ impl StudentGroupRepository for StudentGroupRepositoryPg {
         Ok(())
     }
 
+    /// Adds multiple students to a group in a single query (idempotent).
+    ///
+    /// Uses `UNNEST` for efficient bulk insertion.
+    /// `ON CONFLICT (student_id, group_id) DO NOTHING` guarantees that
+    /// repeated calls with the same data will not cause errors or duplicates.
+    ///
+    /// Performance: O(1) database round-trip regardless of the array size.
+    /// Relies on the `idx_group_members_unique` index for conflict resolution.
+    async fn add_members(&self, group_id: Uuid, student_ids: &[Uuid]) -> Result<(), DomainError> {
+        // Fail-safe: early return for empty arrays to avoid unnecessary database hits
+        if student_ids.is_empty() {
+            return Ok(());
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO group_members (student_id, group_id)
+            SELECT student_id, $2
+            FROM unnest($1::uuid[]) AS student_id
+            ON CONFLICT (student_id, group_id) DO NOTHING
+            "#,
+        )
+        .bind(student_ids) // sqlx automatically maps `&[Uuid]` to PostgreSQL `uuid[]`
+        .bind(group_id)
+        .execute(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
+
+        Ok(())
+    }
+
     /// Removes a student from a group (idempotent).
     ///
     /// Removing a non-member is a no-op. If the group does not exist,
@@ -246,5 +277,21 @@ impl StudentGroupRepository for StudentGroupRepositoryPg {
         .await
         .map_err(Self::map_db_error)?;
         rows.into_iter().map(StudentGroupRow::into_domain).collect()
+    }
+    async fn has_member(&self, group_id: Uuid, student_id: Uuid) -> Result<bool, DomainError> {
+        let row: Option<i32> = sqlx::query_scalar(
+            r#"
+            SELECT 1
+            FROM group_members
+            WHERE group_id = $1 AND student_id = $2
+            "#,
+        )
+        .bind(group_id)
+        .bind(student_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
+
+        Ok(row.is_some())
     }
 }
