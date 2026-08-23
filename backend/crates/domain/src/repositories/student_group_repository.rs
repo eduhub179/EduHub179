@@ -35,13 +35,20 @@ pub trait StudentGroupRepository: Send + Sync {
     /// If a group with the same `name` exists (but different `group_id`),
     /// it raises a unique violation, mapped to `DomainError::StudentGroupAlreadyExists`.
     async fn save(&self, group: StudentGroup) -> Result<StudentGroup, DomainError>;
-    
+
     /// Adds a student to a group.
     ///
     /// Idempotent: adding a student who is already a member is a no-op
     /// (implemented via `INSERT ... ON CONFLICT DO NOTHING`).
     /// Fail-safe: Returns `StudentGroupNotFound` if the group doesn't exist.
     async fn add_member(&self, group_id: Uuid, student_id: Uuid) -> Result<(), DomainError>;
+
+    /// Adds multiple students to a group in a single query (idempotent).
+    ///
+    /// Returns `Err(DomainError::StudentGroupNotFound)` if the group does not exist.
+    /// Ignores students who are already members of the group.
+    /// If an empty slice is provided, returns `Ok(())` without querying the database.
+    async fn add_members(&self, group_id: Uuid, student_ids: &[Uuid]) -> Result<(), DomainError>;
 
     /// Removes a student from a group.
     ///
@@ -61,5 +68,18 @@ pub trait StudentGroupRepository: Send + Sync {
     ///
     /// Performance: relies on `idx_group_members_student`.
     /// Used, for example, when building a student's schedule.
-    async fn get_groups_by_student(&self, student_id: Uuid) -> Result<Vec<StudentGroup>, DomainError>;
+    async fn get_groups_by_student(
+        &self,
+        student_id: Uuid,
+    ) -> Result<Vec<StudentGroup>, DomainError>;
+
+    /// Checks if a student is a member of a group.
+    ///
+    /// Returns `true` if the student belongs to the group, `false` otherwise.
+    /// Does not raise an error if the group or student does not exist —
+    /// simply returns `false` in such cases.
+    ///
+    /// Performance: relies on `idx_group_members_group` and `idx_group_members_student`.
+    async fn has_member(&self, group_id: Uuid, student_id: Uuid) -> Result<bool, DomainError>;
 }
+

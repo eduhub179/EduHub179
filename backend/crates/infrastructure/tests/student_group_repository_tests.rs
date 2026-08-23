@@ -42,7 +42,7 @@ fn create_test_student(last_name: &str) -> User {
         None,
         None,
     )
-        .expect("Test student data should be valid")
+    .expect("Test student data should be valid")
 }
 
 // ============================================================================
@@ -179,7 +179,10 @@ async fn test_save_duplicate_name_raises_error(pool: PgPool) {
     repo.save(group_1).await.unwrap();
     let result = repo.save(group_2).await;
 
-    assert!(matches!(result, Err(DomainError::StudentGroupAlreadyExists)));
+    assert!(matches!(
+        result,
+        Err(DomainError::StudentGroupAlreadyExists)
+    ));
 }
 
 /// Test: save allows same name if updating the same group (upsert).
@@ -273,6 +276,102 @@ async fn test_add_member_non_existent_student(pool: PgPool) {
     let result = group_repo.add_member(group.id, fake_student_id).await;
 
     assert!(result.is_err());
+}
+// ============================================================================
+// TESTS FOR add_members
+// ============================================================================
+
+/// Test: add_members adds multiple students in a single query.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_add_members_bulk_success(pool: PgPool) {
+    let group_repo = StudentGroupRepositoryPg::new(pool.clone());
+    let user_repo = UserRepositoryPg::new(pool.clone());
+
+    let group = create_test_group("Advanced Mathematics");
+    group_repo.save(group.clone()).await.unwrap();
+
+    let student_1 = create_test_student("Ivanov");
+    let student_2 = create_test_student("Petrov");
+    let student_3 = create_test_student("Sidorov");
+
+    user_repo.save(student_1.clone()).await.unwrap();
+    user_repo.save(student_2.clone()).await.unwrap();
+    user_repo.save(student_3.clone()).await.unwrap();
+
+    let student_ids = vec![student_1.id, student_2.id, student_3.id];
+
+    // Act
+    let result = group_repo.add_members(group.id, &student_ids).await;
+
+    // Assert
+    assert!(result.is_ok());
+    let member_ids = group_repo.get_member_ids(group.id).await.unwrap();
+    assert_eq!(member_ids.len(), 3);
+    assert!(member_ids.contains(&student_1.id));
+    assert!(member_ids.contains(&student_2.id));
+    assert!(member_ids.contains(&student_3.id));
+}
+
+/// Test: add_members is idempotent — repeated calls with the same IDs do not duplicate records.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_add_members_idempotent(pool: PgPool) {
+    let group_repo = StudentGroupRepositoryPg::new(pool.clone());
+    let user_repo = UserRepositoryPg::new(pool.clone());
+
+    let group = create_test_group("Physics");
+    group_repo.save(group.clone()).await.unwrap();
+
+    let student = create_test_student("Kuznetsov");
+    user_repo.save(student.clone()).await.unwrap();
+
+    // Intentional duplicate in the array to test UNNEST + ON CONFLICT behavior
+    let student_ids = vec![student.id, student.id];
+
+    // First call
+    group_repo
+        .add_members(group.id, &student_ids)
+        .await
+        .unwrap();
+    // Second call (should be a no-op)
+    let result = group_repo.add_members(group.id, &student_ids).await;
+
+    assert!(result.is_ok());
+    let member_ids = group_repo.get_member_ids(group.id).await.unwrap();
+    assert_eq!(member_ids.len(), 1); // Only one unique student should exist
+}
+
+/// Test: add_members with an empty array returns Ok and does not hit the database.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_add_members_empty_array(pool: PgPool) {
+    let group_repo = StudentGroupRepositoryPg::new(pool.clone());
+
+    let group = create_test_group("Chemistry");
+    group_repo.save(group.clone()).await.unwrap();
+
+    let empty_ids: Vec<Uuid> = vec![];
+    let result = group_repo.add_members(group.id, &empty_ids).await;
+
+    assert!(result.is_ok());
+    let member_ids = group_repo.get_member_ids(group.id).await.unwrap();
+    assert!(member_ids.is_empty());
+}
+
+/// Test: add_members for a non-existent group returns StudentGroupNotFound.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_add_members_non_existent_group(pool: PgPool) {
+    let group_repo = StudentGroupRepositoryPg::new(pool.clone());
+    let user_repo = UserRepositoryPg::new(pool.clone());
+
+    let student = create_test_student("Smirnov");
+    user_repo.save(student.clone()).await.unwrap();
+
+    let fake_group_id = Uuid::new_v4();
+    let student_ids = vec![student.id];
+
+    let result = group_repo.add_members(fake_group_id, &student_ids).await;
+
+    // FK violation (23503) is correctly mapped to StudentGroupNotFound in map_db_error
+    assert!(matches!(result, Err(DomainError::StudentGroupNotFound)));
 }
 
 /// Test: a student can belong to multiple groups.
@@ -451,9 +550,18 @@ async fn test_get_groups_by_student_sorted_by_name(pool: PgPool) {
     user_repo.save(student.clone()).await.unwrap();
 
     // Insert memberships in random order
-    group_repo.add_member(group_fizika.id, student.id).await.unwrap();
-    group_repo.add_member(group_informatika.id, student.id).await.unwrap();
-    group_repo.add_member(group_algebra.id, student.id).await.unwrap();
+    group_repo
+        .add_member(group_fizika.id, student.id)
+        .await
+        .unwrap();
+    group_repo
+        .add_member(group_informatika.id, student.id)
+        .await
+        .unwrap();
+    group_repo
+        .add_member(group_algebra.id, student.id)
+        .await
+        .unwrap();
 
     let groups = group_repo.get_groups_by_student(student.id).await.unwrap();
 
@@ -491,22 +599,34 @@ async fn test_full_group_lifecycle(pool: PgPool) {
     assert_eq!(members.len(), 2);
 
     // Step 4: Verify each student sees the group
-    let groups_1 = group_repo.get_groups_by_student(student_1.id).await.unwrap();
-    let groups_2 = group_repo.get_groups_by_student(student_2.id).await.unwrap();
+    let groups_1 = group_repo
+        .get_groups_by_student(student_1.id)
+        .await
+        .unwrap();
+    let groups_2 = group_repo
+        .get_groups_by_student(student_2.id)
+        .await
+        .unwrap();
     assert_eq!(groups_1.len(), 1);
     assert_eq!(groups_2.len(), 1);
     assert_eq!(groups_1[0].id, group.id);
     assert_eq!(groups_2[0].id, group.id);
 
     // Step 5: Remove one student
-    group_repo.remove_member(group.id, student_1.id).await.unwrap();
+    group_repo
+        .remove_member(group.id, student_1.id)
+        .await
+        .unwrap();
 
     // Step 6: Verify removal
     let members_after = group_repo.get_member_ids(group.id).await.unwrap();
     assert_eq!(members_after.len(), 1);
     assert_eq!(members_after[0], student_2.id);
 
-    let groups_1_after = group_repo.get_groups_by_student(student_1.id).await.unwrap();
+    let groups_1_after = group_repo
+        .get_groups_by_student(student_1.id)
+        .await
+        .unwrap();
     assert!(groups_1_after.is_empty());
 
     // Step 7: Group is still fetchable
@@ -528,8 +648,8 @@ async fn test_rename_group_preserves_membership(pool: PgPool) {
     group_repo.add_member(group.id, student.id).await.unwrap();
 
     // Rename the group (same ID, new name)
-    let renamed = StudentGroup::try_new(group.id, "Английский B1".to_string())
-        .expect("Valid new name");
+    let renamed =
+        StudentGroup::try_new(group.id, "Английский B1".to_string()).expect("Valid new name");
     group_repo.save(renamed.clone()).await.unwrap();
 
     // Membership must be preserved
@@ -561,4 +681,61 @@ async fn test_cyrillic_sorting(pool: PgPool) {
     assert_eq!(result[0].name, "Английский");
     assert_eq!(result[1].name, "Математика");
     assert_eq!(result[2].name, "Японский");
+}
+
+// ============================================================================
+// TESTS FOR has_member
+// ============================================================================
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_has_member_non_existent_group(pool: PgPool) {
+    let group_repo = StudentGroupRepositoryPg::new(pool.clone());
+    let user_repo = UserRepositoryPg::new(pool);
+
+    let group = create_test_group("Английский B1");
+    group_repo.save(group.clone()).await.unwrap();
+
+    let student = create_test_student("Попов");
+    user_repo.save(student.clone()).await.unwrap();
+
+    let falsh_group = Uuid::new_v4();
+
+    let result = group_repo
+        .has_member(falsh_group, student.id)
+        .await
+        .unwrap();
+
+    assert_eq!(result, false);
+}
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_has_member_no_such_student(pool: PgPool) {
+    let group_repo = StudentGroupRepositoryPg::new(pool.clone());
+    let user_repo = UserRepositoryPg::new(pool);
+
+    let group = create_test_group("Английский B1");
+    group_repo.save(group.clone()).await.unwrap();
+
+    let student = create_test_student("Попов");
+    user_repo.save(student.clone()).await.unwrap();
+
+    let result = group_repo.has_member(group.id, student.id).await.unwrap();
+
+    assert_eq!(result, false);
+}
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_has_member_such_student_exists(pool: PgPool) {
+    let group_repo = StudentGroupRepositoryPg::new(pool.clone());
+    let user_repo = UserRepositoryPg::new(pool);
+
+    let group = create_test_group("Английский B1");
+    group_repo.save(group.clone()).await.unwrap();
+
+    let student = create_test_student("Попов");
+    user_repo.save(student.clone()).await.unwrap();
+
+    group_repo.add_member(group.id, student.id).await.unwrap();
+
+    let result = group_repo.has_member(group.id, student.id).await.unwrap();
+
+    assert_eq!(result, true);
 }
