@@ -441,36 +441,52 @@ async fn test_save_with_unknown_cabinet_rejected(pool: PgPool) {
 // TESTS: get_by_week
 // ============================================================================
 
-/// Test: get_by_week returns all instances of the week, ordered by lesson_date.
+/// Test: get_by_week returns all instances of the week, ordered by
+/// (lesson_date, template start_time) — day first, then time within the day.
+/// Regression: the template's day and the instance's lesson_date must agree
+/// (a Tuesday instance can only come from a Tuesday template).
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_get_by_week_returns_all_instances_ordered(pool: PgPool) {
+async fn test_get_by_week_ordered_by_day_then_time(pool: PgPool) {
     let env = TestEnv::new(pool);
     let lesson_a = env.setup_lesson("Математика").await;
     let lesson_b = env.setup_lesson("География").await;
+    let lesson_c = env.setup_lesson("Физика").await;
     let template_a = env
         .setup_template(lesson_a.id, DayOfWeek::Mon, t(9, 0), t(9, 45))
         .await;
     let template_b = env
         .setup_template(lesson_b.id, DayOfWeek::Mon, t(10, 50), t(11, 35))
         .await;
+    let template_c = env
+        .setup_template(lesson_c.id, DayOfWeek::Tue, t(9, 0), t(9, 45))
+        .await;
     let week = env.setup_week(d(2026, 9, 7), WeekStatus::Published).await;
 
-    // Monday and Tuesday of the same week.
-    let mon = create_instance(
+    // Two Monday instances at different times + one Tuesday instance.
+    // Each instance's date matches its template's day (Mon → 09-07, Tue → 09-08).
+    let mon_early = create_instance(
         template_a.id,
         week.week_start_date,
         d(2026, 9, 7),
         LessonInstanceStatus::Scheduled,
         None,
     );
-    let tue = create_instance(
+    let mon_late = create_instance(
         template_b.id,
+        week.week_start_date,
+        d(2026, 9, 7),
+        LessonInstanceStatus::Scheduled,
+        None,
+    );
+    let tue = create_instance(
+        template_c.id,
         week.week_start_date,
         d(2026, 9, 8),
         LessonInstanceStatus::Scheduled,
         None,
     );
-    env.setup_instance(mon.clone()).await;
+    env.setup_instance(mon_early.clone()).await;
+    env.setup_instance(mon_late.clone()).await;
     env.setup_instance(tue.clone()).await;
 
     let all = env
@@ -479,30 +495,36 @@ async fn test_get_by_week_returns_all_instances_ordered(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(all.len(), 2);
-    assert_eq!(all[0].id, mon.id, "ordered by lesson_date");
-    assert_eq!(all[1].id, tue.id);
+    assert_eq!(all.len(), 3);
+    assert_eq!(all[0].id, mon_early.id, "Monday 09:00 first");
+    assert_eq!(all[1].id, mon_late.id, "Monday 10:50 second");
+    assert_eq!(all[2].id, tue.id, "Tuesday after all Mondays");
 }
 
 // ============================================================================
 // TESTS: get_by_date
 // ============================================================================
 
-/// Test: get_by_date returns only instances on the queried date.
+/// Test: get_by_date returns only instances on the queried date, ordered by
+/// the template's start_time.
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_get_by_date_returns_only_that_date(pool: PgPool) {
+async fn test_get_by_date_returns_only_that_date_ordered_by_time(pool: PgPool) {
     let env = TestEnv::new(pool);
     let lesson_a = env.setup_lesson("Русский").await;
     let lesson_b = env.setup_lesson("Химия").await;
+    let lesson_c = env.setup_lesson("Биология").await;
     let template_a = env
         .setup_template(lesson_a.id, DayOfWeek::Mon, t(9, 0), t(9, 45))
         .await;
     let template_b = env
         .setup_template(lesson_b.id, DayOfWeek::Wed, t(9, 0), t(9, 45))
         .await;
+    let template_c = env
+        .setup_template(lesson_c.id, DayOfWeek::Wed, t(13, 0), t(13, 45))
+        .await;
     let week = env.setup_week(d(2026, 9, 7), WeekStatus::Published).await;
 
-    // Monday and Wednesday of the same week.
+    // Monday + two Wednesday instances at different times.
     let mon = create_instance(
         template_a.id,
         week.week_start_date,
@@ -510,23 +532,32 @@ async fn test_get_by_date_returns_only_that_date(pool: PgPool) {
         LessonInstanceStatus::Scheduled,
         None,
     );
-    let wed = create_instance(
+    let wed_early = create_instance(
         template_b.id,
         week.week_start_date,
         d(2026, 9, 9),
         LessonInstanceStatus::Scheduled,
         None,
     );
+    let wed_late = create_instance(
+        template_c.id,
+        week.week_start_date,
+        d(2026, 9, 9),
+        LessonInstanceStatus::Scheduled,
+        None,
+    );
     env.setup_instance(mon.clone()).await;
-    env.setup_instance(wed.clone()).await;
+    env.setup_instance(wed_early.clone()).await;
+    env.setup_instance(wed_late.clone()).await;
 
     let on_wed = env
         .lesson_instance_repo
         .get_by_date(d(2026, 9, 9))
         .await
         .unwrap();
-    assert_eq!(on_wed.len(), 1);
-    assert_eq!(on_wed[0].id, wed.id);
+    assert_eq!(on_wed.len(), 2);
+    assert_eq!(on_wed[0].id, wed_early.id, "Wednesday 09:00 first");
+    assert_eq!(on_wed[1].id, wed_late.id, "Wednesday 13:00 second");
 
     let on_mon = env
         .lesson_instance_repo
