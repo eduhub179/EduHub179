@@ -459,11 +459,11 @@ INSERT INTO schedule_weeks (week_start_date, status)
 VALUES ('2026-07-27', 'draft');
 
 -- Проверяем, занят ли учитель В ЭТУ НЕДЕЛЮ (недельно-зависимая проверка)
-SELECT check_teacher_available('teacher_id', '2026-07-27', 'пн', '10:50', '11:35');
+SELECT check_teacher_available('teacher_id', '2026-07-27', 'mon', '10:50', '11:35');
 
 -- Создаём шаблон урока
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id)
-VALUES ('lesson_id', 'пн', '10:50', '11:35', 'cabinet_id');
+VALUES ('lesson_id', 'mon', '10:50', '11:35', 'cabinet_id');
 
 -- Создаём экземпляр урока на неделю (ячейка сетки)
 INSERT INTO lesson_instances (template_id, week_start_date, lesson_date)
@@ -481,7 +481,7 @@ UPDATE schedule_weeks SET status = 'published' WHERE week_start_date = '2026-07-
 ```sql
 -- Создаём шаблон для замены
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id, is_override, comment)
-VALUES ('new_lesson_id', 'пн', '10:50', '11:35', 'cabinet_id', TRUE, 'Иванов заболел');
+VALUES ('new_lesson_id', 'mon', '10:50', '11:35', 'cabinet_id', TRUE, 'Иванов заболел');
 
 -- Переводим урок этой недели на шаблон замены
 UPDATE lesson_instances

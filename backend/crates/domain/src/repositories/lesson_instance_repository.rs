@@ -21,11 +21,13 @@ pub trait LessonInstanceRepository: Send + Sync {
     /// Fail-safe: Returns `LessonInstanceNotFound` if the record doesn't exist.
     async fn get_by_id(&self, instance_id: Uuid) -> Result<LessonInstance, DomainError>;
 
-    /// Fetches all instances of a week, ordered by lesson_date.
+    /// Fetches all instances of a week, ordered by (lesson_date, template start_time)
+    /// — day first, then time within the day (the natural reading order).
     /// A week "knows" its cells through this query.
     async fn get_by_week(&self, week_start_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError>;
 
-    /// Fetches all instances on a concrete date (the student schedule backbone).
+    /// Fetches all instances on a concrete date, ordered by start_time
+    /// (the student schedule backbone).
     /// Performance: relies on `idx_lesson_instances_date`.
     async fn get_by_date(&self, lesson_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError>;
 

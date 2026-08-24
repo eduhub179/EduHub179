@@ -80,7 +80,7 @@ impl ScheduleWeekRepository for ScheduleWeekRepositoryPg {
     async fn get_by_id(&self, week_start_date: NaiveDate) -> Result<ScheduleWeek, DomainError> {
         let row = sqlx::query_as::<_, ScheduleWeekRow>(
             r#"
-            SELECT week_start_date, status, copied_from
+            SELECT week_start_date, status::TEXT, copied_from
             FROM schedule_weeks
             WHERE week_start_date = $1
             "#,
@@ -96,7 +96,7 @@ impl ScheduleWeekRepository for ScheduleWeekRepositoryPg {
     async fn get_all(&self) -> Result<Vec<ScheduleWeek>, DomainError> {
         let rows = sqlx::query_as::<_, ScheduleWeekRow>(
             r#"
-            SELECT week_start_date, status, copied_from
+            SELECT week_start_date, status::TEXT, copied_from
             FROM schedule_weeks
             ORDER BY week_start_date DESC
             "#,
@@ -119,7 +119,7 @@ impl ScheduleWeekRepository for ScheduleWeekRepositoryPg {
             r#"
             INSERT INTO schedule_weeks
                 (week_start_date, status, copied_from)
-            VALUES ($1, $2, $3)
+            VALUES ($1, $2::week_status, $3)
             ON CONFLICT (week_start_date) DO UPDATE SET
                 status      = EXCLUDED.status,
                 copied_from = EXCLUDED.copied_from

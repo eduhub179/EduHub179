@@ -81,7 +81,7 @@ async fn seed_student_with_lesson(pool: &PgPool, instance_status: &str) -> Seed 
     // 5. Template: Monday 10:00-10:45, every week
     sqlx::query(
         "INSERT INTO lesson_templates (template_id, lesson_id, day, start_time, end_time, parity)
-         VALUES ($1, $2, 'пн'::day_of_week, '10:00'::TIME, '10:45'::TIME, 'every'::week_parity)",
+         VALUES ($1, $2, 'mon'::day_of_week, '10:00'::TIME, '10:45'::TIME, 'every'::week_parity)",
     )
     .bind(template_id)
     .bind(lesson_id)
@@ -102,7 +102,7 @@ async fn seed_student_with_lesson(pool: &PgPool, instance_status: &str) -> Seed 
     // 7. Instance on 2026-09-07 (week starts 2026-09-07)
     sqlx::query(
         "INSERT INTO lesson_instances (instance_id, template_id, week_start_date, lesson_date, status)
-         VALUES ($1, $2, '2026-09-07'::DATE, '2026-09-07'::DATE, $3::VARCHAR)",
+         VALUES ($1, $2, '2026-09-07'::DATE, '2026-09-07'::DATE, $3::lesson_instance_status)",
     )
     .bind(instance_id)
     .bind(template_id)

@@ -459,11 +459,11 @@ INSERT INTO schedule_weeks (week_start_date, status)
 VALUES ('2026-07-27', 'draft');
 
 -- Check if the teacher is busy THAT WEEK (week-aware check)
-SELECT check_teacher_available('teacher_id', '2026-07-27', 'пн', '10:50', '11:35');
+SELECT check_teacher_available('teacher_id', '2026-07-27', 'mon', '10:50', '11:35');
 
 -- Create a lesson template
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id)
-VALUES ('lesson_id', 'пн', '10:50', '11:35', 'cabinet_id');
+VALUES ('lesson_id', 'mon', '10:50', '11:35', 'cabinet_id');
 
 -- Create a lesson instance for the week (cell of the grid)
 INSERT INTO lesson_instances (template_id, week_start_date, lesson_date)
@@ -481,7 +481,7 @@ UPDATE schedule_weeks SET status = 'published' WHERE week_start_date = '2026-07-
 ```sql
 -- Create a substitution template
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id, is_override, comment)
-VALUES ('new_lesson_id', 'пн', '10:50', '11:35', 'cabinet_id', TRUE, 'Ivanov is sick');
+VALUES ('new_lesson_id', 'mon', '10:50', '11:35', 'cabinet_id', TRUE, 'Ivanov is sick');
 
 -- Point this week's lesson at the substitution template
 UPDATE lesson_instances

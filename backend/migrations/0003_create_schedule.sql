@@ -4,7 +4,7 @@
 -- ============================================
 -- 1. DAYS OF THE WEEK
 -- ============================================
-CREATE TYPE day_of_week AS ENUM ('пн', 'вт', 'ср', 'чт', 'пт', 'сб');
+CREATE TYPE day_of_week AS ENUM ('mon', 'tue', 'wed', 'thu', 'fri', 'sat');
 
 
 -- ============================================
@@ -14,6 +14,14 @@ CREATE TYPE day_of_week AS ENUM ('пн', 'вт', 'ср', 'чт', 'пт', 'сб')
 -- even  — only on even weeks
 -- ============================================
 CREATE TYPE week_parity AS ENUM ('every', 'odd', 'even');
+
+
+-- ============================================
+-- 2.5 LESSON INSTANCE STATUS
+-- Status of a concrete lesson occurrence. A real PG enum, matching the
+-- homework_status style (0004) — not VARCHAR + CHECK.
+-- ============================================
+CREATE TYPE lesson_instance_status AS ENUM ('scheduled', 'completed', 'cancelled');
 
 
 -- ============================================
@@ -142,9 +150,8 @@ CREATE TABLE lesson_instances
     -- Lesson date (computed from week_start_date + day, but stored for convenience)
     lesson_date DATE        NOT NULL,
 
-    -- Lesson status
-    status      VARCHAR(20) NOT NULL DEFAULT 'scheduled'
-        CHECK (status IN ('scheduled', 'completed', 'cancelled')),
+    -- Lesson status (scheduled / completed / cancelled)
+    status      lesson_instance_status NOT NULL DEFAULT 'scheduled',
 
     -- Timestamps
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),

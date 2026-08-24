@@ -97,7 +97,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
         let row = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
             SELECT instance_id, template_id, week_start_date, lesson_date,
-                   status, cabinet_id
+                   status::TEXT, cabinet_id
             FROM lesson_instances
             WHERE instance_id = $1
             "#,
@@ -109,16 +109,18 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
         row.into_domain()
     }
 
-    /// Fetches all instances of a week, ordered by lesson_date.
+    /// Fetches all instances of a week, ordered by (lesson_date, template
+    /// start_time) — day first, then time within the day.
     /// Performance: relies on `idx_lesson_instances_week`.
     async fn get_by_week(&self, week_start_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError> {
         let rows = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
-            SELECT instance_id, template_id, week_start_date, lesson_date,
-                   status, cabinet_id
-            FROM lesson_instances
-            WHERE week_start_date = $1
-            ORDER BY lesson_date
+            SELECT li.instance_id, li.template_id, li.week_start_date, li.lesson_date,
+                   li.status::TEXT, li.cabinet_id
+            FROM lesson_instances li
+                     JOIN lesson_templates lt ON lt.template_id = li.template_id
+            WHERE li.week_start_date = $1
+            ORDER BY li.lesson_date, lt.start_time
             "#,
         )
         .bind(week_start_date)
@@ -130,17 +132,18 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
             .collect()
     }
 
-    /// Fetches all instances on a concrete date, ordered by lesson_date
+    /// Fetches all instances on a concrete date, ordered by start_time
     /// (the student schedule backbone).
     /// Performance: relies on `idx_lesson_instances_date`.
     async fn get_by_date(&self, lesson_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError> {
         let rows = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
-            SELECT instance_id, template_id, week_start_date, lesson_date,
-                   status, cabinet_id
-            FROM lesson_instances
-            WHERE lesson_date = $1
-            ORDER BY lesson_date
+            SELECT li.instance_id, li.template_id, li.week_start_date, li.lesson_date,
+                   li.status::TEXT, li.cabinet_id
+            FROM lesson_instances li
+                     JOIN lesson_templates lt ON lt.template_id = li.template_id
+            WHERE li.lesson_date = $1
+            ORDER BY lt.start_time
             "#,
         )
         .bind(lesson_date)
@@ -158,7 +161,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
         let rows = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
             SELECT instance_id, template_id, week_start_date, lesson_date,
-                   status, cabinet_id
+                   status::TEXT, cabinet_id
             FROM lesson_instances
             WHERE template_id = $1
             ORDER BY week_start_date
@@ -185,7 +188,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
             r#"
             INSERT INTO lesson_instances
                 (instance_id, template_id, week_start_date, lesson_date, status, cabinet_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5::lesson_instance_status, $6)
             ON CONFLICT (instance_id) DO UPDATE SET
                 template_id     = EXCLUDED.template_id,
                 week_start_date = EXCLUDED.week_start_date,
