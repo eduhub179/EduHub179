@@ -23,16 +23,14 @@ CREATE TYPE week_parity AS ENUM ('every', 'odd', 'even');
 -- the admin creates the week (draft), fills it with lesson_instances,
 -- then publishes it. Students see instances only in PUBLISHED weeks.
 -- ============================================
--- Week lifecycle (a real PG enum, like homework_status in 0004).
-CREATE TYPE week_status AS ENUM ('draft', 'published');
-
 CREATE TABLE schedule_weeks
 (
     week_start_date DATE PRIMARY KEY,
 
     -- draft — admin is still building the week, invisible to students
     -- published — the week is final, students can see it
-    status          week_status NOT NULL DEFAULT 'draft',
+    status          VARCHAR(20) NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'published')),
 
     -- Which week this one was copied from (NULL = generated from templates / manual)
     copied_from     DATE NULL REFERENCES schedule_weeks (week_start_date),
@@ -49,14 +47,7 @@ CREATE TRIGGER trigger_schedule_weeks_updated_at
 
 
 -- ============================================
--- 4. LESSON INSTANCE STATUS
--- Status of a concrete lesson occurrence (a real PG enum, like homework_status).
--- ============================================
-CREATE TYPE lesson_instance_status AS ENUM ('scheduled', 'completed', 'cancelled');
-
-
--- ============================================
--- 5. CABINETS
+-- 4. CABINETS
 -- A cabinet is a 3-digit number (floor + room number on the floor).
 -- Stored as a separate entity to protect against typos
 -- and to allow adding metadata (equipment, capacity).
@@ -86,7 +77,7 @@ CREATE INDEX idx_cabinets_floor ON cabinets (floor);
 
 
 -- ============================================
--- 6. LESSON TEMPLATES
+-- 5. LESSON TEMPLATES
 -- A lesson template is a "subject-time-cabinet" combination that is always valid.
 -- Created once, used in the schedule.
 -- Changing a template automatically updates all lessons generated from it.
@@ -151,7 +142,7 @@ CREATE INDEX idx_lesson_templates_lesson
 
 
 -- ============================================
--- 7. CONCRETE LESSONS (ON SPECIFIC DATES)
+-- 6. CONCRETE LESSONS (ON SPECIFIC DATES)
 -- lesson_instance is a concrete lesson on a concrete date.
 -- It carries the template it was generated from + the week it belongs to
 -- (week_start_date) + the concrete date (lesson_date).
@@ -180,7 +171,8 @@ CREATE TABLE lesson_instances
     lesson_date DATE        NOT NULL,
 
     -- Lesson status (scheduled / completed / cancelled)
-    status      lesson_instance_status NOT NULL DEFAULT 'scheduled',
+    status      VARCHAR(20) NOT NULL DEFAULT 'scheduled'
+        CHECK (status IN ('scheduled', 'completed', 'cancelled')),
 
     -- Room for THIS week's lesson (overrides the template's room;
     -- NULL = use the template's room). Lets rooms move week to week.
@@ -214,7 +206,7 @@ CREATE INDEX idx_lesson_instances_cabinet
 
 
 -- ============================================
--- 8. EVENTS (LECTURES, MEETINGS, ELECTIVES)
+-- 7. EVENTS (LECTURES, MEETINGS, ELECTIVES)
 -- An event is a one-time or recurring activity
 -- that is not a lesson but takes up students' time.
 -- Unlike groups, events do not change the class structure.
@@ -258,7 +250,7 @@ CREATE INDEX idx_events_organizer
 
 
 -- ============================================
--- 9. EVENT ATTENDEES
+-- 8. EVENT ATTENDEES
 -- student ↔ event relationship. A student can participate
 -- in several events, an event can include
 -- students from different classes.
@@ -287,7 +279,7 @@ CREATE INDEX idx_event_attendees_event
 
 
 -- ============================================
--- 10. FUNCTION: TEACHER AVAILABILITY CHECK (WEEK-AWARE)
+-- 9. FUNCTION: TEACHER AVAILABILITY CHECK (WEEK-AWARE)
 -- Checks whether a teacher is busy in a given week at the given day/time.
 -- Instance-first: if the week already has generated instances, only what is
 -- actually scheduled that week counts (status = 'scheduled'; cancelled
@@ -340,7 +332,7 @@ LANGUAGE plpgsql;
 
 
 -- ============================================
--- 11. FUNCTION: STUDENT SCHEDULE FOR A DATE
+-- 10. FUNCTION: STUDENT SCHEDULE FOR A DATE
 -- Returns the student's lessons and events on a concrete date, shown
 -- together — overlaps are marked client-side, nothing is hidden.
 -- - Lessons come only from PUBLISHED weeks; cancelled instances are
@@ -378,7 +370,7 @@ SELECT lt.start_time,
        lt.end_time,
        s.name AS title,
        FALSE  AS is_event,
-       li.status::VARCHAR(20) AS status,
+       li.status AS status,
        COALESCE(li.cabinet_id, lt.cabinet_id) AS cabinet_id
 FROM lesson_instances li
          JOIN lesson_templates lt ON li.template_id = lt.template_id
@@ -400,7 +392,7 @@ LANGUAGE plpgsql;
 
 
 -- ============================================
--- 12. TRIGGERS FOR UPDATING updated_at
+-- 11. TRIGGERS FOR UPDATING updated_at
 -- ============================================
 CREATE TRIGGER trigger_lesson_templates_updated_at
     BEFORE UPDATE

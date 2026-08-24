@@ -146,8 +146,6 @@ The system is designed with:
 **ENUM:**
 - `day_of_week` — days of the week (mon–sat; Sunday has no lessons — only events)
 - `week_parity` — periodicity
-- `week_status` — week lifecycle (`draft` / `published`)
-- `lesson_instance_status` — lesson status (`scheduled` / `completed` / `cancelled`)
 
 **Functions:**
 - `check_teacher_available(teacher, week_start_date, day, start, end, exclude_instance_id)` — week-aware: checks the week's instances (status = 'scheduled') first, falls back to active templates for weeks without instances
@@ -185,7 +183,7 @@ The system is designed with:
 
 ---
 
-### `0004_create_plusnik.sql`
+### `0005_create_plusnik.sql`
 
 **Tables:**
 - `plusnik_sheets` — problem worksheets
