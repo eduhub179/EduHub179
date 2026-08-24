@@ -1,9 +1,9 @@
 //! Integration tests for the `get_student_schedule_for_date` SQL function.
 //!
-//! Regression coverage for the schedule layer (after migration 0006):
+//! Coverage of the schedule functions:
 //! - a 'scheduled' instance appears in the student's schedule;
 //! - a 'cancelled' instance appears WITH its status (greyed client-side,
-//!   decision 2026-08-16 — nothing auto-shadows);
+//!   nothing auto-shadows);
 //! - an event that overlaps a lesson is shown ALONGSIDE it (both rows,
 //!   no auto-shadowing);
 //! - instances of un-published weeks are not visible.
@@ -89,7 +89,7 @@ async fn seed_student_with_lesson(pool: &PgPool, instance_status: &str) -> Seed 
     .await
     .expect("Insert lesson template should succeed");
 
-    // 6. Schedule week 2026-09-07 must exist BEFORE its instances (FK added in 0006);
+    // 6. Schedule week 2026-09-07 must exist BEFORE its instances (FK);
     //    published so the instance is visible to the student.
     sqlx::query(
         "INSERT INTO schedule_weeks (week_start_date, status)
@@ -156,7 +156,7 @@ async fn test_scheduled_lesson_appears(pool: PgPool) {
 }
 
 /// A cancelled instance appears WITH its status — the client renders it greyed
-/// (decision 2026-08-16: nothing auto-shadows, not even cancellations).
+/// (nothing auto-shadows, not even cancellations).
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_cancelled_lesson_appears_with_status(pool: PgPool) {
     let seed = seed_student_with_lesson(&pool, "cancelled").await;
@@ -170,8 +170,8 @@ async fn test_cancelled_lesson_appears_with_status(pool: PgPool) {
     assert_eq!(status.as_deref(), Some("cancelled"));
 }
 
-/// An event that overlaps a lesson is shown ALONGSIDE it — nothing auto-shadows
-/// (decision 2026-08-16). The student sees both rows and decides.
+/// An event that overlaps a lesson is shown ALONGSIDE it — nothing auto-shadows.
+/// The student sees both rows and decides.
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_event_and_lesson_are_both_shown(pool: PgPool) {
     let seed = seed_student_with_lesson(&pool, "scheduled").await;

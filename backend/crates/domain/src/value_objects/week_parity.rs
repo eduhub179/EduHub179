@@ -5,10 +5,9 @@
 //! Any attempt to parse an unknown string from the DB will return
 //! `Err(DomainError::InvalidWeekParity)`.
 //!
-//! NOTE (2026-08-16): parity is stored but NOT read anywhere yet — availability
-//! checks and week generation treat every template as 'every'. The column is kept
-//! "just in case" (future every-other-week clubs/lessons); the dedup index already
-//! includes parity, so odd/even twin templates coexist. See docs/SCHEDULE.en.md.
+//! NOTE: parity is stored but not read by availability checks or week
+//! generation yet — every template is currently treated as 'every'. The dedup
+//! index includes parity, so odd/even twin templates coexist.
 
 use crate::errors::DomainError;
 use std::str::FromStr;

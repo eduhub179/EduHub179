@@ -162,7 +162,7 @@ async fn seed_lesson_instance(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
     .await
     .expect("Insert lesson template should succeed");
 
-    // 5. Schedule week 2026-09-07 must exist BEFORE its instances (FK added in 0006)
+    // 5. Schedule week 2026-09-07 must exist BEFORE its instances (FK)
     sqlx::query(
         r#"
         INSERT INTO schedule_weeks (week_start_date, status)

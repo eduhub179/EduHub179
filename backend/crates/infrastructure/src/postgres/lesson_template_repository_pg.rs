@@ -11,7 +11,7 @@
 //! - `save` uses `ON CONFLICT (template_id)` for atomic upsert.
 //!
 //! NOTE: `is_override` is deliberately NOT selected/inserted — the column is
-//! dead weight per docs/OVERRIDES.en.md and keeps its default `FALSE` on insert.
+//! always `FALSE` and keeps its default on insert.
 //!
 //! Slot-conflict rule: `save` rejects a NEW or UPDATED active template that
 //! would overlap another ACTIVE template of the same lesson at a
@@ -182,8 +182,7 @@ impl LessonTemplateRepository for LessonTemplateRepositoryPg {
 
     /// Saves or updates a template (atomic upsert on `template_id`).
     ///
-    /// `is_override` is not in the column list — it keeps its DB default `FALSE`
-    /// (see docs/OVERRIDES.en.md; the column will be dropped later).
+    /// `is_override` is not in the column list — it stays at its default `FALSE`.
     ///
     /// For ACTIVE templates the write is preceded by the slot-conflict check:
     /// another ACTIVE template of the same lesson may not overlap in (day, time)
