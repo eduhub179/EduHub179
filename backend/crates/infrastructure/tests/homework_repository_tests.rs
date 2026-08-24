@@ -154,7 +154,7 @@ async fn seed_lesson_instance(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
     )
     .bind(template_id)
     .bind(lesson_id)
-    .bind("пн")
+    .bind("mon")
     .bind("10:00")
     .bind("10:45")
     .bind("every")

@@ -14,14 +14,17 @@
 -- ============================================
 -- 1. WEEKS (schedule container)
 -- ============================================
+-- Week lifecycle enum (matches homework_status style: a real PG enum,
+-- not VARCHAR + CHECK).
+CREATE TYPE week_status AS ENUM ('draft', 'published');
+
 CREATE TABLE schedule_weeks
 (
     week_start_date DATE PRIMARY KEY,
 
     -- Lifecycle: admin builds a week as draft, publishes when final.
     -- Students see instances only in PUBLISHED weeks (availability checks see all).
-    status          VARCHAR(20) NOT NULL DEFAULT 'draft'
-        CHECK (status IN ('draft', 'published')),
+    status          week_status NOT NULL DEFAULT 'draft',
 
     -- Provenance: which week this one was copied from
     -- (NULL = generated from templates / manual).
@@ -52,11 +55,24 @@ CREATE INDEX idx_lesson_instances_cabinet
 
 -- ============================================
 -- 3. WEEKS BEFORE INSTANCES (FK)
--- Backfill: every week that already has instances becomes 'published',
--- so nothing disappears when the visibility gate lands.
+--
+-- Plain-language version: before 0006 an instance could exist with NO
+-- schedule_weeks row (there was no FK). From now on every instance MUST
+-- belong to an existing week. If the database already has instances
+-- (created before 0006), adding the FK outright would fail — their weeks
+-- have no rows yet. So, in two steps:
+--
+--   1) Backfill: for every week_start_date that appears in lesson_instances,
+--      create a schedule_weeks row. Status = 'published' on purpose: before
+--      the visibility gate existed, students saw ALL instances; making these
+--      weeks 'draft' would suddenly hide existing lessons.
+--      ON CONFLICT DO NOTHING = if the week row already exists, leave it alone.
+--
+--   2) Add the FK constraint, so "no instance without a week" is enforced
+--      by the database from now on.
 -- ============================================
 INSERT INTO schedule_weeks (week_start_date, status)
-SELECT DISTINCT week_start_date, 'published'
+SELECT DISTINCT week_start_date, 'published'::week_status
 FROM lesson_instances
 ON CONFLICT (week_start_date) DO NOTHING;
 
