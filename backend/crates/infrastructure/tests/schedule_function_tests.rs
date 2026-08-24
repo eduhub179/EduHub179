@@ -102,7 +102,7 @@ async fn seed_student_with_lesson(pool: &PgPool, instance_status: &str) -> Seed 
     // 7. Instance on 2026-09-07 (week starts 2026-09-07)
     sqlx::query(
         "INSERT INTO lesson_instances (instance_id, template_id, week_start_date, lesson_date, status)
-         VALUES ($1, $2, '2026-09-07'::DATE, '2026-09-07'::DATE, $3::lesson_instance_status)",
+         VALUES ($1, $2, '2026-09-07'::DATE, '2026-09-07'::DATE, $3::VARCHAR)",
     )
     .bind(instance_id)
     .bind(template_id)
