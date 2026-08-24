@@ -301,6 +301,225 @@ async fn test_same_slot_different_parity_allowed(pool: PgPool) {
     assert_eq!(fetched_even.parity, WeekParity::Even);
 }
 
+/// Test: Every + Odd on the same slot are REJECTED — the Every template already
+/// covers odd weeks, so both would generate an instance for the same week
+/// (a duplicate lesson). Odd/Even twins are the ONLY legal pair.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_every_and_odd_same_slot_rejected(pool: PgPool) {
+    let env = TestEnv::new(pool);
+    let lesson = env.setup_lesson("Физика").await;
+    let every = create_template(
+        lesson.id,
+        DayOfWeek::Mon,
+        t(9, 0),
+        t(9, 45),
+        WeekParity::Every,
+        None,
+    );
+    env.template_repo.save(every.clone()).await.unwrap();
+
+    let odd = create_template(
+        lesson.id,
+        DayOfWeek::Mon,
+        t(9, 0),
+        t(9, 45),
+        WeekParity::Odd,
+        None,
+    );
+    let result = env.template_repo.save(odd).await;
+
+    assert!(matches!(
+        result,
+        Err(DomainError::LessonTemplateSlotConflict)
+    ));
+}
+
+/// Test: Every + Even on the same slot are REJECTED (same reasoning as above).
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_every_and_even_same_slot_rejected(pool: PgPool) {
+    let env = TestEnv::new(pool);
+    let lesson = env.setup_lesson("Химия").await;
+    let every = create_template(
+        lesson.id,
+        DayOfWeek::Wed,
+        t(10, 0),
+        t(10, 45),
+        WeekParity::Every,
+        None,
+    );
+    env.template_repo.save(every.clone()).await.unwrap();
+
+    let even = create_template(
+        lesson.id,
+        DayOfWeek::Wed,
+        t(10, 0),
+        t(10, 45),
+        WeekParity::Even,
+        None,
+    );
+    let result = env.template_repo.save(even).await;
+
+    assert!(matches!(
+        result,
+        Err(DomainError::LessonTemplateSlotConflict)
+    ));
+}
+
+/// Test: same parity (Odd + Odd) overlapping is rejected too — two odd-week
+/// lessons of the same subject in overlapping slots would both generate.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_odd_and_odd_overlap_rejected(pool: PgPool) {
+    let env = TestEnv::new(pool);
+    let lesson = env.setup_lesson("Биология").await;
+    let first = create_template(
+        lesson.id,
+        DayOfWeek::Tue,
+        t(9, 0),
+        t(9, 45),
+        WeekParity::Odd,
+        None,
+    );
+    env.template_repo.save(first.clone()).await.unwrap();
+
+    let overlapping = create_template(
+        lesson.id,
+        DayOfWeek::Tue,
+        t(9, 30),
+        t(10, 15),
+        WeekParity::Odd,
+        None,
+    );
+    let result = env.template_repo.save(overlapping).await;
+
+    assert!(matches!(
+        result,
+        Err(DomainError::LessonTemplateSlotConflict)
+    ));
+}
+
+/// Test: two Every templates of the same lesson with OVERLAPPING (but not
+/// identical) times are rejected — the dedup index only blocks exact matches,
+/// so this is the slot rule's job.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_overlapping_every_templates_rejected(pool: PgPool) {
+    let env = TestEnv::new(pool);
+    let lesson = env.setup_lesson("География").await;
+    let morning = create_template(
+        lesson.id,
+        DayOfWeek::Mon,
+        t(9, 0),
+        t(9, 45),
+        WeekParity::Every,
+        None,
+    );
+    env.template_repo.save(morning.clone()).await.unwrap();
+
+    let overlapping = create_template(
+        lesson.id,
+        DayOfWeek::Mon,
+        t(9, 30),
+        t(10, 15),
+        WeekParity::Every,
+        None,
+    );
+    let result = env.template_repo.save(overlapping).await;
+
+    assert!(matches!(
+        result,
+        Err(DomainError::LessonTemplateSlotConflict)
+    ));
+}
+
+/// Test: updating an existing template INTO a conflicting slot is rejected
+/// (the rule applies to the new state, not just brand-new rows).
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_update_to_conflicting_slot_rejected(pool: PgPool) {
+    let env = TestEnv::new(pool);
+    let lesson = env.setup_lesson("История").await;
+    let morning = create_template(
+        lesson.id,
+        DayOfWeek::Mon,
+        t(9, 0),
+        t(9, 45),
+        WeekParity::Every,
+        None,
+    );
+    env.template_repo.save(morning.clone()).await.unwrap();
+
+    let afternoon = create_template(
+        lesson.id,
+        DayOfWeek::Mon,
+        t(10, 0),
+        t(10, 45),
+        WeekParity::Every,
+        None,
+    );
+    env.template_repo.save(afternoon.clone()).await.unwrap();
+
+    // Move the afternoon template into the morning one's slot.
+    let moved = LessonTemplate::try_new(
+        afternoon.id,
+        afternoon.lesson_id,
+        DayOfWeek::Mon,
+        t(9, 30),
+        t(10, 15),
+        WeekParity::Every,
+        None,
+        true,
+    )
+    .unwrap();
+    let result = env.template_repo.save(moved).await;
+
+    assert!(matches!(
+        result,
+        Err(DomainError::LessonTemplateSlotConflict)
+    ));
+}
+
+/// Test: an ARCHIVED template does not block a new overlapping template —
+/// only ACTIVE templates participate in the slot-conflict rule.
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_archived_template_does_not_conflict(pool: PgPool) {
+    let env = TestEnv::new(pool);
+    let lesson = env.setup_lesson("Информатика").await;
+    let old = create_template(
+        lesson.id,
+        DayOfWeek::Thu,
+        t(9, 0),
+        t(9, 45),
+        WeekParity::Every,
+        None,
+    );
+    env.template_repo.save(old.clone()).await.unwrap();
+
+    let archived = LessonTemplate::try_new(
+        old.id,
+        old.lesson_id,
+        old.day,
+        old.start_time,
+        old.end_time,
+        old.parity,
+        old.cabinet_id,
+        false,
+    )
+    .unwrap();
+    env.template_repo.save(archived.clone()).await.unwrap();
+
+    // Overlapping (not exact — the dedup index still blocks exact matches of
+    // archived templates by design), so only the slot rule could stop this.
+    let replacement = create_template(
+        lesson.id,
+        DayOfWeek::Thu,
+        t(9, 30),
+        t(10, 15),
+        WeekParity::Every,
+        None,
+    );
+    let result = env.template_repo.save(replacement).await;
+
+    assert!(result.is_ok(), "archived templates must not block new slots");
+}
+
 /// Test: same lesson at a different time is allowed.
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_same_lesson_different_time_allowed(pool: PgPool) {

@@ -12,6 +12,12 @@
 //!
 //! NOTE: `is_override` is deliberately NOT selected/inserted — the column is
 //! dead weight per docs/OVERRIDES.en.md and keeps its default `FALSE` on insert.
+//!
+//! Slot-conflict rule: `save` rejects a NEW or UPDATED active template that
+//! would overlap another ACTIVE template of the same lesson at a
+//! parity-conflicting slot (Every conflicts with everything; Odd/Odd and
+//! Even/Even conflict; Odd/Even twins are the only allowed overlap). The
+//! check runs inside the same transaction as the write.
 
 use chrono::NaiveTime;
 use domain::entities::lesson_template::LessonTemplate;
@@ -178,9 +184,18 @@ impl LessonTemplateRepository for LessonTemplateRepositoryPg {
     ///
     /// `is_override` is not in the column list — it keeps its DB default `FALSE`
     /// (see docs/OVERRIDES.en.md; the column will be dropped later).
+    ///
+    /// For ACTIVE templates the write is preceded by the slot-conflict check:
+    /// another ACTIVE template of the same lesson may not overlap in (day, time)
+    /// unless the parities are the Odd/Even twin pair. Exact duplicates are
+    /// deliberately excluded here — they fall through to the dedup index
+    /// (`idx_lesson_templates_no_dup` → `LessonTemplateAlreadyExists`).
+    ///
+    /// Note: the check is race-safe against concurrent saves only at READ
+    /// COMMITTED level; a serializable guarantee would need an advisory lock.
+    /// Acceptable for the single-admin schedule flow.
     async fn save(&self, template: LessonTemplate) -> Result<LessonTemplate, DomainError> {
-        sqlx::query(
-            r#"
+        const UPSERT: &str = r#"
             INSERT INTO lesson_templates
                 (template_id, lesson_id, day, start_time, end_time, parity, cabinet_id, is_active)
             VALUES ($1, $2, $3::day_of_week, $4, $5, $6::week_parity, $7, $8)
@@ -192,19 +207,73 @@ impl LessonTemplateRepository for LessonTemplateRepositoryPg {
                 parity      = EXCLUDED.parity,
                 cabinet_id  = EXCLUDED.cabinet_id,
                 is_active   = EXCLUDED.is_active
-            "#,
-        )
-        .bind(template.id)
-        .bind(template.lesson_id)
-        .bind(template.day.to_string())
-        .bind(template.start_time)
-        .bind(template.end_time)
-        .bind(template.parity.to_string())
-        .bind(template.cabinet_id)
-        .bind(template.is_active)
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_db_error)?;
+        "#;
+
+        if template.is_active {
+            let mut tx = self.pool.begin().await.map_err(Self::map_db_error)?;
+
+            let conflicting: bool = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM lesson_templates
+                    WHERE lesson_id = $1
+                      AND template_id != $2
+                      AND is_active = TRUE
+                      AND day = $3::day_of_week
+                      AND start_time < $5
+                      AND end_time > $4
+                      -- exact duplicates are the dedup index's job
+                      AND NOT (start_time = $4 AND end_time = $5 AND parity = $6::week_parity)
+                      -- Odd/Even twins are the ONLY allowed overlap
+                      AND NOT (parity = 'odd' AND $6::week_parity = 'even')
+                      AND NOT (parity = 'even' AND $6::week_parity = 'odd')
+                )
+                "#,
+            )
+            .bind(template.lesson_id)
+            .bind(template.id)
+            .bind(template.day.to_string())
+            .bind(template.start_time)
+            .bind(template.end_time)
+            .bind(template.parity.to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(Self::map_db_error)?;
+
+            if conflicting {
+                return Err(DomainError::LessonTemplateSlotConflict);
+            }
+
+            sqlx::query(UPSERT)
+                .bind(template.id)
+                .bind(template.lesson_id)
+                .bind(template.day.to_string())
+                .bind(template.start_time)
+                .bind(template.end_time)
+                .bind(template.parity.to_string())
+                .bind(template.cabinet_id)
+                .bind(template.is_active)
+                .execute(&mut *tx)
+                .await
+                .map_err(Self::map_db_error)?;
+
+            tx.commit().await.map_err(Self::map_db_error)?;
+        } else {
+            // Archiving cannot create conflicts — plain upsert.
+            sqlx::query(UPSERT)
+                .bind(template.id)
+                .bind(template.lesson_id)
+                .bind(template.day.to_string())
+                .bind(template.start_time)
+                .bind(template.end_time)
+                .bind(template.parity.to_string())
+                .bind(template.cabinet_id)
+                .bind(template.is_active)
+                .execute(&self.pool)
+                .await
+                .map_err(Self::map_db_error)?;
+        }
         Ok(template)
     }
 }

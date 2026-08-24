@@ -42,7 +42,15 @@ pub trait LessonTemplateRepository: Send + Sync {
     /// instances join the CURRENT template state, so future weeks follow.
     /// Archiving is done by saving with `is_active = false`.
     ///
+    /// Active templates are validated against the slot-conflict rule: no two
+    /// ACTIVE templates of the same lesson may overlap in (day, time) unless
+    /// their parities are the Odd/Even twin pair. Every conflicts with
+    /// everything (it covers all weeks); Odd/Odd and Even/Even conflict.
+    ///
     /// Errors:
+    /// - `LessonTemplateSlotConflict` — a NEW or UPDATED active template would
+    ///   overlap another active template of the same lesson at a
+    ///   parity-conflicting slot.
     /// - `LessonTemplateAlreadyExists` — a NEW template with the same
     ///   (lesson_id, day, start_time, end_time, parity) as an existing one
     ///   (dedup index `idx_lesson_templates_no_dup`).

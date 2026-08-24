@@ -98,6 +98,10 @@ pub enum DomainError {
     LessonTemplateAlreadyExists,
     // Template end_time must be strictly after start_time (DB CHECK chk_template_time).
     InvalidLessonTemplateTime,
+    // A new/updated ACTIVE template would overlap another ACTIVE template of the
+    // same lesson at a parity-conflicting slot: Every conflicts with all parities,
+    // Odd/Odd and Even/Even conflict; Odd/Even twins are the only allowed overlap.
+    LessonTemplateSlotConflict,
     // Template references a non-existent lesson or cabinet (FK violation).
     InvalidLessonTemplateReference,
     // Unknown day_of_week value in the database (cannot be parsed into DayOfWeek).
@@ -165,6 +169,9 @@ impl fmt::Display for DomainError {
                 write!(f, "Lesson template already exists")
             }
             DomainError::InvalidLessonTemplateTime => write!(f, "Invalid lesson template time"),
+            DomainError::LessonTemplateSlotConflict => {
+                write!(f, "Lesson template slot conflict")
+            }
             DomainError::InvalidLessonTemplateReference => {
                 write!(f, "Invalid lesson template references")
             }
