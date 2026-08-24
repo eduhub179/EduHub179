@@ -146,6 +146,8 @@
 **ENUM:**
 - `day_of_week` — дни недели (mon–sat; в воскресенье уроков нет — только события)
 - `week_parity` — периодичность
+- `week_status` — жизненный цикл недели (`draft` / `published`)
+- `lesson_instance_status` — статус урока (`scheduled` / `completed` / `cancelled`)
 
 **Функции:**
 - `check_teacher_available(teacher, week_start_date, day, start, end, exclude_instance_id)` — недельно-зависимая: сначала инстансы недели (status = 'scheduled'), фолбэк на активные шаблоны для недель без инстансов

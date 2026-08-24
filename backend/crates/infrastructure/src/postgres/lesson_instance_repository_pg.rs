@@ -97,7 +97,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
         let row = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
             SELECT instance_id, template_id, week_start_date, lesson_date,
-                   status, cabinet_id
+                   status::TEXT, cabinet_id
             FROM lesson_instances
             WHERE instance_id = $1
             "#,
@@ -116,7 +116,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
         let rows = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
             SELECT li.instance_id, li.template_id, li.week_start_date, li.lesson_date,
-                   li.status, li.cabinet_id
+                   li.status::TEXT, li.cabinet_id
             FROM lesson_instances li
                      JOIN lesson_templates lt ON lt.template_id = li.template_id
             WHERE li.week_start_date = $1
@@ -139,7 +139,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
         let rows = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
             SELECT li.instance_id, li.template_id, li.week_start_date, li.lesson_date,
-                   li.status, li.cabinet_id
+                   li.status::TEXT, li.cabinet_id
             FROM lesson_instances li
                      JOIN lesson_templates lt ON lt.template_id = li.template_id
             WHERE li.lesson_date = $1
@@ -161,7 +161,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
         let rows = sqlx::query_as::<_, LessonInstanceRow>(
             r#"
             SELECT instance_id, template_id, week_start_date, lesson_date,
-                   status, cabinet_id
+                   status::TEXT, cabinet_id
             FROM lesson_instances
             WHERE template_id = $1
             ORDER BY week_start_date
@@ -178,8 +178,8 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
 
     /// Saves or updates an instance (atomic upsert on `instance_id`).
     ///
-    /// `status` is bound as a string — the column is `VARCHAR(20)` with a CHECK,
-    /// not a PG enum. Errors: `LessonInstanceAlreadyExists` when a NEW instance
+    /// `status` is bound as a string and cast to the `lesson_instance_status`
+    /// enum. Errors: `LessonInstanceAlreadyExists` when a NEW instance
     /// collides with an existing (template_id, week_start_date) pair
     /// (idx_lesson_instances_unique); `LessonTemplateNotFound` / `ScheduleWeekNotFound` /
     /// `CabinetNotFound` when a referenced row is missing (FK violations).
@@ -188,7 +188,7 @@ impl LessonInstanceRepository for LessonInstanceRepositoryPg {
             r#"
             INSERT INTO lesson_instances
                 (instance_id, template_id, week_start_date, lesson_date, status, cabinet_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5::lesson_instance_status, $6)
             ON CONFLICT (instance_id) DO UPDATE SET
                 template_id     = EXCLUDED.template_id,
                 week_start_date = EXCLUDED.week_start_date,

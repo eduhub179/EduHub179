@@ -23,14 +23,16 @@ CREATE TYPE week_parity AS ENUM ('every', 'odd', 'even');
 -- the admin creates the week (draft), fills it with lesson_instances,
 -- then publishes it. Students see instances only in PUBLISHED weeks.
 -- ============================================
+-- Week lifecycle (a real PG enum, like homework_status in 0004).
+CREATE TYPE week_status AS ENUM ('draft', 'published');
+
 CREATE TABLE schedule_weeks
 (
     week_start_date DATE PRIMARY KEY,
 
     -- draft — admin is still building the week, invisible to students
     -- published — the week is final, students can see it
-    status          VARCHAR(20) NOT NULL DEFAULT 'draft'
-        CHECK (status IN ('draft', 'published')),
+    status          week_status NOT NULL DEFAULT 'draft',
 
     -- Which week this one was copied from (NULL = generated from templates / manual)
     copied_from     DATE NULL REFERENCES schedule_weeks (week_start_date),
@@ -157,6 +159,9 @@ CREATE INDEX idx_lesson_templates_lesson
 -- (template, week_start_date) — one row per template per week, one status
 -- to keep in sync.
 -- ============================================
+-- Lesson status (a real PG enum, like homework_status in 0004).
+CREATE TYPE lesson_instance_status AS ENUM ('scheduled', 'completed', 'cancelled');
+
 CREATE TABLE lesson_instances
 (
     instance_id UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
@@ -171,8 +176,7 @@ CREATE TABLE lesson_instances
     lesson_date DATE        NOT NULL,
 
     -- Lesson status (scheduled / completed / cancelled)
-    status      VARCHAR(20) NOT NULL DEFAULT 'scheduled'
-        CHECK (status IN ('scheduled', 'completed', 'cancelled')),
+    status      lesson_instance_status NOT NULL DEFAULT 'scheduled',
 
     -- Room for THIS week's lesson (overrides the template's room;
     -- NULL = use the template's room). Lets rooms move week to week.
@@ -338,6 +342,10 @@ LANGUAGE plpgsql;
 -- - Lessons come only from PUBLISHED weeks; cancelled instances are
 --   returned with their status so the client can render them greyed.
 -- - Effective cabinet: instance wins, template is the fallback.
+--
+-- The status column is the lesson_instance_status enum cast to VARCHAR(20):
+-- enum at rest (DB integrity), plain text at the API boundary (clients do
+-- not need to know PG types).
 -- ============================================
 CREATE FUNCTION get_student_schedule_for_date(
     p_student_id UUID,
@@ -370,7 +378,7 @@ SELECT lt.start_time,
        lt.end_time,
        s.name AS title,
        FALSE  AS is_event,
-       li.status AS status,
+       li.status::VARCHAR(20) AS status,
        COALESCE(li.cabinet_id, lt.cabinet_id) AS cabinet_id
 FROM lesson_instances li
          JOIN lesson_templates lt ON li.template_id = lt.template_id
