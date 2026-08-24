@@ -136,52 +136,38 @@ The system is designed with:
 **WARNING:** runs BEFORE `0004` (`homeworks`), because `homeworks` references `lesson_instances`.
 
 **Tables:**
+- `schedule_weeks` — week container: `week_start_date` (PK), `status` (`draft`/`published`), `copied_from` (self-FK)
 - `cabinets` — classrooms
 - `lesson_templates` — lesson templates
-- `lesson_instances` — specific lessons on dates
+- `lesson_instances` — specific lessons on dates (one row per (template, week); `week_start_date` is an FK to `schedule_weeks`)
 - `events` — events (lectures, activities)
 - `event_attendees` — event participants
 
 **ENUM:**
-- `day_of_week` — days of the week
+- `day_of_week` — days of the week (mon–sat; Sunday has no lessons — only events)
 - `week_parity` — periodicity
+- `week_status` — week lifecycle (`draft` / `published`)
+- `lesson_instance_status` — lesson status (`scheduled` / `completed` / `cancelled`)
 
 **Functions:**
-- `check_teacher_available()` — checks teacher availability
-- `get_student_schedule_for_date()` — the student's full schedule for a date
+- `check_teacher_available(teacher, week_start_date, day, start, end, exclude_instance_id)` — week-aware: checks the week's instances (status = 'scheduled') first, falls back to active templates for weeks without instances
+- `get_student_schedule_for_date(student, date)` — the student's full schedule for a date: lessons from **published** weeks + attended events together (nothing auto-shadows), with a `status` column so cancelled lessons can be rendered greyed
 
 **Key points:**
 - Lesson template = (lesson + day + time + classroom + periodicity)
 - The `is_active` flag in templates — for quick availability checks
-- The `is_override` flag — for lesson substitutions (to be dropped with the override table)
+- The `is_override` flag — always FALSE; substitutions are handled at the instance level
 - `lesson_instances` — one row per (template, week); `week_start_date` references `schedule_weeks`
-- `cabinet_id` lives on instances (weekly room shuffle); templates keep a default seed
-
----
-
-
-### `0006_create_schedule_weeks.sql`
-
-**Tables:**
-- `schedule_weeks` — week container: `week_start_date` (PK), `status` (`draft`/`published`), `copied_from` (self-FK)
-
-**Changes to existing tables:**
-- `lesson_instances.cabinet_id` — cabinets move to instances (+ partial index)
-- `lesson_instances.week_start_date` → FK to `schedule_weeks` (existing weeks backfilled as `published`)
-
-**Functions (rewritten):**
-- `check_teacher_available(teacher, week_start_date, day, start, end, exclude_instance_id)` — week-aware: checks the week's instances (status = 'scheduled') first, falls back to active templates for weeks without instances
-- `get_student_schedule_for_date(student, date)` — returns lessons from **published** weeks + attended events together (nothing auto-shadows), with a `status` column so cancelled lessons can be rendered greyed
-
-**Key points:**
+- `lesson_instances.cabinet_id` — cabinets live on instances (weekly room shuffle); templates keep a default seed
 - Students see only published weeks; availability checks see all (drafts included)
 - Overlaps (event vs lesson, club vs lesson) are shown, not hidden — the student decides
 
 ---
 
-### `0003_create_homework.sql` ⚠️
 
-**WARNING:** runs AFTER `0005`, because it references `lesson_instances`.
+### `0004_create_homework.sql` ⚠️
+
+**WARNING:** runs AFTER `0003`, because it references `lesson_instances`.
 
 **Tables:**
 - `homeworks` — homework
@@ -392,7 +378,7 @@ LEFT JOIN plusnik_records pr ON ...
 
 If a student attends an event that overlaps with a lesson — **both** rows are returned by
 `get_student_schedule_for_date()` and the overlap is marked client-side; the student decides.
-Nothing is hidden automatically (decision 2026-08-16). A lesson replaced by a mandatory event
+Nothing is hidden automatically. A lesson replaced by a mandatory event
 is cancelled via instance status, not via shadowing.
 
 ### 5.7 Lesson templates with flags
@@ -504,8 +490,7 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
 
 **The student's schedule:**
 - If the student participates in an event → **both** the event and the lesson are returned;
-  the overlap is marked client-side and the student decides (nothing auto-shadows,
-  decision 2026-08-16)
+  the overlap is marked client-side and the student decides (nothing auto-shadows)
 
 ---
 
@@ -521,11 +506,9 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
 0004_create_homework.sql           ← depends on 0003 (lesson_instances)
     ↓
 0005_create_plusnik.sql            ← depends on 0002 (lessons)
-    ↓
-0006_create_schedule_weeks.sql     ← depends on 0003 (week FK, functions)
 ```
 
-**Important:** `0003` and `0004` can run in any order after `0005`, but `0003` must run AFTER `0005`.
+**Important:** migrations run in filename order; `0004` needs `0003` (`homeworks` references `lesson_instances`), `0005` needs `0002` (`plusnik` references `lessons`).
 
 ---
 

@@ -5,8 +5,9 @@
 //! - Students see instances only in PUBLISHED weeks.
 //! - Availability checks see ALL weeks (drafts included) so building
 //!   prevents conflicts before a week goes live.
-//! - Hybrid edit rule (decided 2026-08-16): re-draft allowed only for weeks
-//!   that have not started yet; after that, live-edit only.
+//! - Edit rule: a week that has not started yet can be re-drafted; once it
+//!   has begun, changes are live-edits (they appear immediately, nothing is
+//!   hidden).
 
 use crate::errors::DomainError;
 use std::str::FromStr;
