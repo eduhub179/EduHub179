@@ -16,8 +16,8 @@
 //!   `updated_at` is maintained by the `trigger_events_updated_at` trigger,
 //!   so the entity does not carry it.
 //!
-//! Attendance is EXPLICIT: `EventAttendee` rows hold PARTICIPANTS — any user
-//! (students AND teachers), one flat list. The organizer/creator is never
+//! Attendance is EXPLICIT: `EventAttendee` rows hold PARTICIPANTS — any user,
+//! one flat list. The organizer/creator is never
 //! auto-added; the admin creates most events and attends none of them.
 //!
 //! Dependencies: Only `crate::errors::DomainError` and `uuid::Uuid`.
@@ -31,8 +31,7 @@ use uuid::Uuid;
 ///
 /// Events are one-off (no recurrence in the MVP — see docs §8.4) and
 /// reference an optional cabinet, a mutable organizer (contact/lead) and an
-/// immutable creator (audit). Participants — students and teachers — are
-/// `EventAttendee` rows in `event_attendees`.
+/// immutable creator (audit). Participants are `EventAttendee` rows in `event_attendees`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     /// Unique event identifier (UUID v4) — corresponds to `event_id` in DB.
@@ -126,7 +125,7 @@ impl Event {
 
 /// Representation of a user's participation in an event.
 ///
-/// Attendees are PARTICIPANTS — any user (student or teacher), one flat list.
+/// Attendees are PARTICIPANTS — any user, one flat list.
 /// The organizer/creator is metadata and is NOT an attendee by default:
 /// attendance is explicit.
 ///
@@ -139,7 +138,7 @@ pub struct EventAttendee {
     /// The event being attended (FK `ON DELETE CASCADE` — deleting an event
     /// removes its attendees).
     pub event_id: Uuid,
-    /// The attending user — student or teacher (FK `ON DELETE CASCADE`).
+    /// The attending user (FK `ON DELETE CASCADE`).
     pub user_id: Uuid,
     /// When the attendance was recorded. Caller-provided (typically `Utc::now()`);
     /// immutable after creation.

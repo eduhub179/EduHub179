@@ -187,7 +187,7 @@ impl EventRepository for EventRepositoryPg {
         rows.into_iter().map(EventRow::into_domain).collect()
     }
 
-    /// Fetches all events a user (student or teacher) attends, sorted by start_time.
+    /// Fetches all events a user attends, sorted by start_time.
     /// Performance: Uses `idx_event_attendees_user` (JOIN).
     async fn get_by_user(&self, user_id: Uuid) -> Result<Vec<Event>, DomainError> {
         let rows = sqlx::query_as::<_, EventRow>(
@@ -292,7 +292,7 @@ impl EventRepository for EventRepositoryPg {
         Ok(())
     }
 
-    /// Adds a user (student or teacher) to an event.
+    /// Adds a user to an event.
     ///
     /// Uses `INSERT ... ON CONFLICT (event_id, user_id) DO NOTHING` —
     /// attending the same event twice is a silent no-op
