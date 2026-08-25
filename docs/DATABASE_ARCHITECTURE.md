@@ -274,7 +274,7 @@ events (события)
 
 event_attendees (участник ↔ событие)
   ├── event_id → events
-  └── user_id → users (любой пользователь: ученик ИЛИ учитель)
+  └── user_id → users
 
 homeworks (ДЗ)
   ├── lesson_instance_id → lesson_instances
@@ -484,7 +484,7 @@ WHERE instance_id = 'instance_id';
 INSERT INTO events (title, start_time, end_time, cabinet_id, organizer_id, created_by)
 VALUES ('Лекция по квантовой физике', '2026-07-28 10:50', '2026-07-28 11:35', 'cabinet_id', 'teacher_id', 'teacher_id');
 
--- Добавляем участников (любой пользователь: ученик или учитель)
+-- Добавляем участников
 INSERT INTO event_attendees (event_id, user_id) VALUES
     ('event_id', 'student_1'),
     ('event_id', 'student_2');

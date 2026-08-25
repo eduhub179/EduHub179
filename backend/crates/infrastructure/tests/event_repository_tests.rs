@@ -527,7 +527,7 @@ async fn test_delete_not_found(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_add_attendee_success_and_get_attendees(pool: PgPool) {
     let (event_id, _teacher_id, _cabinet_id) = seed_event(&pool).await;
-    // A TEACHER as attendee — attendance is role-agnostic, not student-only.
+    // A teacher as attendee — attendance is role-agnostic.
     let teacher_attendee_id = seed_user(&pool, create_test_teacher()).await;
     let repo = EventRepositoryPg::new(pool.clone());
 

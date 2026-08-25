@@ -12,10 +12,10 @@ use uuid::Uuid;
 ///
 /// An event is a one-off occurrence (no recurrence in the MVP) with an
 /// optional cabinet, a MUTABLE organizer (who leads now / contact — metadata,
-/// not attendance) and an IMMUTABLE creator (audit). Participants — students
-/// and teachers, one flat list — are `event_attendees` rows managed as an
-/// aggregate of the event (like `homework_files` for homeworks). Attendance
-/// is explicit: nobody is auto-added, not even the organizer/creator.
+/// not attendance) and an IMMUTABLE creator (audit). Participants — any user,
+/// one flat list — are `event_attendees` rows managed as an aggregate of the
+/// event (like `homework_files` for homeworks). Attendance is explicit:
+/// nobody is auto-added, not even the organizer/creator.
 ///
 /// Using a trait allows mocking the database in use-case unit tests
 /// without spinning up a real PostgreSQL instance.
@@ -44,8 +44,8 @@ pub trait EventRepository: Send + Sync {
     /// Returns empty vec for an unknown organizer (list-method precedent).
     async fn get_by_organizer(&self, organizer_id: Uuid) -> Result<Vec<Event>, DomainError>;
 
-    /// Fetches all events a user (student or teacher) attends, sorted by
-    /// `start_time` — the role-agnostic schedule query for events.
+    /// Fetches all events a user attends, sorted by `start_time` — the
+    /// role-agnostic schedule query for events.
     ///
     /// Performance: relies on `idx_event_attendees_user`.
     /// Returns empty vec for an unknown user (list-method precedent).
@@ -76,7 +76,7 @@ pub trait EventRepository: Send + Sync {
     /// Fail-safe: Returns `EventNotFound` if no row was affected.
     async fn delete(&self, event_id: Uuid) -> Result<(), DomainError>;
 
-    /// Adds a user (student or teacher) to an event (idempotent).
+    /// Adds a user to an event (idempotent).
     ///
     /// Uses `INSERT ... ON CONFLICT (event_id, user_id) DO NOTHING`
     /// (UNIQUE index `idx_event_attendees_unique`) — attending twice

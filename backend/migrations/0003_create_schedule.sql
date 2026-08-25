@@ -258,8 +258,8 @@ CREATE INDEX idx_events_organizer
 
 -- ============================================
 -- 8. EVENT ATTENDEES (PARTICIPANTS)
--- user ↔ event relationship. Attendees are PARTICIPANTS — any user
--- (students AND teachers), one flat list. Organizer/creator is metadata,
+-- user ↔ event relationship. Attendees are PARTICIPANTS — any user,
+-- one flat list. Organizer/creator is metadata,
 -- NOT an attendee by default: attendance is explicit.
 -- ============================================
 CREATE TABLE event_attendees
@@ -275,7 +275,7 @@ CREATE TABLE event_attendees
 CREATE UNIQUE INDEX idx_event_attendees_unique
     ON event_attendees (event_id, user_id);
 
--- Fast lookup of all events of a user (student or teacher)
+-- Fast lookup of all events of a user
 -- Used when displaying a user's schedule
 CREATE INDEX idx_event_attendees_user
     ON event_attendees (user_id);
