@@ -216,7 +216,8 @@ users (ученики, учителя, админы)
   ├── ← homeworks.created_by
   ├── ← homeworks.last_edited_by
   ├── ← plusnik_records.student_id / granted_by / revoked_by
-  └── ← events.organizer_id
+  ├── ← events.organizer_id
+  └── ← events.created_by
 
 classes (классы школы)
   ├── ← users.class_id
@@ -267,12 +268,13 @@ cabinets (кабинеты)
 
 events (события)
   ├── cabinet_id → cabinets
-  ├── organizer_id → users
+  ├── organizer_id → users (мутабельно: кто ведёт сейчас, контакт)
+  ├── created_by → users (иммутабельно: кто создал, аудит)
   └── ← event_attendees.event_id
 
-event_attendees (ученик ↔ событие)
+event_attendees (участник ↔ событие)
   ├── event_id → events
-  └── student_id → users
+  └── user_id → users (любой пользователь: ученик ИЛИ учитель)
 
 homeworks (ДЗ)
   ├── lesson_instance_id → lesson_instances
@@ -479,11 +481,11 @@ WHERE instance_id = 'instance_id';
 
 ```sql
 -- Создаём событие
-INSERT INTO events (title, start_time, end_time, cabinet_id, organizer_id)
-VALUES ('Лекция по квантовой физике', '2026-07-28 10:50', '2026-07-28 11:35', 'cabinet_id', 'teacher_id');
+INSERT INTO events (title, start_time, end_time, cabinet_id, organizer_id, created_by)
+VALUES ('Лекция по квантовой физике', '2026-07-28 10:50', '2026-07-28 11:35', 'cabinet_id', 'teacher_id', 'teacher_id');
 
--- Добавляем участников
-INSERT INTO event_attendees (event_id, student_id) VALUES
+-- Добавляем участников (любой пользователь: ученик или учитель)
+INSERT INTO event_attendees (event_id, user_id) VALUES
     ('event_id', 'student_1'),
     ('event_id', 'student_2');
 ```
