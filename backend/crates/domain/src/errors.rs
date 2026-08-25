@@ -120,6 +120,15 @@ pub enum DomainError {
     LessonInstanceAlreadyExists,
     // lesson_date must fall within [week_start_date, week_start_date + 7).
     InvalidLessonInstanceDate,
+
+    // Event with the specified ID was not found.
+    EventNotFound,
+    // Event title must be non-empty and at most 255 chars (DB VARCHAR(255)).
+    InvalidEventTitle,
+    // Event end_time must be strictly after start_time (DB CHECK chk_event_time).
+    InvalidEventTime,
+    // No attendance row for the (event_id, student_id) pair (remove_attendee).
+    EventAttendeeNotFound,
 }
 
 impl fmt::Display for DomainError {
@@ -186,6 +195,10 @@ impl fmt::Display for DomainError {
                 write!(f, "Lesson instance already exists")
             }
             DomainError::InvalidLessonInstanceDate => write!(f, "Invalid lesson instance date"),
+            DomainError::EventNotFound => write!(f, "Event not found"),
+            DomainError::InvalidEventTitle => write!(f, "Invalid event title"),
+            DomainError::InvalidEventTime => write!(f, "Invalid event time"),
+            DomainError::EventAttendeeNotFound => write!(f, "Event attendee not found"),
         }
     }
 }
