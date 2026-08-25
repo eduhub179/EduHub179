@@ -233,8 +233,11 @@ CREATE TABLE events
     -- Where it takes place (optional)
     cabinet_id   UUID NULL REFERENCES cabinets(cabinet_id) ON DELETE SET NULL,
 
-    -- Who organizes/leads it
+    -- Who leads/organizes it now (mutable — can be handed over; metadata, not attendance)
     organizer_id UUID         NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
+
+    -- Who created it (immutable audit for the archive — set at creation, never updated)
+    created_by   UUID         NOT NULL REFERENCES users (user_id) ON DELETE RESTRICT,
 
     -- End must be after start
     CONSTRAINT chk_event_time CHECK (end_time > start_time),
@@ -254,28 +257,28 @@ CREATE INDEX idx_events_organizer
 
 
 -- ============================================
--- 8. EVENT ATTENDEES
--- student ↔ event relationship. A student can participate
--- in several events, an event can include
--- students from different classes.
+-- 8. EVENT ATTENDEES (PARTICIPANTS)
+-- user ↔ event relationship. Attendees are PARTICIPANTS — any user,
+-- one flat list. Organizer/creator is metadata,
+-- NOT an attendee by default: attendance is explicit.
 -- ============================================
 CREATE TABLE event_attendees
 (
     attendee_id UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
     event_id    UUID        NOT NULL REFERENCES events (event_id) ON DELETE CASCADE,
-    student_id  UUID        NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
+    user_id     UUID        NOT NULL REFERENCES users (user_id) ON DELETE CASCADE,
 
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- A student cannot be in the same event twice
+-- A user cannot be in the same event twice
 CREATE UNIQUE INDEX idx_event_attendees_unique
-    ON event_attendees (event_id, student_id);
+    ON event_attendees (event_id, user_id);
 
--- Fast lookup of all events of a student
--- Used when displaying a student's schedule
-CREATE INDEX idx_event_attendees_student
-    ON event_attendees (student_id);
+-- Fast lookup of all events of a user
+-- Used when displaying a user's schedule
+CREATE INDEX idx_event_attendees_user
+    ON event_attendees (user_id);
 
 -- Fast lookup of all attendees of an event
 CREATE INDEX idx_event_attendees_event
@@ -337,7 +340,7 @@ LANGUAGE plpgsql;
 
 -- ============================================
 -- 10. FUNCTION: STUDENT SCHEDULE FOR A DATE
--- Returns the student's lessons and events on a concrete date, shown
+-- Returns the student's lessons and the events they attend on a concrete date, shown
 -- together — overlaps are marked client-side, nothing is hidden.
 -- - Lessons come only from PUBLISHED weeks; cancelled instances are
 --   returned with their status so the client can render them greyed.
@@ -360,14 +363,14 @@ CREATE FUNCTION get_student_schedule_for_date(
 ) AS $$
 BEGIN
 RETURN QUERY
--- Events the student attends (no lesson status)
+-- Events the user attends (no lesson status)
 SELECT e.start_time::TIME, e.end_time::TIME, e.title,
        TRUE AS is_event,
        NULL::VARCHAR(20) AS status,
        e.cabinet_id
 FROM events e
          JOIN event_attendees ea ON ea.event_id = e.event_id
-WHERE ea.student_id = p_student_id
+WHERE ea.user_id = p_student_id
   AND e.start_time::DATE = p_date
 
 UNION ALL

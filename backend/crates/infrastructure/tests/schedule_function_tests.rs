@@ -192,8 +192,8 @@ async fn test_event_and_lesson_are_both_shown(pool: PgPool) {
 
     let event_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO events (event_id, title, start_time, end_time, organizer_id)
-         VALUES ($1, 'Лекция по физике', '2026-09-07 10:00'::TIMESTAMPTZ, '2026-09-07 11:00'::TIMESTAMPTZ, $2)",
+        "INSERT INTO events (event_id, title, start_time, end_time, organizer_id, created_by)
+         VALUES ($1, 'Лекция по физике', '2026-09-07 10:00'::TIMESTAMPTZ, '2026-09-07 11:00'::TIMESTAMPTZ, $2, $2)",
     )
     .bind(event_id)
     .bind(teacher_id)
@@ -202,7 +202,7 @@ async fn test_event_and_lesson_are_both_shown(pool: PgPool) {
     .expect("Insert event should succeed");
 
     sqlx::query(
-        "INSERT INTO event_attendees (event_id, student_id)
+        "INSERT INTO event_attendees (event_id, user_id)
          VALUES ($1, $2)",
     )
     .bind(event_id)

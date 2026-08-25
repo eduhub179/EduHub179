@@ -3,6 +3,7 @@
 pub mod entities {
     pub mod cabinet;
     pub mod class;
+    pub mod event;
     pub mod homework;
     pub mod lesson;
     pub mod lesson_instance;
