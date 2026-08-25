@@ -340,7 +340,7 @@ LANGUAGE plpgsql;
 
 -- ============================================
 -- 10. FUNCTION: STUDENT SCHEDULE FOR A DATE
--- Returns the student's lessons and events on a concrete date, shown
+-- Returns the student's lessons and the events they attend on a concrete date, shown
 -- together — overlaps are marked client-side, nothing is hidden.
 -- - Lessons come only from PUBLISHED weeks; cancelled instances are
 --   returned with their status so the client can render them greyed.
@@ -363,7 +363,7 @@ CREATE FUNCTION get_student_schedule_for_date(
 ) AS $$
 BEGIN
 RETURN QUERY
--- Events the student attends (no lesson status)
+-- Events the user attends (no lesson status)
 SELECT e.start_time::TIME, e.end_time::TIME, e.title,
        TRUE AS is_event,
        NULL::VARCHAR(20) AS status,
