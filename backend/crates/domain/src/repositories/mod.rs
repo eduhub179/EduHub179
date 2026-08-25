@@ -1,5 +1,6 @@
 pub mod cabinet_repository;
 pub mod class_repository;
+pub mod event_repository;
 pub mod homework_repository;
 pub mod lesson_instance_repository;
 pub mod lesson_repository;
