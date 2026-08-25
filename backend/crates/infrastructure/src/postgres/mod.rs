@@ -6,6 +6,7 @@
 
 pub mod cabinet_repository_pg;
 pub mod class_repository_pg;
+pub mod event_repository_pg;
 pub mod homework_repository_pg;
 pub mod lesson_instance_repository_pg;
 pub mod lesson_repository_pg;
@@ -18,6 +19,7 @@ pub mod user_repository_pg;
 // Re-export for convenience in the `bin` crate (DI composition root).
 pub use cabinet_repository_pg::CabinetRepositoryPg;
 pub use class_repository_pg::ClassRepositoryPg;
+pub use event_repository_pg::EventRepositoryPg;
 pub use homework_repository_pg::HomeworkRepositoryPg;
 pub use lesson_instance_repository_pg::LessonInstanceRepositoryPg;
 pub use lesson_repository_pg::LessonRepositoryPg;
