@@ -90,6 +90,36 @@ pub enum DomainError {
     InvalidCabinetDescription,
     // Cabinet capacity must be a natural number
     InvalidCabinetCapacity,
+
+    // LessonTemplate with the specified ID was not found.
+    LessonTemplateNotFound,
+    // A lesson cannot have two templates with the same (lesson_id, day, start_time, end_time, parity)
+    // (unique violation on idx_lesson_templates_no_dup).
+    LessonTemplateAlreadyExists,
+    // Template end_time must be strictly after start_time (DB CHECK chk_template_time).
+    InvalidLessonTemplateTime,
+    // A new/updated ACTIVE template would overlap another ACTIVE template of the
+    // same lesson at a parity-conflicting slot: Every conflicts with all parities,
+    // Odd/Odd and Even/Even conflict; Odd/Even twins are the only allowed overlap.
+    LessonTemplateSlotConflict,
+    // Template references a non-existent lesson or cabinet (FK violation).
+    InvalidLessonTemplateReference,
+    // Unknown day_of_week value in the database (cannot be parsed into DayOfWeek).
+    InvalidDayOfWeek,
+    // Unknown week_parity value in the database (cannot be parsed into WeekParity).
+    InvalidWeekParity,
+
+    // ScheduleWeek with the specified start date was not found.
+    ScheduleWeekNotFound,
+    // Unknown schedule_weeks.status value (cannot be parsed into WeekStatus).
+    InvalidWeekStatus,
+    // Unknown lesson_instances.status value (cannot be parsed into LessonInstanceStatus).
+    InvalidLessonInstanceStatus,
+    // A template cannot produce two instances in the same week (unique violation
+    // on idx_lesson_instances_unique).
+    LessonInstanceAlreadyExists,
+    // lesson_date must fall within [week_start_date, week_start_date + 7).
+    InvalidLessonInstanceDate,
 }
 
 impl fmt::Display for DomainError {
@@ -134,6 +164,28 @@ impl fmt::Display for DomainError {
             DomainError::InvalidCabinetNumber => write!(f, "Invalid cabinet number"),
             DomainError::InvalidCabinetDescription => write!(f, "Invalid cabinet description"),
             DomainError::InvalidCabinetCapacity => write!(f, "Invalid cabinet capacity"),
+            DomainError::LessonTemplateNotFound => write!(f, "Lesson template not found"),
+            DomainError::LessonTemplateAlreadyExists => {
+                write!(f, "Lesson template already exists")
+            }
+            DomainError::InvalidLessonTemplateTime => write!(f, "Invalid lesson template time"),
+            DomainError::LessonTemplateSlotConflict => {
+                write!(f, "Lesson template slot conflict")
+            }
+            DomainError::InvalidLessonTemplateReference => {
+                write!(f, "Invalid lesson template references")
+            }
+            DomainError::InvalidDayOfWeek => write!(f, "Invalid day of week"),
+            DomainError::InvalidWeekParity => write!(f, "Invalid week parity"),
+            DomainError::ScheduleWeekNotFound => write!(f, "Schedule week not found"),
+            DomainError::InvalidWeekStatus => write!(f, "Invalid week status"),
+            DomainError::InvalidLessonInstanceStatus => {
+                write!(f, "Invalid lesson instance status")
+            }
+            DomainError::LessonInstanceAlreadyExists => {
+                write!(f, "Lesson instance already exists")
+            }
+            DomainError::InvalidLessonInstanceDate => write!(f, "Invalid lesson instance date"),
         }
     }
 }
