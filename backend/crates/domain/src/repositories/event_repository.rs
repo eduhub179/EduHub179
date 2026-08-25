@@ -11,9 +11,11 @@ use uuid::Uuid;
 /// Interface for interacting with the event storage.
 ///
 /// An event is a one-off occurrence (no recurrence in the MVP) with an
-/// organizer and optional cabinet; students participate via `event_attendees`.
-/// Attendees are managed as an aggregate of the event (like `homework_files`
-/// for homeworks) — there is no standalone attendee repository.
+/// optional cabinet, a MUTABLE organizer (who leads now / contact — metadata,
+/// not attendance) and an IMMUTABLE creator (audit). Participants — students
+/// and teachers, one flat list — are `event_attendees` rows managed as an
+/// aggregate of the event (like `homework_files` for homeworks). Attendance
+/// is explicit: nobody is auto-added, not even the organizer/creator.
 ///
 /// Using a trait allows mocking the database in use-case unit tests
 /// without spinning up a real PostgreSQL instance.
@@ -42,11 +44,12 @@ pub trait EventRepository: Send + Sync {
     /// Returns empty vec for an unknown organizer (list-method precedent).
     async fn get_by_organizer(&self, organizer_id: Uuid) -> Result<Vec<Event>, DomainError>;
 
-    /// Fetches all events a student attends, sorted by `start_time`.
+    /// Fetches all events a user (student or teacher) attends, sorted by
+    /// `start_time` — the role-agnostic schedule query for events.
     ///
-    /// Performance: relies on `idx_event_attendees_student`.
-    /// Returns empty vec for an unknown student (list-method precedent).
-    async fn get_by_student(&self, student_id: Uuid) -> Result<Vec<Event>, DomainError>;
+    /// Performance: relies on `idx_event_attendees_user`.
+    /// Returns empty vec for an unknown user (list-method precedent).
+    async fn get_by_user(&self, user_id: Uuid) -> Result<Vec<Event>, DomainError>;
 
     /// Fetches all attendees of an event, sorted by `created_at` then `attendee_id`.
     ///
@@ -58,12 +61,13 @@ pub trait EventRepository: Send + Sync {
     /// Saves or updates an event (atomic upsert on `event_id`).
     ///
     /// Uses PostgreSQL `INSERT ... ON CONFLICT (event_id) DO UPDATE`.
-    /// `organizer_id` and `created_at` are immutable after creation and are
-    /// NOT updated on conflict (deliberately excluded from UPDATE list);
-    /// `updated_at` is maintained by the trigger.
+    /// Mutable fields (updated on conflict): title, description, start_time,
+    /// end_time, cabinet_id, organizer_id (handover is supported).
+    /// IMMUTABLE (deliberately excluded from UPDATE list): `created_by`
+    /// and `created_at`; `updated_at` is maintained by the trigger.
     ///
-    /// FK violations are mapped by constraint name: missing organizer →
-    /// `UserNotFound`, missing cabinet → `CabinetNotFound`.
+    /// FK violations are mapped by constraint name: missing organizer or
+    /// creator → `UserNotFound`, missing cabinet → `CabinetNotFound`.
     async fn save(&self, event: Event) -> Result<Event, DomainError>;
 
     /// Deletes an event by its ID.
@@ -72,19 +76,19 @@ pub trait EventRepository: Send + Sync {
     /// Fail-safe: Returns `EventNotFound` if no row was affected.
     async fn delete(&self, event_id: Uuid) -> Result<(), DomainError>;
 
-    /// Adds a student to an event (idempotent).
+    /// Adds a user (student or teacher) to an event (idempotent).
     ///
-    /// Uses `INSERT ... ON CONFLICT (event_id, student_id) DO NOTHING`
-    /// (UNIQUE index `idx_event_attendees_unique`) — a student attending twice
+    /// Uses `INSERT ... ON CONFLICT (event_id, user_id) DO NOTHING`
+    /// (UNIQUE index `idx_event_attendees_unique`) — attending twice
     /// is a silent no-op.
     ///
-    /// Fail-safe: missing event → `EventNotFound`, missing student →
+    /// Fail-safe: missing event → `EventNotFound`, missing user →
     /// `UserNotFound` (FK violations mapped by constraint name).
     async fn add_attendee(&self, attendee: EventAttendee) -> Result<EventAttendee, DomainError>;
 
-    /// Removes a student from an event by the (event, student) pair.
+    /// Removes a user from an event by the (event, user) pair.
     ///
     /// Fail-safe: Returns `EventAttendeeNotFound` if no row was affected
-    /// (explicit contract — the caller learns whether the student was there).
-    async fn remove_attendee(&self, event_id: Uuid, student_id: Uuid) -> Result<(), DomainError>;
+    /// (explicit contract — the caller learns whether the user was there).
+    async fn remove_attendee(&self, event_id: Uuid, user_id: Uuid) -> Result<(), DomainError>;
 }
