@@ -156,7 +156,7 @@
 **Ключевые моменты:**
 - Шаблон урока = (урок + день + время + кабинет + периодичность)
 - Флаг `is_active` в шаблонах — для быстрой проверки занятости
-- Флаг `is_override` — всегда FALSE; замены обрабатываются на уровне инстанса
+- Замены обрабатываются на уровне инстанса (отмена исходного + создание замещающего инстанса), а не шаблонами
 - `lesson_instances` — одна строка на (шаблон, неделю); `week_start_date` ссылается на `schedule_weeks`
 - `lesson_instances.cabinet_id` — кабинеты живут на инстансах (еженедельная смена кабинетов); в шаблонах — дефолт-затравка
 - Ученики видят только опубликованные недели; проверки занятости видят всё (включая черновики)
@@ -251,7 +251,7 @@ lesson_templates (шаблоны уроков)
   ├── lesson_id → lessons
   ├── cabinet_id → cabinets
   ├── is_active (флаг активности)
-  ├── is_override (флаг замены)
+
   └── ← lesson_instances.template_id
 
 lesson_instances (конкретные уроки на даты)
@@ -390,11 +390,6 @@ LEFT JOIN plusnik_records pr ON ...
 - FALSE — архивирован, не участвует в проверке занятости
 - Позволяет быстро проверять занятость учителя
 
-**`is_override`:**
-- TRUE — шаблон для замены
-- FALSE — обычный шаблон
-- Упрощает архивацию замен
-
 ---
 
 ## 6. Сценарии использования
@@ -467,14 +462,26 @@ UPDATE schedule_weeks SET status = 'published' WHERE week_start_date = '2026-07-
 ### 6.5 Замена урока (учитель заболел)
 
 ```sql
--- Создаём шаблон для замены
-INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id, is_override, comment)
-VALUES ('new_lesson_id', 'mon', '10:50', '11:35', 'cabinet_id', TRUE, 'Иванов заболел');
-
--- Переводим урок этой недели на шаблон замены
+-- Отменяем исходный инстанс
 UPDATE lesson_instances
-SET template_id = 'new_template_id'
-WHERE instance_id = 'instance_id';
+SET status = 'cancelled'
+WHERE instance_id = 'original_instance_id';
+
+-- Создаём замещающий урок (тот же класс/группа, новый учитель/предмет)
+INSERT INTO lessons (lesson_id, class_id, group_id, subject_id)
+VALUES ('replacement_lesson_id', 'class_id', NULL, 'subject_id');
+
+-- Назначаем замещающего учителя
+INSERT INTO lesson_teachers (lesson_id, teacher_id)
+VALUES ('replacement_lesson_id', 'substitute_teacher_id');
+
+-- Создаём шаблон для замещающего урока (тот же слот)
+INSERT INTO lesson_templates (template_id, lesson_id, day, start_time, end_time, parity, cabinet_id, is_active)
+VALUES ('replacement_template_id', 'replacement_lesson_id', 'mon', '10:50', '11:35', 'every', 'cabinet_id', TRUE);
+
+-- Создаём замещающий инстанс на эту неделю
+INSERT INTO lesson_instances (instance_id, template_id, week_start_date, lesson_date, status, cabinet_id)
+VALUES ('replacement_instance_id', 'replacement_template_id', '2026-09-07', '2026-09-07', 'scheduled', 'cabinet_id');
 ```
 
 ### 6.6 Часть класса уходит на лекцию
