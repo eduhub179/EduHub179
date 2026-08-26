@@ -100,10 +100,6 @@ pub struct LessonTemplate {
     /// Periodicity: every week, odd weeks only, or even weeks only.
     pub parity: WeekParity,
     
-    /// Reference to the replacement file (if `is_override == true`).
-    /// IMPORTANT: Contains only the UUID of an existing document in storage, not a URL.
-    pub override_document_id: Option<Uuid>,
-    
     is_active: bool,
 }
 ```

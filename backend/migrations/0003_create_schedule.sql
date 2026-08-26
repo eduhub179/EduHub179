@@ -109,10 +109,6 @@ CREATE TABLE lesson_templates
     -- Whether the template is active (used in the current schedule)
     is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
 
-    -- Always FALSE — substitutions are handled at the instance level
-    -- (lesson_instances.status = 'cancelled' and overrides), not by templates.
-    is_override BOOLEAN     NOT NULL DEFAULT FALSE,
-
     -- Free-form comment
     comment     TEXT NULL,
 

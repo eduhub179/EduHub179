@@ -156,7 +156,7 @@ The system is designed with:
 **Key points:**
 - Lesson template = (lesson + day + time + classroom + periodicity)
 - The `is_active` flag in templates — for quick availability checks
-- The `is_override` flag — always FALSE; substitutions are handled at the instance level
+- Substitutions are handled at the instance level (cancel original + create replacement instance), not by templates
 - `lesson_instances` — one row per (template, week); `week_start_date` references `schedule_weeks`
 - `lesson_instances.cabinet_id` — cabinets live on instances (weekly room shuffle); templates keep a default seed
 - Students see only published weeks; availability checks see all (drafts included)
@@ -251,7 +251,7 @@ lesson_templates (lesson templates)
   ├── lesson_id → lessons
   ├── cabinet_id → cabinets
   ├── is_active (activity flag)
-  ├── is_override (substitution flag)
+
   └── ← lesson_instances.template_id
 
 lesson_instances (specific lessons on dates)
@@ -390,11 +390,6 @@ is cancelled via instance status, not via shadowing.
 - FALSE — archived, doesn't participate in availability checks
 - Allows quickly checking teacher availability
 
-**`is_override`:**
-- TRUE — substitution template
-- FALSE — regular template
-- Simplifies archiving substitutions
-
 ---
 
 ## 6. Usage scenarios
@@ -467,14 +462,26 @@ UPDATE schedule_weeks SET status = 'published' WHERE week_start_date = '2026-07-
 ### 6.5 Lesson substitution (teacher is sick)
 
 ```sql
--- Create a substitution template
-INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id, is_override, comment)
-VALUES ('new_lesson_id', 'mon', '10:50', '11:35', 'cabinet_id', TRUE, 'Ivanov is sick');
-
--- Point this week's lesson at the substitution template
+-- Cancel the original instance
 UPDATE lesson_instances
-SET template_id = 'new_template_id'
-WHERE instance_id = 'instance_id';
+SET status = 'cancelled'
+WHERE instance_id = 'original_instance_id';
+
+-- Create a replacement lesson (same class/group, new teacher/subject)
+INSERT INTO lessons (lesson_id, class_id, group_id, subject_id)
+VALUES ('replacement_lesson_id', 'class_id', NULL, 'subject_id');
+
+-- Assign the substitute teacher
+INSERT INTO lesson_teachers (lesson_id, teacher_id)
+VALUES ('replacement_lesson_id', 'substitute_teacher_id');
+
+-- Create a template for the replacement lesson (same slot)
+INSERT INTO lesson_templates (template_id, lesson_id, day, start_time, end_time, parity, cabinet_id, is_active)
+VALUES ('replacement_template_id', 'replacement_lesson_id', 'mon', '10:50', '11:35', 'every', 'cabinet_id', TRUE);
+
+-- Create the replacement instance for this week
+INSERT INTO lesson_instances (instance_id, template_id, week_start_date, lesson_date, status, cabinet_id)
+VALUES ('replacement_instance_id', 'replacement_template_id', '2026-09-07', '2026-09-07', 'scheduled', 'cabinet_id');
 ```
 
 ### 6.6 Part of the class goes to a lecture
