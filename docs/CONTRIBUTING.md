@@ -100,10 +100,6 @@ pub struct LessonTemplate {
     /// Периодичность: каждую неделю, только четные или только нечетные.
     pub parity: WeekParity,
     
-    /// Ссылка на файл замены (если `is_override == true`).
-    /// ВАЖНО: Содержит только UUID существующего документа в хранилище, не URL.
-    pub override_document_id: Option<Uuid>,
-    
     is_active: bool,
 }
 ```
