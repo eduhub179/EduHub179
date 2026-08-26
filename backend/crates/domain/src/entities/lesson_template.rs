@@ -10,9 +10,8 @@
 //! Guarantees: An instance can only be created via `try_new`, which validates
 //! the invariants. This prevents invalid entities from reaching the repository.
 //!
-//! NOTE: the `is_override` column exists in the DB but is NOT part of the
-//! entity — it is always FALSE; substitutions are handled at the instance
-//! level, not by templates. Inserts leave it at its default `FALSE`.
+//! Substitutions are handled at the instance level (cancel original + create
+//! replacement instance), not by templates.
 
 use crate::errors::DomainError;
 use crate::value_objects::day_of_week::DayOfWeek;
