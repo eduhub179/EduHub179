@@ -129,6 +129,33 @@ pub enum DomainError {
     InvalidEventTime,
     // No attendance row for the (event_id, student_id) pair (remove_attendee).
     EventAttendeeNotFound,
+
+    // PlusnikSheet with the specified ID was not found.
+    PlusnikSheetNotFound,
+    // Sheet name must be non-empty and at most 255 chars.
+    InvalidPlusnikSheetName,
+    // Unknown sheet_status value in the database.
+    InvalidSheetStatus,
+    // Cannot delete a sheet that has plusnik records (FK ON DELETE RESTRICT).
+    PlusnikSheetHasRecords,
+
+    // PlusnikTask with the specified ID was not found.
+    PlusnikTaskNotFound,
+    // Task number must be non-empty and at most 20 chars.
+    InvalidTaskNumber,
+    // Two tasks with the same number in one sheet (unique index violation).
+    PlusnikTaskAlreadyExists,
+    // Cannot delete a task that has plusnik records (FK ON DELETE RESTRICT).
+    PlusnikTaskHasRecords,
+
+    // PlusnikRecord with the specified ID was not found.
+    PlusnikRecordNotFound,
+    // A record violates the chk_revoked_has_reviewer CHECK (revoked_at without revoked_by).
+    InvalidPlusnikRecord,
+    // An active plus for this (student_id, task_id) already exists.
+    PlusnikRecordAlreadyExists,
+    // task_id does not belong to sheet_id (trigger check_task_belongs_to_sheet).
+    TaskNotInSheet,
 }
 
 impl fmt::Display for DomainError {
@@ -199,6 +226,24 @@ impl fmt::Display for DomainError {
             DomainError::InvalidEventTitle => write!(f, "Invalid event title"),
             DomainError::InvalidEventTime => write!(f, "Invalid event time"),
             DomainError::EventAttendeeNotFound => write!(f, "Event attendee not found"),
+            DomainError::PlusnikSheetNotFound => write!(f, "Plusnik sheet not found"),
+            DomainError::InvalidPlusnikSheetName => write!(f, "Invalid plusnik sheet name"),
+            DomainError::InvalidSheetStatus => write!(f, "Invalid sheet status"),
+            DomainError::PlusnikSheetHasRecords => {
+                write!(f, "Plusnik sheet has records, cannot delete")
+            }
+            DomainError::PlusnikTaskNotFound => write!(f, "Plusnik task not found"),
+            DomainError::InvalidTaskNumber => write!(f, "Invalid task number"),
+            DomainError::PlusnikTaskAlreadyExists => write!(f, "Plusnik task already exists"),
+            DomainError::PlusnikTaskHasRecords => {
+                write!(f, "Plusnik task has records, cannot delete")
+            }
+            DomainError::PlusnikRecordNotFound => write!(f, "Plusnik record not found"),
+            DomainError::InvalidPlusnikRecord => write!(f, "Invalid plusnik record"),
+            DomainError::PlusnikRecordAlreadyExists => {
+                write!(f, "Plusnik record already exists")
+            }
+            DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
         }
     }
 }
