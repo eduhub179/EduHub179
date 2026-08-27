@@ -62,6 +62,10 @@ pub trait PlusnikRepository: Send + Sync {
     /// Fetches all tasks for a sheet, ordered by `sort_order`.
     async fn get_tasks(&self, sheet_id: Uuid) -> Result<Vec<PlusnikTask>, DomainError>;
 
+    /// Fetches a task by its unique identifier.
+    /// Fail-safe: Returns `PlusnikTaskNotFound` if the record doesn't exist.
+    async fn get_task_by_id(&self, task_id: Uuid) -> Result<PlusnikTask, DomainError>;
+
     /// Adds a task to a sheet (upsert on `task_id`).
     ///
     /// Errors:
@@ -108,7 +112,11 @@ pub trait PlusnikRepository: Send + Sync {
         task_id: Uuid,
     ) -> Result<Vec<PlusnikRecord>, DomainError>;
 
-    /// Awards a plus (creates a record).
+    /// Saves or updates a record (atomic upsert on `record_id`).
+    ///
+    /// On conflict, updates all mutable fields: `student_id`, `sheet_id`,
+    /// `task_id`, `granted_by`, `revoked_at`, `revoked_by`, `revoke_comment`.
+    /// `granted_at` is immutable after creation (excluded from UPDATE).
     ///
     /// The DB trigger `check_task_belongs_to_sheet` verifies that `task_id`
     /// belongs to `sheet_id` — if not, returns `TaskNotInSheet`.
@@ -119,7 +127,7 @@ pub trait PlusnikRepository: Send + Sync {
     /// - `UserNotFound` — `student_id` or `granted_by` references a missing user (FK).
     /// - `PlusnikSheetNotFound` — `sheet_id` references a missing sheet (FK).
     /// - `TaskNotInSheet` — `task_id` does not belong to `sheet_id` (trigger).
-    async fn grant_plus(&self, record: PlusnikRecord) -> Result<PlusnikRecord, DomainError>;
+    async fn save_record(&self, record: PlusnikRecord) -> Result<PlusnikRecord, DomainError>;
 
     /// Revokes a plus (sets `revoked_at`, `revoked_by`, `revoke_comment`).
     ///

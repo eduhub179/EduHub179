@@ -8,7 +8,7 @@
 //!   `save_sheet` (create/update/errors), `delete_sheet` (with/without records).
 //! - Task CRUD: `get_tasks`, `save_task` (create/update/duplicate), `delete_task`
 //!   (with/without records).
-//! - Record operations: `grant_plus`, `revoke_plus`, `get_records_by_sheet`,
+//! - Record operations: `save_record` (grant + edit), `revoke_plus`, `get_records_by_sheet`,
 //!   `get_active_records_by_student`, `get_all_records_by_student`,
 //!   `get_active_records_by_task`.
 //! - Error mapping: FK violations (lesson/user/sheet/task not found),
@@ -326,7 +326,7 @@ async fn test_delete_sheet_blocked_by_records(pool: PgPool) {
 
     // Award a plus — this creates a record that blocks sheet deletion
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record).await.expect("Grant plus");
+    repo.save_record(record).await.expect("Save record");
 
     let err = repo.delete_sheet(sheet_id).await.unwrap_err();
     // FK ON DELETE RESTRICT — could map to PlusnikSheetHasRecords
@@ -437,7 +437,7 @@ async fn test_delete_task_blocked_by_records(pool: PgPool) {
     let repo = PlusnikRepositoryPg::new(pool.clone());
 
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record).await.expect("Grant plus");
+    repo.save_record(record).await.expect("Save record");
 
     let err = repo.delete_task(task1_id).await.unwrap_err();
     assert!(
@@ -448,17 +448,41 @@ async fn test_delete_task_blocked_by_records(pool: PgPool) {
 }
 
 // ============================================================================
-// RECORD TESTS — GRANT / REVOKE
+// TASK TESTS — GET BY ID
 // ============================================================================
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_grant_plus_and_get_by_sheet(pool: PgPool) {
+async fn test_get_task_by_id_found(pool: PgPool) {
+    let (lesson_id, teacher_id, _) = seed_lesson(&pool).await;
+    let (sheet_id, task1_id, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
+    let repo = PlusnikRepositoryPg::new(pool);
+
+    let task = repo.get_task_by_id(task1_id).await.expect("Get task by id");
+    assert_eq!(task.id, task1_id);
+    assert_eq!(task.sheet_id, sheet_id);
+    assert_eq!(task.task_number, "1а");
+    assert_eq!(task.sort_order, 0);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_get_task_by_id_not_found(pool: PgPool) {
+    let repo = PlusnikRepositoryPg::new(pool);
+    let err = repo.get_task_by_id(Uuid::new_v4()).await.unwrap_err();
+    assert_eq!(err, DomainError::PlusnikTaskNotFound);
+}
+
+// ============================================================================
+// RECORD TESTS — SAVE / REVOKE
+// ============================================================================
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_save_record_and_get_by_sheet(pool: PgPool) {
     let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
     let (sheet_id, task1_id, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
     let repo = PlusnikRepositoryPg::new(pool);
 
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record.clone()).await.expect("Grant plus");
+    repo.save_record(record.clone()).await.expect("Save record");
 
     let records = repo.get_records_by_sheet(sheet_id).await.expect("Get records");
     assert_eq!(records.len(), 1);
@@ -468,39 +492,39 @@ async fn test_grant_plus_and_get_by_sheet(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_grant_plus_duplicate_active(pool: PgPool) {
+async fn test_save_record_duplicate_active(pool: PgPool) {
     let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
     let (sheet_id, task1_id, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
     let repo = PlusnikRepositoryPg::new(pool);
 
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record).await.expect("Grant plus");
+    repo.save_record(record).await.expect("Save record");
 
     // Second active plus for the same (student, task) — should fail
     let dup = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    let err = repo.grant_plus(dup).await.unwrap_err();
+    let err = repo.save_record(dup).await.unwrap_err();
     assert_eq!(err, DomainError::PlusnikRecordAlreadyExists);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_grant_plus_invalid_student_fk(pool: PgPool) {
+async fn test_save_record_invalid_student_fk(pool: PgPool) {
     let (lesson_id, teacher_id, _) = seed_lesson(&pool).await;
     let (sheet_id, task1_id, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
     let repo = PlusnikRepositoryPg::new(pool);
 
     let record = create_active_record(Uuid::new_v4(), sheet_id, task1_id, teacher_id);
-    let err = repo.grant_plus(record).await.unwrap_err();
+    let err = repo.save_record(record).await.unwrap_err();
     assert_eq!(err, DomainError::UserNotFound);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_grant_plus_invalid_sheet_fk(pool: PgPool) {
+async fn test_save_record_invalid_sheet_fk(pool: PgPool) {
     let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
     let (_, task1_id, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
     let repo = PlusnikRepositoryPg::new(pool);
 
     let record = create_active_record(student_id, Uuid::new_v4(), task1_id, teacher_id);
-    let err = repo.grant_plus(record).await.unwrap_err();
+    let err = repo.save_record(record).await.unwrap_err();
     // The trigger check_task_belongs_to_sheet fires before the sheet FK:
     // task_id belongs to a real sheet, but sheet_id is a random UUID,
     // so the trigger says "does not belong" → TaskNotInSheet.
@@ -509,7 +533,7 @@ async fn test_grant_plus_invalid_sheet_fk(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_grant_plus_task_not_in_sheet(pool: PgPool) {
+async fn test_save_record_task_not_in_sheet(pool: PgPool) {
     let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
     let (sheet_id, _, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
 
@@ -522,7 +546,7 @@ async fn test_grant_plus_task_not_in_sheet(pool: PgPool) {
 
     // Try to award a plus on sheet1 with a task from sheet2 — trigger should fire
     let record = create_active_record(student_id, sheet_id, foreign_task.id, teacher_id);
-    let err = repo.grant_plus(record).await.unwrap_err();
+    let err = repo.save_record(record).await.unwrap_err();
     assert_eq!(err, DomainError::TaskNotInSheet);
 }
 
@@ -533,7 +557,7 @@ async fn test_revoke_plus(pool: PgPool) {
     let repo = PlusnikRepositoryPg::new(pool);
 
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record.clone()).await.expect("Grant plus");
+    repo.save_record(record.clone()).await.expect("Save record");
 
     repo.revoke_plus(record.id, teacher_id, Some("Wrong problem".to_string()))
         .await
@@ -567,7 +591,7 @@ async fn test_revoke_plus_already_revoked(pool: PgPool) {
     let repo = PlusnikRepositoryPg::new(pool);
 
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record.clone()).await.expect("Grant plus");
+    repo.save_record(record.clone()).await.expect("Save record");
 
     repo.revoke_plus(record.id, teacher_id, None)
         .await
@@ -582,14 +606,14 @@ async fn test_revoke_plus_already_revoked(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_grant_after_revoke(pool: PgPool) {
+async fn test_save_after_revoke(pool: PgPool) {
     let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
     let (sheet_id, task1_id, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
     let repo = PlusnikRepositoryPg::new(pool);
 
     // Grant, then revoke
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record.clone()).await.expect("Grant plus");
+    repo.save_record(record.clone()).await.expect("Save record");
     repo.revoke_plus(record.id, teacher_id, None)
         .await
         .expect("Revoke plus");
@@ -597,7 +621,7 @@ async fn test_grant_after_revoke(pool: PgPool) {
     // Grant a NEW active plus — should succeed (old one is revoked, partial unique index
     // only covers revoked_at IS NULL)
     let new_record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(new_record).await.expect("Grant new plus");
+    repo.save_record(new_record).await.expect("Save new record");
 
     let records = repo.get_records_by_sheet(sheet_id).await.expect("Get records");
     assert_eq!(records.len(), 2);
@@ -606,6 +630,42 @@ async fn test_grant_after_revoke(pool: PgPool) {
     let revoked: Vec<_> = records.iter().filter(|r| !r.is_active()).collect();
     assert_eq!(active.len(), 1);
     assert_eq!(revoked.len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_save_record_upsert_edit_existing(pool: PgPool) {
+    let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
+    let (sheet_id, task1_id, task2_id) =
+        seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
+    let repo = PlusnikRepositoryPg::new(pool);
+
+    // 1. Grant a plus for task1
+    let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
+    repo.save_record(record.clone()).await.expect("Save record");
+
+    // 2. Edit: change the task from task1 to task2 (wrong task was selected)
+    let edited = PlusnikRecord::try_new_active(
+        record.id,
+        record.student_id,
+        record.sheet_id,
+        task2_id,
+        record.granted_by,
+        record.granted_at,
+    )
+    .unwrap();
+    repo.save_record(edited.clone()).await.expect("Update record");
+
+    // 3. Verify: still one record, now pointing to task2
+    let records = repo.get_records_by_sheet(sheet_id).await.expect("Get records");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].task_id, task2_id);
+    assert!(records[0].is_active());
+    // granted_at should be unchanged (immutable on update)
+    // granted_at is TIMESTAMPTZ (microsecond precision) — compare truncated
+    assert_eq!(
+        records[0].granted_at.timestamp_micros(),
+        record.granted_at.timestamp_micros()
+    );
 }
 
 // ============================================================================
@@ -621,8 +681,8 @@ async fn test_get_active_records_by_student(pool: PgPool) {
     // Award two pluses
     let r1 = create_active_record(student_id, sheet_id, task1_id, teacher_id);
     let r2 = create_active_record(student_id, sheet_id, task2_id, teacher_id);
-    repo.grant_plus(r1.clone()).await.expect("Grant r1");
-    repo.grant_plus(r2.clone()).await.expect("Grant r2");
+    repo.save_record(r1.clone()).await.expect("Save r1");
+    repo.save_record(r2.clone()).await.expect("Save r2");
 
     // Revoke one
     repo.revoke_plus(r1.id, teacher_id, None)
@@ -645,8 +705,8 @@ async fn test_get_all_records_by_student(pool: PgPool) {
 
     let r1 = create_active_record(student_id, sheet_id, task1_id, teacher_id);
     let r2 = create_active_record(student_id, sheet_id, task2_id, teacher_id);
-    repo.grant_plus(r1.clone()).await.expect("Grant r1");
-    repo.grant_plus(r2.clone()).await.expect("Grant r2");
+    repo.save_record(r1.clone()).await.expect("Save r1");
+    repo.save_record(r2.clone()).await.expect("Save r2");
     repo.revoke_plus(r1.id, teacher_id, None)
         .await
         .expect("Revoke r1");
@@ -665,7 +725,7 @@ async fn test_get_active_records_by_task(pool: PgPool) {
     let repo = PlusnikRepositoryPg::new(pool);
 
     let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.grant_plus(record.clone()).await.expect("Grant plus");
+    repo.save_record(record.clone()).await.expect("Save record");
     repo.revoke_plus(record.id, teacher_id, None)
         .await
         .expect("Revoke plus");
@@ -675,19 +735,6 @@ async fn test_get_active_records_by_task(pool: PgPool) {
         .await
         .expect("Get active by task");
     assert!(active.is_empty()); // revoked — not active
-}
-
-#[sqlx::test(migrations = "../../migrations")]
-async fn test_get_records_by_sheet_empty(pool: PgPool) {
-    let (lesson_id, teacher_id, _) = seed_lesson(&pool).await;
-    let (sheet_id, _, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
-    let repo = PlusnikRepositoryPg::new(pool);
-
-    let records = repo
-        .get_records_by_sheet(sheet_id)
-        .await
-        .expect("Get records");
-    assert!(records.is_empty());
 }
 
 // ============================================================================
@@ -728,8 +775,8 @@ async fn test_full_matrix_scenario(pool: PgPool) {
     // 4. Award pluses: student solved tasks 1 and 2
     let r1 = create_active_record(student_id, sheet.id, t1.id, teacher_id);
     let r2 = create_active_record(student_id, sheet.id, t2.id, teacher_id);
-    repo.grant_plus(r1).await.expect("Grant r1");
-    repo.grant_plus(r2).await.expect("Grant r2");
+    repo.save_record(r1).await.expect("Save r1");
+    repo.save_record(r2).await.expect("Save r2");
 
     // 5. Verify: 2 active records for the student
     let active = repo

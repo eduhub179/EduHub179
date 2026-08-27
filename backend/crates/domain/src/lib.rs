@@ -13,6 +13,7 @@ pub mod entities {
     pub mod subject;
     pub mod user;
     pub mod plusnik;
+    // pub mod message; TODO: сделать
 }
 
 pub mod value_objects {

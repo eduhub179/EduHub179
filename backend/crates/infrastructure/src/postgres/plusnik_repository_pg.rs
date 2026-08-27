@@ -353,6 +353,22 @@ impl PlusnikRepository for PlusnikRepositoryPg {
         rows.into_iter().map(PlusnikTaskRow::into_domain).collect()
     }
 
+    async fn get_task_by_id(&self, task_id: Uuid) -> Result<PlusnikTask, DomainError> {
+        let row = sqlx::query_as::<_, PlusnikTaskRow>(
+            r#"
+            SELECT task_id, sheet_id, task_number, sort_order, created_at
+            FROM plusnik_tasks
+            WHERE task_id = $1
+            "#,
+        )
+        .bind(task_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(Self::map_db_err_task)?;
+
+        row.into_domain()
+    }
+
     async fn save_task(&self, task: PlusnikTask) -> Result<PlusnikTask, DomainError> {
         sqlx::query(
             r#"
@@ -491,12 +507,21 @@ impl PlusnikRepository for PlusnikRepositoryPg {
             .collect()
     }
 
-    async fn grant_plus(&self, record: PlusnikRecord) -> Result<PlusnikRecord, DomainError> {
+    async fn save_record(&self, record: PlusnikRecord) -> Result<PlusnikRecord, DomainError> {
         sqlx::query(
             r#"
             INSERT INTO plusnik_records
-                (record_id, student_id, sheet_id, task_id, granted_by, granted_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+                (record_id, student_id, sheet_id, task_id, granted_by, granted_at,
+                 revoked_at, revoked_by, revoke_comment)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (record_id) DO UPDATE SET
+                student_id     = EXCLUDED.student_id,
+                sheet_id       = EXCLUDED.sheet_id,
+                task_id        = EXCLUDED.task_id,
+                granted_by     = EXCLUDED.granted_by,
+                revoked_at     = EXCLUDED.revoked_at,
+                revoked_by     = EXCLUDED.revoked_by,
+                revoke_comment = EXCLUDED.revoke_comment
             "#,
         )
         .bind(record.id)
@@ -505,9 +530,12 @@ impl PlusnikRepository for PlusnikRepositoryPg {
         .bind(record.task_id)
         .bind(record.granted_by)
         .bind(record.granted_at)
+        .bind(record.revoked_at)
+        .bind(record.revoked_by)
+        .bind(&record.revoke_comment)
         .execute(&self.pool)
         .await
-        .map_err(Self::map_db_err)?;
+        .map_err(Self::map_db_err_record)?;
 
         Ok(record)
     }
