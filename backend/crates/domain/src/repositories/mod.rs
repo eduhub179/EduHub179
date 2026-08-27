@@ -1,7 +1,12 @@
 pub mod cabinet_repository;
 pub mod class_repository;
+pub mod event_repository;
 pub mod homework_repository;
+pub mod lesson_instance_repository;
 pub mod lesson_repository;
+pub mod plusnik_repository;
+pub mod lesson_template_repository;
+pub mod schedule_week_repository;
 pub mod student_group_repository;
 pub mod subject_repository;
 pub mod user_repository;

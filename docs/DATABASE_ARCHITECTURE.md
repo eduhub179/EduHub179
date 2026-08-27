@@ -63,8 +63,9 @@
 | Сущность | Назначение |
 |----------|------------|
 | `cabinets` | Кабинеты (3-значный номер, этаж) |
+| `schedule_weeks` | Контейнер недели (draft/published, `copied_from`) — единица построения расписания |
 | `lesson_templates` | Шаблоны уроков (время + кабинет + день недели) |
-| `lesson_instances` | Конкретные уроки на конкретные даты (шаблон + неделя + дата) |
+| `lesson_instances` | Конкретные уроки на конкретные даты (шаблон + неделя + дата + статус + кабинет) |
 | `events` | События (лекции, мероприятия) |
 | `event_attendees` | Участники событий |
 | `day_of_week` (ENUM) | Дни недели |
@@ -135,31 +136,38 @@
 **ВНИМАНИЕ:** выполняется ПЕРЕД `0004` (`homeworks`), так как `homeworks` ссылается на `lesson_instances`.
 
 **Таблицы:**
+- `schedule_weeks` — контейнер недели: `week_start_date` (PK), `status` (`draft`/`published`), `copied_from` (self-FK)
 - `cabinets` — кабинеты
 - `lesson_templates` — шаблоны уроков
-- `lesson_instances` — конкретные уроки на даты
+- `lesson_instances` — конкретные уроки на даты (одна строка на (шаблон, неделю); `week_start_date` — FK на `schedule_weeks`)
 - `events` — события (лекции, мероприятия)
 - `event_attendees` — участники событий
 
 **ENUM:**
-- `day_of_week` — дни недели
+- `day_of_week` — дни недели (mon–sat; в воскресенье уроков нет — только события)
 - `week_parity` — периодичность
+- `week_status` — жизненный цикл недели (`draft` / `published`)
+- `lesson_instance_status` — статус урока (`scheduled` / `completed` / `cancelled`)
 
 **Функции:**
-- `check_teacher_available()` — проверка занятости учителя
-- `get_student_schedule_for_date()` — полное расписание ученика на дату
+- `check_teacher_available(teacher, week_start_date, day, start, end, exclude_instance_id)` — недельно-зависимая: сначала инстансы недели (status = 'scheduled'), фолбэк на активные шаблоны для недель без инстансов
+- `get_student_schedule_for_date(student, date)` — полное расписание ученика на дату: уроки из **published** недель + события ученика вместе (ничего не скрывается автоматически), с колонкой `status` для серых отменённых уроков
 
 **Ключевые моменты:**
 - Шаблон урока = (урок + день + время + кабинет + периодичность)
 - Флаг `is_active` в шаблонах — для быстрой проверки занятости
-- Флаг `is_override` — для замен уроков
-- События перекрывают уроки в расписании ученика
+- Замены обрабатываются на уровне инстанса (отмена исходного + создание замещающего инстанса), а не шаблонами
+- `lesson_instances` — одна строка на (шаблон, неделю); `week_start_date` ссылается на `schedule_weeks`
+- `lesson_instances.cabinet_id` — кабинеты живут на инстансах (еженедельная смена кабинетов); в шаблонах — дефолт-затравка
+- Ученики видят только опубликованные недели; проверки занятости видят всё (включая черновики)
+- Пересечения (событие vs урок, кружок vs урок) показываются, а не скрываются — решает ученик
 
 ---
 
-### `0003_create_homework.sql` ⚠️
 
-**ВНИМАНИЕ:** выполняется ПОСЛЕ `0005`, так как ссылается на `lesson_instances`.
+### `0004_create_homework.sql` ⚠️
+
+**ВНИМАНИЕ:** выполняется ПОСЛЕ `0003`, так как ссылается на `lesson_instances`.
 
 **Таблицы:**
 - `homeworks` — домашние задания
@@ -177,7 +185,7 @@
 
 ---
 
-### `0004_create_plusnik.sql`
+### `0005_create_plusnik.sql`
 
 **Таблицы:**
 - `plusnik_sheets` — листки задач
@@ -208,7 +216,8 @@ users (ученики, учителя, админы)
   ├── ← homeworks.created_by
   ├── ← homeworks.last_edited_by
   ├── ← plusnik_records.student_id / granted_by / revoked_by
-  └── ← events.organizer_id
+  ├── ← events.organizer_id
+  └── ← events.created_by
 
 classes (классы школы)
   ├── ← users.class_id
@@ -242,7 +251,7 @@ lesson_templates (шаблоны уроков)
   ├── lesson_id → lessons
   ├── cabinet_id → cabinets
   ├── is_active (флаг активности)
-  ├── is_override (флаг замены)
+
   └── ← lesson_instances.template_id
 
 lesson_instances (конкретные уроки на даты)
@@ -259,12 +268,13 @@ cabinets (кабинеты)
 
 events (события)
   ├── cabinet_id → cabinets
-  ├── organizer_id → users
+  ├── organizer_id → users (мутабельно: кто ведёт сейчас, контакт)
+  ├── created_by → users (иммутабельно: кто создал, аудит)
   └── ← event_attendees.event_id
 
-event_attendees (ученик ↔ событие)
+event_attendees (участник ↔ событие)
   ├── event_id → events
-  └── student_id → users
+  └── user_id → users
 
 homeworks (ДЗ)
   ├── lesson_instance_id → lesson_instances
@@ -366,11 +376,12 @@ LEFT JOIN plusnik_records pr ON ...
 - Всегда актуальная матрица
 - Простота схемы
 
-### 5.6 События перекрывают уроки
+### 5.6 События и уроки показываются вместе (без автоматического перекрытия)
 
-Если ученик участвует в событии (лекция), которое пересекается с уроком — в расписании показывается событие.
-
-**Решение:** функция `get_student_schedule_for_date()` с `NOT EXISTS` для исключения пересечений.
+Если ученик участвует в событии, пересекающемся с уроком — `get_student_schedule_for_date()`
+возвращает **обе** строки, пересечение помечается на клиенте; решение принимает ученик.
+Ничего не скрывается автоматически. Урок, заменённый обязательным
+событием, отменяется через статус инстанса, а не через перекрытие.
 
 ### 5.7 Шаблоны уроков с флагами
 
@@ -378,11 +389,6 @@ LEFT JOIN plusnik_records pr ON ...
 - TRUE — шаблон используется в текущем расписании
 - FALSE — архивирован, не участвует в проверке занятости
 - Позволяет быстро проверять занятость учителя
-
-**`is_override`:**
-- TRUE — шаблон для замены
-- FALSE — обычный шаблон
-- Упрощает архивацию замен
 
 ---
 
@@ -431,47 +437,70 @@ VALUES ('student_id', 'sheet_id', 'task_id', 'teacher_id');
 ### 6.4 Админ составляет расписание
 
 ```sql
--- Проверяем, занят ли учитель
-SELECT check_teacher_available('teacher_id', 'пн', '10:50', '11:35');
+-- Неделя должна существовать раньше (FK)
+INSERT INTO schedule_weeks (week_start_date, status)
+VALUES ('2026-07-27', 'draft');
+
+-- Проверяем, занят ли учитель В ЭТУ НЕДЕЛЮ (недельно-зависимая проверка)
+SELECT check_teacher_available('teacher_id', '2026-07-27', 'mon', '10:50', '11:35');
 
 -- Создаём шаблон урока
 INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id)
-VALUES ('lesson_id', 'пн', '10:50', '11:35', 'cabinet_id');
+VALUES ('lesson_id', 'mon', '10:50', '11:35', 'cabinet_id');
 
--- Создаём экземпляр урока на неделю
+-- Создаём экземпляр урока на неделю (ячейка сетки)
 INSERT INTO lesson_instances (template_id, week_start_date, lesson_date)
 VALUES ('template_id', '2026-07-27', '2026-07-27');
+
+-- Публикуем, когда неделя готова
+UPDATE schedule_weeks SET status = 'published' WHERE week_start_date = '2026-07-27';
 ```
+
+**Примечание:** в стабильный период неделя обычно строится *копированием предыдущей*
+(ячейки копируются 1:1, замены добавляются вручную) — см. docs/SCHEDULE.en.md.
 
 ### 6.5 Замена урока (учитель заболел)
 
 ```sql
--- Создаём шаблон для замены
-INSERT INTO lesson_templates (lesson_id, day, start_time, end_time, cabinet_id, is_override, comment)
-VALUES ('new_lesson_id', 'пн', '10:50', '11:35', 'cabinet_id', TRUE, 'Иванов заболел');
-
--- Переводим урок этой недели на шаблон замены
+-- Отменяем исходный инстанс
 UPDATE lesson_instances
-SET template_id = 'new_template_id'
-WHERE instance_id = 'instance_id';
+SET status = 'cancelled'
+WHERE instance_id = 'original_instance_id';
+
+-- Создаём замещающий урок (тот же класс/группа, новый учитель/предмет)
+INSERT INTO lessons (lesson_id, class_id, group_id, subject_id)
+VALUES ('replacement_lesson_id', 'class_id', NULL, 'subject_id');
+
+-- Назначаем замещающего учителя
+INSERT INTO lesson_teachers (lesson_id, teacher_id)
+VALUES ('replacement_lesson_id', 'substitute_teacher_id');
+
+-- Создаём шаблон для замещающего урока (тот же слот)
+INSERT INTO lesson_templates (template_id, lesson_id, day, start_time, end_time, parity, cabinet_id, is_active)
+VALUES ('replacement_template_id', 'replacement_lesson_id', 'mon', '10:50', '11:35', 'every', 'cabinet_id', TRUE);
+
+-- Создаём замещающий инстанс на эту неделю
+INSERT INTO lesson_instances (instance_id, template_id, week_start_date, lesson_date, status, cabinet_id)
+VALUES ('replacement_instance_id', 'replacement_template_id', '2026-09-07', '2026-09-07', 'scheduled', 'cabinet_id');
 ```
 
 ### 6.6 Часть класса уходит на лекцию
 
 ```sql
 -- Создаём событие
-INSERT INTO events (title, start_time, end_time, cabinet_id, organizer_id)
-VALUES ('Лекция по квантовой физике', '2026-07-28 10:50', '2026-07-28 11:35', 'cabinet_id', 'teacher_id');
+INSERT INTO events (title, start_time, end_time, cabinet_id, organizer_id, created_by)
+VALUES ('Лекция по квантовой физике', '2026-07-28 10:50', '2026-07-28 11:35', 'cabinet_id', 'teacher_id', 'teacher_id');
 
 -- Добавляем участников
-INSERT INTO event_attendees (event_id, student_id) VALUES
+INSERT INTO event_attendees (event_id, user_id) VALUES
     ('event_id', 'student_1'),
     ('event_id', 'student_2');
 ```
 
 **Расписание ученика:**
-- Если ученик участвует в событии → показывается событие
-- Иначе → показывается обычный урок
+- Если ученик участвует в событии → возвращаются И событие, И урок;
+  пересечение помечается на клиенте, решение принимает ученик (ничего не скрывается
+  автоматически)
 
 ---
 
@@ -489,7 +518,7 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
 0005_create_plusnik.sql            ← зависит от 0002 (lessons)
 ```
 
-**Важно:** `0003` и `0004` можно выполнять в любом порядке после `0005`, но `0003` должен выполняться ПОСЛЕ `0005`.
+**Важно:** миграции выполняются в порядке имён файлов; `0004` требует `0003` (`homeworks` ссылается на `lesson_instances`), `0005` требует `0002` (`plusnik` ссылается на `lessons`).
 
 ---
 
@@ -524,9 +553,9 @@ INSERT INTO event_attendees (event_id, student_id) VALUES
 | **Количество таблиц** | 18 |
 | **Количество ENUM** | 6 |
 | **Количество функций** | 4 |
-| **Количество триггеров** | 10 |
-| **Количество индексов** | ~50 |
-| **Файлов миграций** | 5 |
+| **Количество триггеров** | 11 |
+| **Количество индексов** | ~49 |
+| **Файлов миграций** | 6 |
 
 ---
 

@@ -1,118 +1,89 @@
-# Lesson Overrides — Design
+# Lesson Overrides — Implementation
 
-> Status: **design, not implemented.** Decision log from 2026-08-16 (Max + Alan).
-> The `lesson_overrides` table does not exist yet — this doc is the spec the implementation PR will follow.
-> When the migration lands, `DATABASE_ARCHITECTURE.en.md` gets updated to match: §6.5 (substitution
-> recipe) and §5.6/§6.1 (event shadowing → replaced by overlap display, see §7).
+> Status: **implemented** (folded into `lesson_instances` architecture).
+> Decision log from 2026-08-16 (Max + Alan); superseded the earlier separate-table design.
 
-## 1. Why this exists
+## 1. Why overrides exist
 
-The old substitution flow (new lesson + new template with `is_override = TRUE` + repoint the
-instance) had three structural problems:
-
-1. **Week-blind availability.** `check_teacher_available(teacher, day, start, end, exclude_template_id)`
-   scans *all active templates* and has no date/week parameter. A one-week substitution template
-   blocked the substitute teacher at that day/time for **every** week until manually archived.
-2. **No override→original link.** Nothing structurally says "this lesson replaced that one".
-   "Replaced by" could not be shown; archiving was a manual ritual.
-3. **Heavyweight ritual.** A one-week swap required cloning the lesson (the dedup index
-   `(lesson_id, day, start_time, end_time, parity)` blocks a second template for the same lesson
-   at the same slot), creating a template, and repointing the instance.
+A teacher is absent or busy → another teacher covers that one lesson. The slot (day/time)
+stays; only the content (subject, teacher, cabinet) changes. Subject swaps between two slots
+are also possible but rare.
 
 ## 2. The model
 
-Three layers stay unchanged:
+Three layers, unchanged:
 
-| Layer | Changes | Example |
+| Layer | What it is | How often it changes |
 |---|---|---|
-| `lessons` | extremely rarely | class/group + subject + teachers (via `lesson_teachers`) |
-| `lesson_templates` | sometimes (school-wide schedule change) | day + time rhythm, `is_active` |
-| `lesson_instances` | each time | concrete lesson on a concrete date, `status` |
+| `lessons` | class/group + subject + teachers (via `lesson_teachers`) | rarely |
+| `lesson_templates` | day + time rhythm + parity, `is_active` | sometimes (school-wide schedule change) |
+| `lesson_instances` | concrete lesson on a concrete date, `status` | each time (per week) |
 
-**An override is a side-channel attached to one instance:** "this occurrence runs different
-content". It swaps *what is taught, by whom, and in which room*, never *when* (the day/time
-slot is the instance's business):
+**An override is not a separate table.** It is an instance-level operation:
 
-- The slot (day/time) always comes from the instance → template chain. An override cannot move
-  a lesson. Moves are the schedule's job (template edit for permanent, instance generation for
-  one-off).
-- The primary real-world case: another teacher comes to the class because the original one is
-  absent or busy. Subject change is possible but rare.
+1. **Cancel** the original instance: `status = 'cancelled'`.
+2. **Create** a replacement lesson (same class/group, new teacher/subject if needed).
+3. **Create** a replacement template for that lesson (same day/time slot).
+4. **Create** a replacement instance for this week, `status = 'scheduled'`.
 
-## 3. New table
+The original instance stays in the DB (history, audit) and appears in the schedule greyed out
+(`get_student_schedule_for_date` returns cancelled rows with their status). The replacement
+instance appears as a normal scheduled lesson.
 
-```sql
-CREATE TABLE lesson_overrides
-(
-    override_id UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
-    instance_id UUID        NOT NULL REFERENCES lesson_instances (instance_id) ON DELETE CASCADE,
-    lesson_id   UUID        NOT NULL REFERENCES lessons (lesson_id) ON DELETE RESTRICT, -- replacement lesson
-    cabinet_id  UUID NULL REFERENCES cabinets (cabinet_id) ON DELETE SET NULL, -- NULL = keep the instance's cabinet
-    comment     TEXT NULL,          -- "Ivanov is sick, Petrov covers"
-    created_by  UUID        NOT NULL REFERENCES users (user_id),
-    revoked_at  TIMESTAMPTZ NULL,   -- NULL = active
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+## 3. Why not a separate table
 
--- One ACTIVE override per instance; unlimited revoked history
-CREATE UNIQUE INDEX idx_lesson_overrides_one_active
-    ON lesson_overrides (instance_id)
-    WHERE revoked_at IS NULL;
-```
+The earlier design proposed a `lesson_overrides` table. It was rejected in favor of the
+instance-level approach because:
 
-Key properties:
-
-- **The replacement is a real `lessons` row.** Teachers live only in `lesson_teachers`
-  (M2M, not week-scoped), so a teacher swap needs a new lesson: same class/group,
-  subject may change or stay, new teacher(s). All existing machinery is reused — no new M2M
-  table, no duplicated validation.
-- **One lesson can back many overrides.** "Petrov covers ALL of Ivanov's Monday lessons this
-  week" = 1 lesson row + N override rows (one per instance).
-- **Cabinet is a column on the override**, not on the replacement lesson (a lesson may be
-  reused across overrides with different rooms). NULL = keep the instance's cabinet. Effective
-  cabinet: `COALESCE(override.cabinet_id, instance.cabinet_id, template.cabinet_id)` — the
-  instance is never mutated, so revoking restores the original room too.
-- **Attendance always resolves from the ORIGINAL chain** (instance → template → original
-  lesson's class/group). The override contributes subject + teachers + cabinet only.
-  Application-level rule: replacement lesson must target the same class/group. This prevents
-  the class-mismatch trap.
-- **No hard delete.** Restore = set `revoked_at`. History doubles as an admin reference
-  ("last time Petrov covered for Ivanov") and as the audit trail.
-- **No day/time fields on the override.** Slot identity is the instance's business.
-- Events are **not** part of this table and the unique index does not consider them — an event
-  shadows per-student (`event_attendees`), so an event + an override can legitimately coexist
-  (attendees see the event, everyone else sees the overridden lesson).
+- **Simpler.** No new table, no new repo, no new aggregate. Reuses existing
+  `lessons` + `lesson_templates` + `lesson_instances` machinery.
+- **No schema bloat.** The `is_override` column on `lesson_templates` (leftover from the
+  old substitution flow) was removed — it was always `FALSE` and served no purpose.
+- **History is preserved.** The cancelled original instance is the audit trail.
+  "What was here before the override?" → look at the cancelled instance.
+- **Teacher availability check already supports it.** `check_teacher_available` has an
+  `p_exclude_instance_id` parameter — it skips the cancelled instance when checking if the
+  substitute teacher is free.
 
 ## 4. Flow
 
-**Substitute for a lesson:**
-1. Check availability (week-aware, see §5).
-2. Create the replacement lesson if it does not exist yet (same class/group; subject and
-   teachers as needed). Decide the cabinet: NULL = keep the instance's room, otherwise the
-   new room for this occurrence.
-3. `INSERT INTO lesson_overrides (instance_id, lesson_id, cabinet_id, comment, created_by)`.
+**Substitute a teacher for one lesson:**
 
-**Restore:** `UPDATE lesson_overrides SET revoked_at = now() WHERE override_id = ...`.
+1. Check the substitute teacher is available:
+   ```sql
+   SELECT check_teacher_available(
+       'substitute_teacher_id',
+       '2026-09-07'::DATE,  -- week_start_date
+       'mon'::day_of_week,
+       '10:50'::TIME,
+       '11:35'::TIME,
+       'original_instance_id'::UUID  -- exclude the instance being replaced
+   );
+   ```
+2. Cancel the original instance:
+   ```sql
+   UPDATE lesson_instances SET status = 'cancelled' WHERE instance_id = 'original_instance_id';
+   ```
+3. Create the replacement lesson + teachers + template + instance (if the replacement
+   lesson doesn't already exist, create it; otherwise reuse it).
 
-No template surgery, no instance repointing, no dedup-index workaround.
+**Restore:** set the replacement instance to `cancelled` and the original back to `scheduled`.
 
 ### Example — one-off subject swap between two slots
 
 "This week: Algebra instead of Literature on Monday, Literature instead of Algebra on
-Thursday." Both slots stay where they are; only the content changes:
+Thursday."
 
-- **One-off (single week):** two overrides — Monday's instance → the Algebra lesson,
-  Thursday's instance → the Literature lesson. If the swapped lessons belong to the same
-  class and the teachers match, the EXISTING lesson rows are reused directly — no new
-  lessons needed.
-- **Permanent arrangement:** edit the templates (Monday's template points at the Algebra
-  lesson, Thursday's at Literature). This is the "templates change sometimes" layer,
-  not an override.
+- Cancel Monday's Literature instance + Thursday's Algebra instance.
+- Create replacement instances pointing at the existing Algebra and Literature lessons
+  (same class, same teachers — reuse the lesson rows).
+- Both slots stay in place; only the content changes.
 
-Both cases stay inside the model — no slot-move machinery involved.
+For a **permanent** arrangement, edit the templates instead — Monday's template points at
+Algebra, Thursday's at Literature. This is the "templates change sometimes" layer, not an
+override.
 
-## 5. Availability check
+## 5. Teacher availability check
 
 ```sql
 check_teacher_available(
@@ -127,81 +98,38 @@ check_teacher_available(
 
 Two layers:
 
-- **Week has instances** (generated): scan `lesson_instances` for that week with
-  `status = 'scheduled'`; effective lesson = `COALESCE(active override.lesson_id,
-  template.lesson_id)`; teachers via `lesson_teachers`. Overlap on (day, time).
-- **Week has no instances yet** (lazy generation): fall back to **active templates**.
-  This fallback is clean again *because* overrides never touch templates — the old
-  week-blind bug was caused by override templates polluting the template space.
+- **Week has instances** (generated): scans `lesson_instances` for that week with
+  `status = 'scheduled'`. Cancelled instances (the original being replaced) don't block.
+  `p_exclude_instance_id` also skips the instance being replaced (double safety).
+- **Week has no instances yet** (lazy generation): falls back to active templates.
+  Clean because overrides never touch templates.
 
-Consequence of lazy generation: an override can only target an instance that already exists
-(weeks are generated one at a time).
+## 6. Homework interaction
 
-Cabinet is not part of teacher availability; the effective cabinet
-(`COALESCE(override.cabinet_id, instance.cabinet_id, template.cabinet_id)`) feeds the
-free-cabinet check instead (see §9).
+Homework is tied to `lesson_instances`.
 
-## 6. Homework
+- **Same subject** (teacher substitution): homework stays on the original instance; the
+  substitute works with it normally.
+- **Subject changed:** homework relocates to the next scheduled instance of the original
+  lesson. If that instance doesn't exist yet (lazy generation), create it on demand.
 
-Homework is tied to `lesson_instances`. Rule on override:
+## 7. Display — nothing auto-shadows
 
-- **Same subject** (the common case — teacher substitution): homework stays on the instance;
-  the substitute works with it normally.
-- **Subject changed:** homework relocates to the **next scheduled instance of the original
-  lesson** (original subject + teacher). With lazy generation that target instance may not
-  exist yet — create it on demand (it is the real future lesson anyway).
+Every activity a student belongs to is shown; overlaps are marked; the student decides.
 
-Deferred corner cases: end-of-term orphan (no next occurrence), revocation pull-back of
-relocated homework.
+- Cancelled lessons appear in `get_student_schedule_for_date` with `status = 'cancelled'`
+  so the client can render them greyed.
+- Replacement instances appear as normal scheduled lessons.
+- Events the student attends appear as separate rows. Overlap marking is client-side.
+- A lesson replaced by a mandatory event is cancelled via instance status — the view shows
+  "cancelled" + the event. No shadowing needed.
 
-## 7. Display (per student) — nothing auto-shadows
+Teachers are different: overlaps are **prevented** by the availability check, not displayed
+as a choice. Known gap: event organizers are not yet covered by
+`check_teacher_available` — a future UI feature, no schema impact.
 
-**Every activity a student belongs to is shown; overlaps are marked; the student decides.**
-This applies to lessons AND events AND clubs alike — participation is always the student's
-choice, so the system shows the conflict instead of hiding one side (decision 2026-08-16):
+## 8. What was removed
 
-- Lesson row content: active override > original (the override swaps what is taught, by whom,
-  and the room).
-- Event row: shown if the student is an attendee and the event overlaps the lesson slot.
-- Both rows appear with a conflict marker when they overlap.
-- A lesson replaced by a mandatory event is **cancelled via instance status**
-  (`status = 'cancelled'`) — the view shows "cancelled" + the event. No shadowing needed.
-
-Consequences for `get_student_schedule_for_date`: drop the event `NOT EXISTS` exclusion —
-lessons and attendee events are returned as separate rows; overlap marking is client-side.
-`cabinet_id` in the returned rows resolves through the override chain (see §5).
-
-**Teachers are different: prevent, not display.** A teacher cannot split across two rooms, so
-overlaps are prevented by the availability check, not shown as a choice. Known gap to close
-later: event organizers are NOT covered by `check_teacher_available` today. Teacher-side
-overlap warnings are a later UI feature — no schema impact.
-
-## 8. Schema changes
-
-**Already delivered by migration 0006** (`feat/schedule-layer`): `lesson_instances.cabinet_id`
-(cabinets move to instances), the week-aware `check_teacher_available` (§5), and the
-published-week gate in `get_student_schedule_for_date`.
-
-**Future migration (0007+, not yet written):**
-- NEW `lesson_overrides` (+ partial unique index, FKs, `cabinet_id`) — §3.
-- `lesson_templates`: drop `is_override` (no override templates anymore).
-- Template keeps its `cabinet_id` for now; whether to drop it is a deferred memory
-  optimization (archives do not need cabinet info).
-
-## 9. Deferred / flagged for later
-
-- **Cabinet column on templates**: keep both for now, decide later.
-- **Events table**: keep. It serves one-off activities (lectures, olympiads, excursions):
-  absolute timestamps, per-student attendee list, shadowing. Recurring extracurriculars
-  (volleyball, additional informatics) are NOT events — they are templates +
-  `student_groups` + `subjects`, with `week_parity` for every-other-week clubs.
-  The dedup index already includes parity, so odd/even twin templates coexist.
-- **Schedule generation** (copy previous week → next, then apply overrides): separate
-  discussion, not designed here.
-- **Club/lesson overlap resolution** (real cases, Max 2026-08-16): a student's club can
-  overlap a regular lesson (or another club), and events can overlap lessons too. Unified
-  rule (see §7): show all rows + conflict marker, student decides — nothing auto-shadows.
-  Cancelled lessons: decided 2026-08-16 — shown as greyed rows (display decision, not schema). Teacher-side overlap warnings + organizer-aware event check: later.
-- **Cabinet double-booking exclusion index** (same room, same time — across lessons, clubs,
-  and events): worth building eventually; parked with the cabinet decision. When built, it
-  checks the EFFECTIVE cabinet (override → instance → template), overrides included.
+- `lesson_templates.is_override` column — dropped from migration 0003. It was always `FALSE`
+  and served no purpose with the instance-level approach.
+- The proposed `lesson_overrides` table — never created, not needed.

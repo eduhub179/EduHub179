@@ -100,6 +100,71 @@ pub enum DomainError {
 
     // authentication failed
     InvalidCredentials,
+    // LessonTemplate with the specified ID was not found.
+    LessonTemplateNotFound,
+    // A lesson cannot have two templates with the same (lesson_id, day, start_time, end_time, parity)
+    // (unique violation on idx_lesson_templates_no_dup).
+    LessonTemplateAlreadyExists,
+    // Template end_time must be strictly after start_time (DB CHECK chk_template_time).
+    InvalidLessonTemplateTime,
+    // A new/updated ACTIVE template would overlap another ACTIVE template of the
+    // same lesson at a parity-conflicting slot: Every conflicts with all parities,
+    // Odd/Odd and Even/Even conflict; Odd/Even twins are the only allowed overlap.
+    LessonTemplateSlotConflict,
+    // Template references a non-existent lesson or cabinet (FK violation).
+    InvalidLessonTemplateReference,
+    // Unknown day_of_week value in the database (cannot be parsed into DayOfWeek).
+    InvalidDayOfWeek,
+    // Unknown week_parity value in the database (cannot be parsed into WeekParity).
+    InvalidWeekParity,
+
+    // ScheduleWeek with the specified start date was not found.
+    ScheduleWeekNotFound,
+    // Unknown schedule_weeks.status value (cannot be parsed into WeekStatus).
+    InvalidWeekStatus,
+    // Unknown lesson_instances.status value (cannot be parsed into LessonInstanceStatus).
+    InvalidLessonInstanceStatus,
+    // A template cannot produce two instances in the same week (unique violation
+    // on idx_lesson_instances_unique).
+    LessonInstanceAlreadyExists,
+    // lesson_date must fall within [week_start_date, week_start_date + 7).
+    InvalidLessonInstanceDate,
+
+    // Event with the specified ID was not found.
+    EventNotFound,
+    // Event title must be non-empty and at most 255 chars (DB VARCHAR(255)).
+    InvalidEventTitle,
+    // Event end_time must be strictly after start_time (DB CHECK chk_event_time).
+    InvalidEventTime,
+    // No attendance row for the (event_id, student_id) pair (remove_attendee).
+    EventAttendeeNotFound,
+
+    // PlusnikSheet with the specified ID was not found.
+    PlusnikSheetNotFound,
+    // Sheet name must be non-empty and at most 255 chars.
+    InvalidPlusnikSheetName,
+    // Unknown sheet_status value in the database.
+    InvalidSheetStatus,
+    // Cannot delete a sheet that has plusnik records (FK ON DELETE RESTRICT).
+    PlusnikSheetHasRecords,
+
+    // PlusnikTask with the specified ID was not found.
+    PlusnikTaskNotFound,
+    // Task number must be non-empty and at most 20 chars.
+    InvalidTaskNumber,
+    // Two tasks with the same number in one sheet (unique index violation).
+    PlusnikTaskAlreadyExists,
+    // Cannot delete a task that has plusnik records (FK ON DELETE RESTRICT).
+    PlusnikTaskHasRecords,
+
+    // PlusnikRecord with the specified ID was not found.
+    PlusnikRecordNotFound,
+    // A record violates the chk_revoked_has_reviewer CHECK (revoked_at without revoked_by).
+    InvalidPlusnikRecord,
+    // An active plus for this (student_id, task_id) already exists.
+    PlusnikRecordAlreadyExists,
+    // task_id does not belong to sheet_id (trigger check_task_belongs_to_sheet).
+    TaskNotInSheet,
 }
 
 impl fmt::Display for DomainError {
@@ -147,6 +212,50 @@ impl fmt::Display for DomainError {
             DomainError::InvalidCabinetDescription => write!(f, "Invalid cabinet description"),
             DomainError::InvalidCabinetCapacity => write!(f, "Invalid cabinet capacity"),
             DomainError::InvalidCredentials => write!(f, "Authentication failed"),
+            DomainError::LessonTemplateNotFound => write!(f, "Lesson template not found"),
+            DomainError::LessonTemplateAlreadyExists => {
+                write!(f, "Lesson template already exists")
+            }
+            DomainError::InvalidLessonTemplateTime => write!(f, "Invalid lesson template time"),
+            DomainError::LessonTemplateSlotConflict => {
+                write!(f, "Lesson template slot conflict")
+            }
+            DomainError::InvalidLessonTemplateReference => {
+                write!(f, "Invalid lesson template references")
+            }
+            DomainError::InvalidDayOfWeek => write!(f, "Invalid day of week"),
+            DomainError::InvalidWeekParity => write!(f, "Invalid week parity"),
+            DomainError::ScheduleWeekNotFound => write!(f, "Schedule week not found"),
+            DomainError::InvalidWeekStatus => write!(f, "Invalid week status"),
+            DomainError::InvalidLessonInstanceStatus => {
+                write!(f, "Invalid lesson instance status")
+            }
+            DomainError::LessonInstanceAlreadyExists => {
+                write!(f, "Lesson instance already exists")
+            }
+            DomainError::InvalidLessonInstanceDate => write!(f, "Invalid lesson instance date"),
+            DomainError::EventNotFound => write!(f, "Event not found"),
+            DomainError::InvalidEventTitle => write!(f, "Invalid event title"),
+            DomainError::InvalidEventTime => write!(f, "Invalid event time"),
+            DomainError::EventAttendeeNotFound => write!(f, "Event attendee not found"),
+            DomainError::PlusnikSheetNotFound => write!(f, "Plusnik sheet not found"),
+            DomainError::InvalidPlusnikSheetName => write!(f, "Invalid plusnik sheet name"),
+            DomainError::InvalidSheetStatus => write!(f, "Invalid sheet status"),
+            DomainError::PlusnikSheetHasRecords => {
+                write!(f, "Plusnik sheet has records, cannot delete")
+            }
+            DomainError::PlusnikTaskNotFound => write!(f, "Plusnik task not found"),
+            DomainError::InvalidTaskNumber => write!(f, "Invalid task number"),
+            DomainError::PlusnikTaskAlreadyExists => write!(f, "Plusnik task already exists"),
+            DomainError::PlusnikTaskHasRecords => {
+                write!(f, "Plusnik task has records, cannot delete")
+            }
+            DomainError::PlusnikRecordNotFound => write!(f, "Plusnik record not found"),
+            DomainError::InvalidPlusnikRecord => write!(f, "Invalid plusnik record"),
+            DomainError::PlusnikRecordAlreadyExists => {
+                write!(f, "Plusnik record already exists")
+            }
+            DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
         }
     }
 }
