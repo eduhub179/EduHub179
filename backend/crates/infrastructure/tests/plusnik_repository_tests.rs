@@ -721,20 +721,44 @@ async fn test_get_all_records_by_student(pool: PgPool) {
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_get_active_records_by_task(pool: PgPool) {
     let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
-    let (sheet_id, task1_id, _) = seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
-    let repo = PlusnikRepositoryPg::new(pool);
+    let (sheet_id, task1_id, task2_id) =
+        seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
+    let repo = PlusnikRepositoryPg::new(pool.clone());
 
-    let record = create_active_record(student_id, sheet_id, task1_id, teacher_id);
-    repo.save_record(record.clone()).await.expect("Save record");
-    repo.revoke_plus(record.id, teacher_id, None)
+    // Create a second student
+    let student2 = create_test_student();
+    UserRepositoryPg::new(pool.clone())
+        .save(student2.clone())
         .await
-        .expect("Revoke plus");
+        .expect("Save student2");
 
+    // Both students get pluses for task1
+    let r1 = create_active_record(student_id, sheet_id, task1_id, teacher_id);
+    let r2 = create_active_record(student2.id, sheet_id, task1_id, teacher_id);
+    // student1 also gets a plus for task2 (should NOT appear in task1 results)
+    let r3 = create_active_record(student_id, sheet_id, task2_id, teacher_id);
+    repo.save_record(r1.clone()).await.expect("Save r1");
+    repo.save_record(r2.clone()).await.expect("Save r2");
+    repo.save_record(r3).await.expect("Save r3");
+
+    // Active records for task1 — should be 2 (both students)
     let active = repo
         .get_active_records_by_task(task1_id)
         .await
-        .expect("Get active by task");
-    assert!(active.is_empty()); // revoked — not active
+        .expect("Get active by task1");
+    assert_eq!(active.len(), 2);
+    assert!(active.iter().all(|r| r.task_id == task1_id));
+
+    // Revoke one — should drop to 1
+    repo.revoke_plus(r1.id, teacher_id, None)
+        .await
+        .expect("Revoke r1");
+    let active_after = repo
+        .get_active_records_by_task(task1_id)
+        .await
+        .expect("Get active after revoke");
+    assert_eq!(active_after.len(), 1);
+    assert_eq!(active_after[0].student_id, student2.id);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
