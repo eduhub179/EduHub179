@@ -6,9 +6,11 @@ edition = "2021"
 [dependencies]
 domain = { path = "../domain" }
 uuid = { version = "1.10", features = ["v4"] }
+chrono = "0.4"
 async-trait = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
 infrastructure = { path = "../infrastructure" }
+
