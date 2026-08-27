@@ -45,7 +45,7 @@ async fn seed_student_with_lesson(pool: &PgPool, instance_status: &str) -> Seed 
 
     // 2. Student (belongs to the class via users.class_id)
     sqlx::query(
-        "INSERT INTO users (user_id, email, role, last_name, first_name, class_id)
+        "INSERT INTO users (user_id, login, role, last_name, first_name, class_id)
          VALUES ($1, $2, 'student'::user_role, $3, $4, $5)",
     )
     .bind(student_id)
@@ -166,7 +166,7 @@ async fn test_event_overrides_lesson(pool: PgPool) {
     // Organizer (teacher) + event overlapping 10:00-10:45 on 2026-09-07
     let teacher_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO users (user_id, email, role, last_name, first_name)
+        "INSERT INTO users (user_id, login, role, last_name, first_name)
          VALUES ($1, $2, 'teacher'::user_role, $3, $4)",
     )
     .bind(teacher_id)

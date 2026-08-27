@@ -69,7 +69,7 @@ fn create_test_file(homework_id: Uuid, sort_order: i32) -> HomeworkFile {
     .expect("Test file should be valid and satisfy domain invariants")
 }
 
-/// Helper: creates a test teacher with a random ID and unique email.
+/// Helper: creates a test teacher with a random ID and unique login.
 fn create_test_teacher() -> User {
     User::try_new(
         Uuid::new_v4(),
@@ -83,7 +83,7 @@ fn create_test_teacher() -> User {
     .expect("Test teacher data should be valid")
 }
 
-/// Helper: creates a test student with a random ID and unique email.
+/// Helper: creates a test student with a random ID and unique login.
 fn create_test_student() -> User {
     User::try_new(
         Uuid::new_v4(),

@@ -9,11 +9,18 @@ use std::fmt::{self};
 /// Base domain error. Contains no implementation details (e.g., SQL errors).
 #[derive(Debug, Clone, PartialEq)]
 pub enum DomainError {
-    /// User with the specified ID or email was not found.
+    // Unexpected internal failure (e.g., hashing, JWT signing, DB connection).
+    /// Never exposed to the user; presentation layer maps it to HTTP 500.
+    InternalError,
+
+    /// User with the specified ID or login was not found.
     UserNotFound,
 
-    /// Uniqueness violation (e.g., registration with an existing email).
-    EmailAlreadyExists,
+    /// Uniqueness violation (e.g., registration with an existing login).
+    LoginAlreadyExists,
+
+    /// Invalid login format.
+    InvalidLoginFormat,
 
     /// Invalid email format.
     InvalidEmailFormat,
@@ -90,6 +97,9 @@ pub enum DomainError {
     InvalidCabinetDescription,
     // Cabinet capacity must be a natural number
     InvalidCabinetCapacity,
+
+    // authentication failed
+    InvalidCredentials,
 }
 
 impl fmt::Display for DomainError {
@@ -97,10 +107,12 @@ impl fmt::Display for DomainError {
         // Note: These are for logging. The presentation layer should map
         // these to localized Russian messages for the end user.
         match self {
+            DomainError::InternalError => write!(f, "Internal error"),
             DomainError::UserNotFound => write!(f, "User not found"),
-            DomainError::EmailAlreadyExists => write!(f, "Email already exists"),
-            DomainError::InvalidEmailFormat => write!(f, "Invalid email format"),
+            DomainError::LoginAlreadyExists => write!(f, "Login already exists"),
+            DomainError::InvalidLoginFormat => write!(f, "Invalid login format"),
             DomainError::InvalidNameFormat => write!(f, "Invalid name format"),
+            DomainError::InvalidEmailFormat => write!(f, "Invalid email format"),
             DomainError::InsufficientPermissions => write!(f, "Insufficient permissions"),
             DomainError::UserIsInactive => write!(f, "User account is inactive"),
             DomainError::ClassNotFound => write!(f, "Class not found"),
@@ -134,6 +146,7 @@ impl fmt::Display for DomainError {
             DomainError::InvalidCabinetNumber => write!(f, "Invalid cabinet number"),
             DomainError::InvalidCabinetDescription => write!(f, "Invalid cabinet description"),
             DomainError::InvalidCabinetCapacity => write!(f, "Invalid cabinet capacity"),
+            DomainError::InvalidCredentials => write!(f, "Authentication failed"),
         }
     }
 }

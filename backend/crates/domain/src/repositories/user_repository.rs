@@ -18,8 +18,8 @@ pub trait UserRepository: Send + Sync {
     /// rather than `None` (forcing the caller to handle this case).
     async fn get_by_id(&self, user_id: Uuid) -> Result<User, DomainError>;
 
-    /// Fetches a user by email (used during authentication).
-    async fn get_by_email(&self, email: &str) -> Result<User, DomainError>;
+    /// Fetches a user by login (used during authentication).
+    async fn get_by_login(&self, login: &str) -> Result<User, DomainError>;
 
     /// Fetches a list of active students in a specific class, sorted by last name.
     ///
