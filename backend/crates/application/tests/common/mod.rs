@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use application::use_cases::schedule::ScheduleService;
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use domain::entities::cabinet::Cabinet;
@@ -22,7 +23,6 @@ use domain::repositories::student_group_repository::StudentGroupRepository;
 use domain::repositories::subject_repository::SubjectRepository;
 use domain::repositories::user_repository::UserRepository;
 use domain::value_objects::day_of_week::DayOfWeek;
-use logic::services::ScheduleService;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -246,7 +246,7 @@ impl UserRepository for MockRepositories {
             .cloned()
             .ok_or(DomainError::UserNotFound)
     }
-    async fn get_by_email(&self, _: &str) -> Result<User, DomainError> {
+    async fn get_by_login(&self, _: &str) -> Result<User, DomainError> {
         Err(DomainError::UserNotFound)
     }
     async fn get_active_students_by_class(&self, _: Uuid) -> Result<Vec<User>, DomainError> {
