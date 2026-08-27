@@ -18,7 +18,6 @@
 //! Guarantees: All methods return `Result`. No panics.
 
 use crate::use_cases::auth::AuthSession;
-use domain::entities::user::User;
 use domain::errors::DomainError;
 use domain::ports::auth::{CredentialsStore, TokenIssuer};
 use domain::repositories::user_repository::UserRepository;
@@ -122,6 +121,7 @@ impl LoginUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::entities::user::User;
     use domain::value_objects::role::UserRole;
     use uuid::Uuid;
 

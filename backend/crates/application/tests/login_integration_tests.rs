@@ -11,10 +11,9 @@
 //! - Database schema is applied via migrations before tests.
 
 use application::use_cases::auth::login::{LoginCommand, LoginUseCase};
-use application::use_cases::auth::AuthSession;
 use domain::entities::user::User;
 use domain::errors::DomainError;
-use domain::ports::auth::{CredentialsStore, TokenClaims, TokenIssuer};
+use domain::ports::auth::{CredentialsStore, TokenIssuer};
 use domain::repositories::user_repository::UserRepository;
 use domain::value_objects::role::UserRole;
 use infrastructure::auth::{Argon2PasswordHasher, JwtTokenIssuer};
