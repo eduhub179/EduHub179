@@ -17,11 +17,11 @@ use uuid::Uuid;
 async fn test_save_and_get_by_id(pool: PgPool) {
     // Arrange
     let repo = UserRepositoryPg::new(pool);
-    let test_email = "integration.test@example.com";
+    let test_login = "integration.test@example.com";
 
     let user = User::try_new(
         Uuid::new_v4(),
-        test_email.to_string(),
+        test_login.to_string(),
         UserRole::Student,
         "Testov".to_string(),
         "Test".to_string(),
@@ -35,7 +35,7 @@ async fn test_save_and_get_by_id(pool: PgPool) {
     let fetched = repo.get_by_id(saved.id).await.expect("Get by ID should succeed");
 
     // Assert
-    assert_eq!(fetched.email, test_email);
+    assert_eq!(fetched.login, test_login);
     assert_eq!(fetched.last_name, "Testov");
     assert_eq!(fetched.role, UserRole::Student);
 }
@@ -54,16 +54,16 @@ async fn test_not_found(pool: PgPool) {
     assert!(matches!(result, Err(DomainError::UserNotFound)));
 }
 
-/// Test: fetch a user by email.
+/// Test: fetch a user by login.
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_get_by_email(pool: PgPool) {
+async fn test_get_by_login(pool: PgPool) {
     // Arrange
     let repo = UserRepositoryPg::new(pool);
-    let test_email = "email.test@example.com";
+    let test_login = "login.test@example.com";
 
     let user = User::try_new(
         Uuid::new_v4(),
-        test_email.to_string(),
+        test_login.to_string(),
         UserRole::Teacher,
         "Ivanov".to_string(),
         "Ivan".to_string(),
@@ -75,23 +75,23 @@ async fn test_get_by_email(pool: PgPool) {
     repo.save(user.clone()).await.expect("Save should succeed");
 
     // Act
-    let fetched = repo.get_by_email(test_email).await.expect("Get by email should succeed");
+    let fetched = repo.get_by_login(test_login).await.expect("Get by login should succeed");
 
     // Assert
     assert_eq!(fetched.id, user.id);
     assert_eq!(fetched.middle_name, Some("Ivanovich".to_string()));
 }
 
-/// Test: saving a user with a duplicate email raises EmailAlreadyExists.
+/// Test: saving a user with a duplicate login raises LoginAlreadyExists.
 #[sqlx::test(migrations = "../../migrations")]
-async fn test_save_duplicate_email_raises_error(pool: PgPool) {
+async fn test_save_duplicate_login_raises_error(pool: PgPool) {
     // Arrange
     let repo = UserRepositoryPg::new(pool);
-    let test_email = "duplicate.test@example.com";
+    let test_login = "duplicate.test@example.com";
 
     let user1 = User::try_new(
         Uuid::new_v4(),
-        test_email.to_string(),
+        test_login.to_string(),
         UserRole::Student,
         "Petrov".to_string(),
         "Petr".to_string(),
@@ -102,7 +102,7 @@ async fn test_save_duplicate_email_raises_error(pool: PgPool) {
 
     let user2 = User::try_new(
         Uuid::new_v4(), // Different ID
-        test_email.to_string(), // Same email
+        test_login.to_string(), // Same login
         UserRole::Student,
         "Sidorov".to_string(),
         "Sidor".to_string(),
@@ -116,5 +116,5 @@ async fn test_save_duplicate_email_raises_error(pool: PgPool) {
     let result = repo.save(user2).await;
 
     // Assert
-    assert!(matches!(result, Err(DomainError::EmailAlreadyExists)));
+    assert!(matches!(result, Err(DomainError::LoginAlreadyExists)));
 }

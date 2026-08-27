@@ -52,7 +52,7 @@ fn create_test_group(name: &str) -> StudentGroup {
         .expect("Test group data should be valid")
 }
 
-/// Helper: creates a test teacher with a random ID and unique email.
+/// Helper: creates a test teacher with a random ID and unique login.
 fn create_test_teacher(last_name: &str) -> User {
     User::try_new(
         Uuid::new_v4(),

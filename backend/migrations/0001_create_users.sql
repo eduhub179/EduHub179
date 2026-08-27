@@ -17,7 +17,7 @@ CREATE TABLE users
     user_id       UUID PRIMARY KEY             DEFAULT gen_random_uuid(),
 
     -- Authentication
-    email         VARCHAR(255) UNIQUE NOT NULL,
+    login         VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NULL,
 
     -- Role
@@ -59,3 +59,4 @@ CREATE TRIGGER trigger_users_updated_at
     ON users
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+

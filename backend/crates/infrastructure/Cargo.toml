@@ -5,20 +5,24 @@ edition = "2021"
 
 [dependencies]
 domain = { path = "../domain" }
-
 sqlx = { version = "0.8", features = [
     "runtime-tokio-rustls",
     "postgres",
     "uuid",
     "chrono"
 ] }
-
-
 uuid = { version = "1.10", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0"
 async-trait = "0.1"
 
+# Authentication adapters
+argon2 = "0.5"
+jsonwebtoken = "9"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 dotenvy = "0.15"
+

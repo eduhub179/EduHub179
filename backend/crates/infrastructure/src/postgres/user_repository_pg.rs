@@ -19,7 +19,7 @@ use uuid::Uuid;
 #[derive(Debug, sqlx::FromRow)]
 struct UserRow {
     user_id: Uuid,
-    email: String,
+    login: String,
     role: String, // Read as String after an explicit cast in SQL
     last_name: String,
     first_name: String,
@@ -38,7 +38,7 @@ impl UserRow {
         // Create the user and restore is_active from the DB
         User::try_new(
             self.user_id,
-            self.email,
+            self.login,
             role,
             self.last_name,
             self.first_name,
@@ -66,7 +66,7 @@ impl UserRepositoryPg {
             sqlx::Error::RowNotFound => DomainError::UserNotFound,
             sqlx::Error::Database(db_err) => {
                 if db_err.code().as_deref() == Some("23505") {
-                    DomainError::EmailAlreadyExists
+                    DomainError::LoginAlreadyExists
                 } else {
                     DomainError::UserNotFound
                 }
@@ -82,7 +82,7 @@ impl UserRepository for UserRepositoryPg {
         let row = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT
-                user_id, email, role::TEXT AS role, last_name, first_name,
+                user_id, login, role::TEXT AS role, last_name, first_name,
                 middle_name, is_active, class_id
             FROM users
             WHERE user_id = $1
@@ -96,17 +96,17 @@ impl UserRepository for UserRepositoryPg {
         row.into_domain()
     }
 
-    async fn get_by_email(&self, email: &str) -> Result<User, DomainError> {
+    async fn get_by_login(&self, login: &str) -> Result<User, DomainError> {
         let row = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT
-                user_id, email, role::TEXT AS role, last_name, first_name,
+                user_id, login, role::TEXT AS role, last_name, first_name,
                 middle_name, is_active, class_id
             FROM users
-            WHERE email = $1
+            WHERE login = $1
             "#,
         )
-            .bind(email)
+            .bind(login)
             .fetch_one(&self.pool)
             .await
             .map_err(Self::map_db_error)?;
@@ -118,7 +118,7 @@ impl UserRepository for UserRepositoryPg {
         let rows = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT
-                user_id, email, role::TEXT AS role, last_name, first_name,
+                user_id, login, role::TEXT AS role, last_name, first_name,
                 middle_name, is_active, class_id
             FROM users
             WHERE class_id = $1
@@ -142,10 +142,10 @@ impl UserRepository for UserRepositoryPg {
 
         sqlx::query(
             r#"
-            INSERT INTO users (user_id, email, role, last_name, first_name, middle_name, is_active, class_id)
+            INSERT INTO users (user_id, login, role, last_name, first_name, middle_name, is_active, class_id)
             VALUES ($1, $2, $3::user_role, $4, $5, $6, $7, $8)
             ON CONFLICT (user_id) DO UPDATE SET
-                email = EXCLUDED.email,
+                login = EXCLUDED.login,
                 last_name = EXCLUDED.last_name,
                 first_name = EXCLUDED.first_name,
                 middle_name = EXCLUDED.middle_name,
@@ -155,7 +155,7 @@ impl UserRepository for UserRepositoryPg {
             "#,
         )
             .bind(user.id)
-            .bind(&user.email)
+            .bind(&user.login)
             .bind(&role_str)
             .bind(&user.last_name)
             .bind(&user.first_name)

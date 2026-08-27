@@ -30,7 +30,7 @@ fn create_test_group(name: &str) -> StudentGroup {
         .expect("Test data should be valid and satisfy domain invariants")
 }
 
-/// Helper: creates a test student with a random ID and unique email.
+/// Helper: creates a test student with a random ID and unique login.
 /// Students are required as members of groups (FK to `users`).
 fn create_test_student(last_name: &str) -> User {
     User::try_new(

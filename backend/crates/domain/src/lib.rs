@@ -16,10 +16,11 @@ pub mod value_objects {
     pub mod class_letter;
     pub mod homework_status;
     pub mod lesson_target;
+    pub mod login;
     pub mod role;
     // pub mod deadline; TODO: сделать
 }
 
-pub mod repositories;
-
 pub mod errors;
+pub mod ports;
+pub mod repositories;
