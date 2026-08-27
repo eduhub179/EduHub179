@@ -154,7 +154,7 @@ async fn seed_lesson_instance(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
     )
     .bind(template_id)
     .bind(lesson_id)
-    .bind("пн")
+    .bind("mon")
     .bind("10:00")
     .bind("10:45")
     .bind("every")
@@ -162,7 +162,18 @@ async fn seed_lesson_instance(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
     .await
     .expect("Insert lesson template should succeed");
 
-    // 5. Concrete lesson instance on 2026-09-07 (week of 2026-09-07);
+    // 5. Schedule week 2026-09-07 must exist BEFORE its instances (FK)
+    sqlx::query(
+        r#"
+        INSERT INTO schedule_weeks (week_start_date, status)
+        VALUES ('2026-09-07'::DATE, 'published')
+        "#,
+    )
+    .execute(pool)
+    .await
+    .expect("Insert schedule week should succeed");
+
+    // 6. Concrete lesson instance on 2026-09-07 (week of 2026-09-07);
     //    the instance carries template_id + week_start_date directly
     let instance_id = Uuid::new_v4();
     sqlx::query(
