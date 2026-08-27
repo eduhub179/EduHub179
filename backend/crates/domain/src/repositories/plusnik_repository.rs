@@ -91,6 +91,14 @@ pub trait PlusnikRepository: Send + Sync {
         sheet_id: Uuid,
     ) -> Result<Vec<PlusnikRecord>, DomainError>;
 
+    /// Fetches all records for a specific student within a specific sheet,
+    /// including revoked. Ordered by `granted_at` descending.
+    async fn get_records_by_sheet_and_student(
+        &self,
+        sheet_id: Uuid,
+        student_id: Uuid,
+    ) -> Result<Vec<PlusnikRecord>, DomainError>;
+
     /// Fetches all active (non-revoked) records for a student.
     /// Ordered by `granted_at` descending. Uses `idx_plusnik_records_student_active`.
     async fn get_active_records_by_student(
