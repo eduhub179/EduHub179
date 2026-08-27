@@ -438,6 +438,31 @@ impl PlusnikRepository for PlusnikRepositoryPg {
             .collect()
     }
 
+    async fn get_records_by_sheet_and_student(
+        &self,
+        sheet_id: Uuid,
+        student_id: Uuid,
+    ) -> Result<Vec<PlusnikRecord>, DomainError> {
+        let rows = sqlx::query_as::<_, PlusnikRecordRow>(
+            r#"
+            SELECT record_id, student_id, sheet_id, task_id, granted_by,
+                   granted_at, revoked_at, revoked_by, revoke_comment
+            FROM plusnik_records
+            WHERE sheet_id = $1 AND student_id = $2
+            ORDER BY granted_at DESC
+            "#,
+        )
+        .bind(sheet_id)
+        .bind(student_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Self::map_db_err)?;
+
+        rows.into_iter()
+            .map(PlusnikRecordRow::into_domain)
+            .collect()
+    }
+
     async fn get_active_records_by_student(
         &self,
         student_id: Uuid,

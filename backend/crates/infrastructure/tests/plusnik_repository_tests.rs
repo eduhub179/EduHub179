@@ -737,6 +737,48 @@ async fn test_get_active_records_by_task(pool: PgPool) {
     assert!(active.is_empty()); // revoked — not active
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn test_get_records_by_sheet_and_student(pool: PgPool) {
+    let (lesson_id, teacher_id, student_id) = seed_lesson(&pool).await;
+    let (sheet_id, task1_id, task2_id) =
+        seed_sheet_with_tasks(&pool, lesson_id, teacher_id).await;
+    let repo = PlusnikRepositoryPg::new(pool.clone());
+
+    // Create a second student
+    let student2 = create_test_student();
+    UserRepositoryPg::new(pool.clone())
+        .save(student2.clone())
+        .await
+        .expect("Save student2");
+
+    // student1 gets 2 pluses (one revoked), student2 gets 1 plus
+    let r1 = create_active_record(student_id, sheet_id, task1_id, teacher_id);
+    let r2 = create_active_record(student_id, sheet_id, task2_id, teacher_id);
+    let r3 = create_active_record(student2.id, sheet_id, task1_id, teacher_id);
+    repo.save_record(r1.clone()).await.expect("Save r1");
+    repo.save_record(r2.clone()).await.expect("Save r2");
+    repo.save_record(r3).await.expect("Save r3");
+    repo.revoke_plus(r1.id, teacher_id, None)
+        .await
+        .expect("Revoke r1");
+
+    // Query: records for student1 on this sheet — should be 2 (1 active, 1 revoked)
+    let records = repo
+        .get_records_by_sheet_and_student(sheet_id, student_id)
+        .await
+        .expect("Get records by sheet and student");
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().all(|r| r.student_id == student_id));
+    assert!(records.iter().all(|r| r.sheet_id == sheet_id));
+
+    // student2 should have only 1 record on this sheet
+    let records2 = repo
+        .get_records_by_sheet_and_student(sheet_id, student2.id)
+        .await
+        .expect("Get records by sheet and student2");
+    assert_eq!(records2.len(), 1);
+}
+
 // ============================================================================
 // INTEGRATION: FULL MATRIX SCENARIO
 // ============================================================================
