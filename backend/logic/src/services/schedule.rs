@@ -21,6 +21,7 @@ use domain::repositories::lesson_instance_repository::LessonInstanceRepository;
 use domain::repositories::lesson_repository::LessonRepository;
 use domain::repositories::lesson_template_repository::LessonTemplateRepository;
 use domain::repositories::schedule_week_repository::ScheduleWeekRepository;
+use domain::repositories::student_group_repository::StudentGroupRepository;
 use domain::repositories::subject_repository::SubjectRepository;
 use domain::repositories::user_repository::UserRepository;
 use domain::value_objects::week_status::WeekStatus;
@@ -31,6 +32,7 @@ use domain::value_objects::week_status::WeekStatus;
 /// business rules testable with an in-memory implementation.
 pub struct ScheduleService {
     schedule_weeks: Arc<dyn ScheduleWeekRepository>,
+    student_groups: Arc<dyn StudentGroupRepository>,
     instances: Arc<dyn LessonInstanceRepository>,
     templates: Arc<dyn LessonTemplateRepository>,
     lessons: Arc<dyn LessonRepository>,
@@ -103,6 +105,7 @@ impl ScheduleService {
     /// such as a date to the public schedule methods.
     pub fn new(
         schedule_weeks: Arc<dyn ScheduleWeekRepository>,
+        student_groups: Arc<dyn StudentGroupRepository>,
         instances: Arc<dyn LessonInstanceRepository>,
         templates: Arc<dyn LessonTemplateRepository>,
         lessons: Arc<dyn LessonRepository>,
@@ -113,6 +116,7 @@ impl ScheduleService {
     ) -> Self {
         Self {
             schedule_weeks,
+            student_groups,
             instances,
             templates,
             lessons,
@@ -156,24 +160,45 @@ impl ScheduleService {
         self.schedule_weeks.get_all().await
     }
 
-    /// Loads the schedule for one concrete calendar day.
+    /// Loads the personal schedule for one concrete calendar day.
     ///
     /// Only the published week containing `date` is visible to students. The
     /// day query uses `LessonInstanceRepository::get_by_date`, so it does not
-    /// load the other six days of the week. Fail-safe: a missing or draft week
+    /// load the other six days of the week. Only lessons for the student's
+    /// class or groups are returned. Fail-safe: a missing or draft week
     /// returns `DomainError::ScheduleWeekNotFound`; repository failures are
     /// propagated unchanged.
-    pub async fn day_schedule(&self, date: NaiveDate) -> Result<ScheduleDay, DomainError> {
+    pub async fn day_schedule(
+        &self,
+        student_id: uuid::Uuid,
+        date: NaiveDate,
+    ) -> Result<ScheduleDay, DomainError> {
         let week_start_date = monday_of(date);
         let week = self.schedule_weeks.get_by_id(week_start_date).await?;
         if !week.is_published() {
             return Err(DomainError::ScheduleWeekNotFound);
         }
 
-        self.build_day_schedule(date).await
+        let student = self.users.get_by_id(student_id).await?;
+        if !student.is_active {
+            return Err(DomainError::UserIsInactive);
+        }
+        if !student.role.is_student() {
+            return Err(DomainError::InsufficientPermissions);
+        }
+        let student_group_ids = self
+            .student_groups
+            .get_groups_by_student(student_id)
+            .await?
+            .into_iter()
+            .map(|group| group.id)
+            .collect::<std::collections::HashSet<_>>();
+
+        self.build_day_schedule(date, student.class_id, &student_group_ids)
+            .await
     }
 
-    /// Loads the schedule for the week containing `date`.
+    /// Loads the personal schedule for the student and week containing `date`.
     ///
     /// The date may be any day of the week; Monday is calculated internally.
     /// Only published weeks are returned because draft weeks are invisible to
@@ -181,25 +206,47 @@ impl ScheduleService {
     /// `DomainError::ScheduleWeekNotFound` and no partial response is emitted.
     pub async fn current_week_schedule(
         &self,
+        student_id: uuid::Uuid,
         date: NaiveDate,
     ) -> Result<WeeklySchedule, DomainError> {
+        let student = self.users.get_by_id(student_id).await?;
+        if !student.is_active {
+            return Err(DomainError::UserIsInactive);
+        }
+        if !student.role.is_student() {
+            return Err(DomainError::InsufficientPermissions);
+        }
+
         let week_start_date = monday_of(date);
         let week = self.schedule_weeks.get_by_id(week_start_date).await?;
         if !week.is_published() {
             return Err(DomainError::ScheduleWeekNotFound);
         }
 
-        self.build_week_schedule(week_start_date).await
+        self.build_week_schedule(week_start_date, student_id).await
     }
 
     /// Composes one frontend-ready day from the repositories stored in the service.
-    async fn build_day_schedule(&self, date: NaiveDate) -> Result<ScheduleDay, DomainError> {
+    async fn build_day_schedule(
+        &self,
+        date: NaiveDate,
+        student_class_id: Option<uuid::Uuid>,
+        student_group_ids: &std::collections::HashSet<uuid::Uuid>,
+    ) -> Result<ScheduleDay, DomainError> {
         let day_instances = self.instances.get_by_date(date).await?;
         let mut lessons_for_day = Vec::with_capacity(day_instances.len());
 
         for instance in day_instances {
             let template = self.templates.get_by_id(instance.template_id).await?;
             let lesson = self.lessons.get_by_id(template.lesson_id).await?;
+            let belongs_to_student = lesson.class_id() == student_class_id
+                || lesson
+                    .group_id()
+                    .is_some_and(|group_id| student_group_ids.contains(&group_id));
+            if !belongs_to_student {
+                continue;
+            }
+
             let subject = self.subjects.get_by_id(lesson.subject_id).await?;
             let teacher_ids = self.lessons.get_teacher_ids(lesson.id).await?;
             let mut teacher_list = Vec::with_capacity(teacher_ids.len());
@@ -236,8 +283,17 @@ impl ScheduleService {
     async fn build_week_schedule(
         &self,
         week_start_date: NaiveDate,
+        student_id: uuid::Uuid,
     ) -> Result<WeeklySchedule, DomainError> {
         let week_instances = self.instances.get_by_week(week_start_date).await?;
+        let student = self.users.get_by_id(student_id).await?;
+        let student_group_ids = self
+            .student_groups
+            .get_groups_by_student(student_id)
+            .await?
+            .into_iter()
+            .map(|group| group.id)
+            .collect::<std::collections::HashSet<_>>();
         let mut days = (0..7)
             .map(|offset| ScheduleDay {
                 date: week_start_date + chrono::Duration::days(offset),
@@ -246,6 +302,16 @@ impl ScheduleService {
             .collect::<Vec<_>>();
 
         for instance in week_instances {
+            let template = self.templates.get_by_id(instance.template_id).await?;
+            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
+            let belongs_to_student = lesson.class_id() == student.class_id
+                || lesson
+                    .group_id()
+                    .is_some_and(|group_id| student_group_ids.contains(&group_id));
+            if !belongs_to_student {
+                continue;
+            }
+
             let day = self.build_schedule_lesson(instance).await?;
             let day_index = usize::try_from(day.instance.day_of_week())
                 .map_err(|_| DomainError::InvalidLessonInstanceDate)?;
