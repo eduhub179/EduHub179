@@ -8,3 +8,4 @@
 //! (clock, file storage, notifications) get their own files here.
 
 pub mod auth;
+pub mod file_storage;
