@@ -7,7 +7,7 @@
 
 pub mod auth;
 pub mod postgres;
+pub mod storage;
 // pub mod redis;
-// pub mod storage;
 // pub mod auth;
 // pub mod notifications;
