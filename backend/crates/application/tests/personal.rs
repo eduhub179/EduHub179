@@ -1,6 +1,6 @@
 mod common;
 
-use common::{block_on, date, service_with_personal_schedule};
+use common::{date, service_with_personal_schedule};
 use domain::entities::lesson::Lesson;
 use domain::entities::lesson_instance::LessonInstance;
 use domain::entities::lesson_template::LessonTemplate;
@@ -13,8 +13,8 @@ use domain::value_objects::role::UserRole;
 use domain::value_objects::week_parity::WeekParity;
 use uuid::Uuid;
 
-#[test]
-fn returns_only_students_class_for_day_and_week() {
+#[tokio::test]
+async fn returns_only_students_class_for_day_and_week() {
     let student_id = Uuid::new_v4();
     let student_class_id = Uuid::new_v4();
     let other_class_id = Uuid::new_v4();
@@ -94,11 +94,11 @@ fn returns_only_students_class_for_day_and_week() {
         vec![subject],
     );
 
-    let day = block_on(service.day_schedule(student_id, week_start)).unwrap();
+    let day = service.day_schedule(student_id, week_start).await.unwrap();
     assert_eq!(day.lessons.len(), 1);
     assert_eq!(day.lessons[0].lesson.id, matching_lesson_id);
 
-    let week = block_on(service.current_week_schedule(student_id, week_start)).unwrap();
+    let week = service.current_week_schedule(student_id, week_start).await.unwrap();
     assert_eq!(week.days[0].lessons.len(), 1);
     assert_eq!(
         week.days.iter().map(|day| day.lessons.len()).sum::<usize>(),
