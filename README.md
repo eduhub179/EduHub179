@@ -1,55 +1,32 @@
-# EduHub179 — Единая образовательная платформа
+# React + TypeScript + Vite
 
-Репозиторий MVP проекта «Единая образовательная платформа — Школа 179»:
-единая точка входа для домашних заданий, листков и плюсника, расписания
-и коммуникации по предметам вместо 4–5 разрозненных сервисов
-(подробнее — docs/copilot-instructions.md).
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-## Содержание
+Currently, two official plugins are available:
 
-- Архитектура: backend (Rust, Axum), frontend (TypeScript), infra (docker-compose)
-- В репозитории — минимальный набор файлов, достаточный для работы команды
-  и AI-агентов без внешних зависимостей: Cargo.toml, базовые модули, миграции
-  и dev docker-compose.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Быстрый старт (локально)
+## React Compiler
 
-1. Запустить dev-стек:
-   - `cd infra && docker compose up -d`
-   - создать `.env` на основе `infra/.env.example`
-2. Backend (Rust):
-   - `cd backend`
-   - `cargo build`
-   - `cargo run -p backend-bin`
-3. Frontend (TypeScript):
-   - `cd frontend`
-   - `npm install`
-   - `npm run dev`
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Структура репозитория (выдержана из docs/copilot-instructions.md)
+## Expanding the Oxlint configuration
 
-- `backend/` — Rust workspace: domain, application, infrastructure, presentation, bin
-- `frontend/` — интерфейс на TypeScript: API-клиент (HTTP/WebSocket),
-  фичи (auth, ДЗ, плюсник, расписание, админка), общие UI-компоненты
-- `infra/` — docker-compose.yml, .env.example
-- `backend/migrations/` — SQL-миграции
-- `docs/` — мастер-документ, схема БД, стандарт документирования
+If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
 
-## Зачем это сделано
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
+```
 
-- В репозитории есть скелет всех ключевых частей архитектуры — разработчики
-  и AI-агенты быстро входят в код, добавляя реальные реализации и тесты
-  без загрузки внешних файлов.
-- Интерфейс разрабатывается на TypeScript: более распространённый стек
-  (проще вводить новых участников, включая десятиклассников), единая кодовая
-  база для веба с перспективой мобильного клиента.
-
-## Что далее (рекомендации)
-
-- Зафиксировать фреймворк фронтенда (React/Next.js для веба или React Native
-  для мобильного клиента) и отразить выбор в docs/copilot-instructions.md.
-- Дополнять backend/crates/* реальными реализациями: use-cases в application,
-  адаптеры в infrastructure, handlers/DTO в presentation.
-- Добавить CI (workflow) для сборки workspace и проверки миграций.
-- Решить открытые вопросы из docs/copilot-instructions.md,
-  в частности модуль messenger vs mesh-sync.
+See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
