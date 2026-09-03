@@ -165,6 +165,10 @@ pub enum DomainError {
     PlusnikRecordAlreadyExists,
     // task_id does not belong to sheet_id (trigger check_task_belongs_to_sheet).
     TaskNotInSheet,
+
+    // Class Settings.rs
+    // Invalid OrgEmailDomain
+    InvalidOrgEmailDomain,
 }
 
 impl fmt::Display for DomainError {
@@ -256,6 +260,7 @@ impl fmt::Display for DomainError {
                 write!(f, "Plusnik record already exists")
             }
             DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
+            DomainError::InvalidOrgEmailDomain => write!(f, "Invalid ORG_EMAIL_DOMAIN"),
         }
     }
 }

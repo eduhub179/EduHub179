@@ -5,26 +5,18 @@
 //!   Example: login `s27b_ivanov` <=> email `s27b_ivanov@179.ru`.
 //! - Only lowercase ASCII letters, digits, and the separators `_`, `.`, `-`
 //!   are allowed. Length is 1..=100 characters.
-//! - The organization email domain is read from the `ORG_EMAIL_DOMAIN`
-//!   environment variable (fallback `@179.ru`).
+//! - The organization email domain is injected at startup via
+//!   [`crate::settings::init`] and read from [`crate::settings::get`].
+//!   The domain layer never reads the environment directly.
 //!
-//! Dependencies: Only `crate::errors::DomainError`.
+//! Dependencies: `crate::errors::DomainError`, `crate::settings`.
 //! Guarantees: An instance can only be created via `try_new` / `from_email` /
 //! `from_identifier`, which validate the invariants. This prevents invalid
 //! logins from reaching the repository.
-//!
-//! NOTE (architectural decision): the organization domain is read from the
-//! environment directly inside this module. This is a deliberate, pragmatic
-//! sacrifice so callers do not have to thread the domain through every layer.
-//! This module is the single source of truth for the login <-> email mapping.
-
 use crate::errors::DomainError;
 
 /// Maximum number of characters in a login (matches the DB VARCHAR limit).
 const MAX_LOGIN_CHARS: usize = 100;
-
-/// Fallback organization email domain used when `ORG_EMAIL_DOMAIN` is not set.
-const ORG_DOMAIN: &str = "@179.ru";
 
 /// A user login: the local part of the school email address.
 ///
@@ -51,8 +43,9 @@ impl Login {
 
     /// Parses a login from a full school email address.
     ///
-    /// The email must end with the organization domain; the local part becomes
-    /// the login. The comparison is case-insensitive.
+    /// The email must end with the organization domain (read from
+    /// [`crate::settings::get`]); the local part becomes the login. The
+    /// comparison is case-insensitive.
     ///
     /// Returns:
     /// - `Err(DomainError::InvalidEmailFormat)` if the email does not belong to
@@ -60,18 +53,19 @@ impl Login {
     /// - `Err(DomainError::InvalidLoginFormat)` if the local part is invalid.
     pub fn from_email(email: &str) -> Result<Self, DomainError> {
         let normalized = email.trim().to_lowercase();
+        let org_domain = crate::settings::get().org_email_domain.as_str();
         let local = normalized
-            .strip_suffix(&ORG_DOMAIN)
+            .strip_suffix(org_domain)
             .ok_or(DomainError::InvalidEmailFormat)?;
         Self::try_new(local)
     }
 
-    /// normalizes an arbitrary identifier (login or email) into a login.
+    /// Normalizes an arbitrary identifier (login or email) into a login.
     ///
-    /// this is the entry point used during authentication, where the user may
+    /// This is the entry point used during authentication, where the user may
     /// type either their login or their full school email.
-    /// - contains `@` -> treated as an email ([`login::from_email`]).
-    /// - otherwise -> treated as a login ([`login::try_new`]).
+    /// - contains `@` -> treated as an email ([`Login::from_email`]).
+    /// - otherwise -> treated as a login ([`Login::try_new`]).
     pub fn from_identifier(raw: &str) -> Result<Self, DomainError> {
         if raw.contains('@') {
             Self::from_email(raw)
@@ -80,21 +74,24 @@ impl Login {
         }
     }
 
-    /// returns the full school email address for this login.
+    /// Returns the full school email address for this login.
     ///
-    /// example: `s27b_ivanov` -> `s27b_korovko@179.ru`.
+    /// Example: `s27b_ivanov` -> `s27b_ivanov@179.ru`.
+    ///
+    /// Reads the organization domain from [`crate::settings::get`].
     pub fn email(&self) -> String {
-        format!("{}{}", self.0, ORG_DOMAIN)
+        format!("{}{}", self.0, crate::settings::get().org_email_domain)
     }
 
-    /// returns the login as a string slice (for persistence / serialization).
+    /// Returns the login as a string slice (for persistence / serialization).
     pub fn as_str(&self) -> &str {
         &self.0
     }
-    /// validates the login format.
+
+    /// Validates the login format.
     ///
-    /// a valid login is non-empty, at most [`max_login_chars`] characters, and
-    /// consists only of lowercase ascii letters, digits, and `_` / `.` / `-`.
+    /// A valid login is non-empty, at most [`MAX_LOGIN_CHARS`] characters, and
+    /// consists only of lowercase ASCII letters, digits, and `_` / `.` / `-`.
     fn is_valid_login(login: &str) -> bool {
         let count = login.chars().count();
         if count == 0 || count > MAX_LOGIN_CHARS {
@@ -113,12 +110,18 @@ impl std::fmt::Display for Login {
 }
 
 // ============================================================================
-// unit tESTS
+// UNIT TESTS
 // Запуск: `cargo test -p domain login`
 // ============================================================================
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Performs the mandatory settings initialization step for tests.
+    /// Idempotent: the first call wins, so parallel tests are safe.
+    fn init_settings() {
+        crate::settings::init(crate::settings::Settings::mock());
+    }
 
     #[test]
     fn try_new_accepts_valid_login() {
@@ -179,24 +182,28 @@ mod tests {
 
     #[test]
     fn email_derives_school_address() {
+        init_settings();
         let login = Login::try_new("s27b_ivanov").unwrap();
         assert_eq!(login.email(), "s27b_ivanov@179.ru");
     }
 
     #[test]
     fn from_email_parses_school_address() {
+        init_settings();
         let login = Login::from_email("s27b_ivanov@179.ru").unwrap();
         assert_eq!(login.as_str(), "s27b_ivanov");
     }
 
     #[test]
     fn from_email_is_case_insensitive() {
+        init_settings();
         let login = Login::from_email("S27B_ivanov@179.RU").unwrap();
         assert_eq!(login.as_str(), "s27b_ivanov");
     }
 
     #[test]
     fn from_email_rejects_foreign_domain() {
+        init_settings();
         assert!(matches!(
             Login::from_email("user@gmail.com"),
             Err(DomainError::InvalidEmailFormat)
@@ -205,6 +212,7 @@ mod tests {
 
     #[test]
     fn from_email_rejects_missing_domain() {
+        init_settings();
         assert!(matches!(
             Login::from_email("s27b_ivanov"),
             Err(DomainError::InvalidEmailFormat)
@@ -213,6 +221,7 @@ mod tests {
 
     #[test]
     fn from_email_rejects_empty_local_part() {
+        init_settings();
         assert!(matches!(
             Login::from_email("@179.ru"),
             Err(DomainError::InvalidLoginFormat)
@@ -227,6 +236,7 @@ mod tests {
 
     #[test]
     fn from_identifier_accepts_email() {
+        init_settings();
         let login = Login::from_identifier("s27b_ivanov@179.ru").unwrap();
         assert_eq!(login.as_str(), "s27b_ivanov");
     }
