@@ -1,0 +1,121 @@
+.schedule {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 20px;
+}
+
+.schedule__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.schedule__header h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.schedule__date {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+}
+
+.schedule__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.schedule__item {
+    display: flex;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.schedule__item:last-child {
+    border-bottom: none;
+}
+
+.schedule__time {
+    display: flex;
+    flex-direction: column;
+    min-width: 48px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    line-height: 1.4;
+}
+
+.schedule__time span:first-child {
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.schedule__details {
+    flex: 1;
+}
+
+.schedule__lesson-number {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--color-text-muted);
+    /*text-transform: lowercase;*/
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+}
+
+.schedule__title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text);
+}
+
+.schedule__date {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.schedule__day-button {
+    border: none;
+    background: transparent;
+    padding: 2px 6px;
+    font-size: 1.2rem;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.schedule__day-button:hover {
+    background: #f0f0f0;
+    color: var(--color-text);
+}
+.schedule__header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.schedule__full-link {
+    color: var(--color-accent);
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.schedule__full-link:hover {
+}
+
+@media (max-width: 700px) {
+    .schedule {
+        height: auto;
+        padding: 16px;
+    }
+}

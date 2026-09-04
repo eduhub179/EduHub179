@@ -1,0 +1,89 @@
+.main-content {
+    padding: 32px;
+    height: 100%;
+    border-left: lightblue solid;
+}
+
+.main-content h1 {
+    font-size: 1.8rem;
+    margin-bottom: 12px;
+    color: var(--color-text);
+}
+
+.main-content p {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--color-text-muted);
+    margin-bottom: 24px;
+}
+
+.main-content__placeholder {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.placeholder-card {
+    height: 120px;
+    background-color: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Новые стили */
+.document-links {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.document-links a {
+    color: var(--color-accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.document-links a:hover {
+    text-decoration: underline;
+}
+
+.pdf-viewer {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+}
+
+.main-content--pdf {
+    padding: 0;
+    overflow: hidden;
+}
+
+.pdf-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+}
+
+.pdf-viewer {
+    width: 100%;
+    height: calc(100% - 10px);
+    border: none;
+}
+
+@media (max-width: 700px) {
+    .main-content {
+        height: auto;
+        padding: 20px 16px;
+        border-left: none;
+        border-top: 1px solid lightblue;
+    }
+
+    .main-content--pdf {
+        min-height: 70vh;
+    }
+}

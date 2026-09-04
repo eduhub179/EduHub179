@@ -1,0 +1,45 @@
+.full-schedule {
+    padding: 32px;
+
+    height: calc(100vh - 64px);
+    box-sizing: border-box;
+
+    overflow: auto;
+    background-image: url("../../public/img/background1.jpeg");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: cover;
+    filter: saturate(0.7);
+}
+.full-schedule__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    margin-bottom: 24px;
+}
+
+.full-schedule__header h1 {
+    margin: 0;
+
+    font-size: 1.8rem;
+    font-weight: 600;
+
+    color: var(--color-text);
+}
+
+@media (max-width: 700px) {
+    .full-schedule {
+        height: auto;
+        min-height: calc(100vh - 64px);
+        padding: 20px 12px;
+    }
+
+    .full-schedule__header {
+        margin-bottom: 16px;
+    }
+
+    .full-schedule__header h1 {
+        font-size: 1.35rem;
+    }
+}

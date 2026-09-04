@@ -1,6 +1,28 @@
-# Локальные дампы для анализа и передачи контекста
-project_dump.txt
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+.next/
+.vite/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Rust
+backend/target/
+
+# Dumps
 project_dump*.txt
 dump*.txt
-.env
-backend/target*
