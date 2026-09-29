@@ -3,6 +3,7 @@
 pub mod entities {
     pub mod cabinet;
     pub mod class;
+    pub mod device_token;
     pub mod event;
     pub mod homework;
     pub mod lesson;
@@ -23,6 +24,7 @@ pub mod value_objects {
     pub mod lesson_instance_status;
     pub mod lesson_target;
     pub mod login;
+    pub mod notification_platform;
     pub mod role;
     pub mod sheet_status;
     pub mod week_parity;
