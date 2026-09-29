@@ -169,6 +169,9 @@ pub enum DomainError {
     // Class Settings.rs
     // Invalid OrgEmailDomain
     InvalidOrgEmailDomain,
+
+    /// Device token is missing or invalid for a Push provider.
+    InvalidDeviceTokenFormat,
 }
 
 impl fmt::Display for DomainError {
@@ -261,6 +264,7 @@ impl fmt::Display for DomainError {
             }
             DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
             DomainError::InvalidOrgEmailDomain => write!(f, "Invalid ORG_EMAIL_DOMAIN"),
+            DomainError::InvalidDeviceTokenFormat => write!(f, "Invalid device token format"),
         }
     }
 }
