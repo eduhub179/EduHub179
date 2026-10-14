@@ -24,16 +24,17 @@ Quick start (local)
    - flutter run
 
 Running tests
-- Backend unit + integration tests (requires local Postgres with `eduhub_test` role):
-  ```bash
-  cd backend
-  export DATABASE_URL="$(cat /tmp/eduhub-dburl)"
-  cargo test --lib
-  ```
-  The `/tmp/eduhub-dburl` file must contain a valid Postgres URL for a role that can `CREATE DATABASE` / `DROP DATABASE` (used by `sqlx::test` to spin up throwaway test databases). Create it once:
-  ```bash
-  printf 'postgres://eduhub_test:eduhub_test_pw@localhost:5432/eduhub_test' > /tmp/eduhub-dburl
-  ```
+- Backend unit + integration tests need a running PostgreSQL. The integration tests use
+  `sqlx::test`, which creates and drops a throwaway database per test, so the test role needs
+  CREATEDB rights.
+  1. Start Postgres (e.g. `cd infra && docker compose up -d`).
+  2. From `backend/`, point the tests at your database and run them:
+     ```bash
+     export DATABASE_URL="postgres://<user>:<password>@localhost:5432/<db>"
+     cargo test --lib
+     ```
+  Use whatever host/port your Postgres is actually listening on (the default is `localhost:5432`).
+  The URL must be for a role that can CREATE DATABASE / DROP DATABASE.
 
 Repository structure
 - backend/ — Rust workspace:
@@ -59,11 +60,6 @@ What we're building
 Two parallel tracks:
 1. **Frontend migration** — wire Vite to API routes, Mini App
 2. **Aggregator agent** — Telegram class chats + Drive/Sheets → DB → proactive digest
-
-Next steps
-- `bin/tg-bot.rs` entry point
-- Google API interfaces/mocks for Drive/Sheets sync
-- API routes in `presentation`
 
 Links to docs
 - `docs/DATABASE_ARCHITECTURE.md` — full schema, indexes, FKs, triggers
