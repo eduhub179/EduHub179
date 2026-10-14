@@ -7,6 +7,8 @@
 //! Guarantees: All methods return `Result`. No panics.
 
 pub mod login;
+pub mod one_time_code_service;
+pub use one_time_code_service::OneTimeCodeService;
 
 use domain::entities::user::User;
 

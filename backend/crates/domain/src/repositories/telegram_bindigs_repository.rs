@@ -49,4 +49,10 @@ pub trait TelegramBindingRepository: Send + Sync {
     /// Fail-safe: Returns `TelegramBindingNotFound` if no pending binding
     /// exists for this telegram_id (user must call `store_pending_binding` first).
     async fn activate_binding(&self, telegram_id: i64) -> Result<Uuid, DomainError>;
+
+    /// Returns the user_id for a pending binding.
+    ///
+    /// Fail-safe: Returns `TelegramBindingNotFound` if no pending binding exists
+    /// (e.g., session expired or tampered with), forcing the caller to restart the flow.
+    async fn get_pending_user_by_telegram_id(&self, telegram_id: i64) -> Result<Uuid, DomainError>;
 }
