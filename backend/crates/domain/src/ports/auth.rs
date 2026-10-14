@@ -79,7 +79,7 @@ pub trait CredentialsStore: Send + Sync {
 pub trait AuthCodeStore: Send + Sync {
     /// Stores (or replaces) a code for the user with a TTL in seconds.
     /// The implementation hashes the code before persisting it.
-    async fn store(&self, user_id: Uuid, code: &str, ttl_seconds: i64) -> Result<(), DomainError>;
+    async fn store(&self, user_id: Uuid, code: &str, ttl_seconds: u64) -> Result<(), DomainError>;
 
     /// Verifies a code and consumes it on success (one-time use).
     /// Returns `Ok(false)` if the code is wrong, expired, or absent.

@@ -172,6 +172,14 @@ pub enum DomainError {
 
     /// Device token is missing or invalid for a Push provider.
     InvalidDeviceTokenFormat,
+
+    // Telegram binding errors
+    /// Telegram chat_id not found in bindings table.
+    TelegramBindingNotFound,
+    /// Auth code is invalid or expired (Redis TTL).
+    InvalidAuthCode,
+    /// Binding already active — re-authorization not required.
+    TelegramBindingAlreadyActive,
 }
 
 impl fmt::Display for DomainError {
@@ -265,6 +273,11 @@ impl fmt::Display for DomainError {
             DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
             DomainError::InvalidOrgEmailDomain => write!(f, "Invalid ORG_EMAIL_DOMAIN"),
             DomainError::InvalidDeviceTokenFormat => write!(f, "Invalid device token format"),
+            DomainError::TelegramBindingNotFound => write!(f, "Telegram binding not found"),
+            DomainError::InvalidAuthCode => write!(f, "Invalid or expired auth code"),
+            DomainError::TelegramBindingAlreadyActive => {
+                write!(f, "Telegram binding already active")
+            }
         }
     }
 }

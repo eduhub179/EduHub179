@@ -61,10 +61,8 @@ impl AuthCodeStore for AuthCodeStoreRedis {
         &self,
         user_id: Uuid,
         code: &str,
-        ttl_seconds: i64,
+        ttl_seconds: u64,
     ) -> Result<(), DomainError> {
-        // Fail-safe: отрицательный TTL — ошибка конфигурации, а не паника.
-        let ttl = u64::try_from(ttl_seconds).map_err(|_| DomainError::InternalError)?;
         let hash = self.hasher.hash(code)?;
         let mut conn = self.conn.clone();
         conn.set_ex::<_, _, ()>(Self::key(user_id), hash, ttl)
