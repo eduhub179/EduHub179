@@ -1,10 +1,13 @@
 # Schedule Building (Weeks) — Design
 
-> Status: **partially implemented.** Decision log from 2026-08-16 (Max + Alan).
-> Migration 0006 (`feat/schedule-layer`) already delivered: `schedule_weeks`, the
-> instance→week FK, the published-week gate, and the week-aware availability check.
-> Still not implemented: the grid (week template, §4), the building operations (§6), and
-> the published-week editing rule (§7). Copy-previous-week flow is a separate flagged topic.
+> Status: **implemented** (schedule layer). Decision log from 2026-08-16 (Max + Alan).
+> Migration **0003** (schedule layer) delivered: `schedule_weeks`, the instance→week FK, the
+> published-week gate, and the week-aware availability check. Migration **0006** now holds
+> device tokens (it was folded into 0003 by commit `7f585e6`).
+> Building operations (`generate_from_templates`, `copy_week`, `create_draft`, `publish`) live
+> in `application/src/use_cases/schedule/schedule.rs` and are covered by tests.
+> Not implemented: the slot grid (§4 — no `lesson_slot` enum in the schema) and the
+> published-week editing rule (§7, application-level, no schema change needed).
 
 ## 1. Motivation
 

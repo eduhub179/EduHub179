@@ -88,6 +88,13 @@ The system is designed with:
 | `plusnik_records` | Pluses (who, when, to whom, for what) |
 | `sheet_status` (ENUM) | Worksheet statuses: `draft`, `published`, `archived` |
 
+### 2.6 Notifications
+
+| Entity | Purpose |
+|--------|---------|
+| `device_tokens` | Push tokens for user devices (FCM/APNs/Web Push) |
+| `notification_platform` (ENUM) | Platforms: `android`, `ios`, `web` |
+
 ---
 
 ## 3. Migration files
@@ -206,6 +213,25 @@ The system is designed with:
 
 ---
 
+### `0006_create_device_tokens.sql`
+
+**Tables:**
+- `device_tokens` — push tokens for user devices
+
+**ENUM:**
+- `notification_platform` — push platforms: `android`, `ios`, `web`
+
+**Key points:**
+- A user may have multiple devices (phone, tablet, browser)
+- The token is a provider-issued string identifier (FCM/APNs/Web Push)
+- Uniqueness: `(user_id, platform, token)` — the same token cannot be registered twice
+- `is_active` — flag for fast lookup of active tokens when sending
+- Partial indexes on active tokens per user and per platform
+- CHECK constraint: a token cannot be blank
+- `ON DELETE CASCADE` from users — tokens are deleted with the user
+
+---
+
 ## 4. Table relationships
 
 ```
@@ -305,6 +331,11 @@ plusnik_records (pluses)
   ├── granted_by → users
   ├── revoked_by → users (nullable)
   └── revoked_at (nullable)
+
+device_tokens (push tokens)
+  ├── user_id → users
+  ├── platform (ENUM)
+  └── token (string)
 ```
 
 ---
@@ -515,9 +546,11 @@ INSERT INTO event_attendees (event_id, user_id) VALUES
 0004_create_homework.sql           ← depends on 0003 (lesson_instances)
     ↓
 0005_create_plusnik.sql            ← depends on 0002 (lessons)
+    ↓
+0006_create_device_tokens.sql      ← depends on 0001 (users)
 ```
 
-**Important:** migrations run in filename order; `0004` needs `0003` (`homeworks` references `lesson_instances`), `0005` needs `0002` (`plusnik` references `lessons`).
+**Important:** migrations run in filename order; `0004` needs `0003` (`homeworks` references `lesson_instances`), `0005` needs `0002` (`plusnik` references `lessons`), `0006` needs `0001` (`device_tokens` references `users`).
 
 ---
 
@@ -549,11 +582,11 @@ For large schools (>100 teachers) a materialized view `teacher_schedule` could b
 
 | Metric | Value |
 |--------|-------|
-| **Number of tables** | 18 |
-| **Number of ENUMs** | 6 |
+| **Number of tables** | 19 |
+| **Number of ENUMs** | 7 |
 | **Number of functions** | 4 |
-| **Number of triggers** | 11 |
-| **Number of indexes** | ~49 |
+| **Number of triggers** | 12 |
+| **Number of indexes** | ~52 |
 | **Migration files** | 6 |
 
 ---
