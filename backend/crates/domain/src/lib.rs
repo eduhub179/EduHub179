@@ -27,6 +27,7 @@ pub mod value_objects {
     pub mod notification_platform;
     pub mod role;
     pub mod sheet_status;
+    pub mod telegram_session_state;
     pub mod week_parity;
     pub mod week_status;
 }
