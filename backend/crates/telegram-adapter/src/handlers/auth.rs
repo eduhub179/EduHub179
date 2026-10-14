@@ -11,8 +11,7 @@ use domain::errors::DomainError;
 
 /// Handles the `/start` command.
 ///
-/// Resets or initializes the auth session. If the user is already bound, 
-/// the use case will return `AlreadyAuthenticated`.
+/// Resets or initializes the auth session. If the user is already bound, the use case will return `AlreadyAuthenticated`.
 pub async fn handle_start(
     bot: Bot,
     state: BotState,

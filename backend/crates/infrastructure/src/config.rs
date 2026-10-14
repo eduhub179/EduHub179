@@ -14,8 +14,6 @@ use std::env;
 /// Application configuration derived from environment variables.
 ///
 /// Invariants:
-/// - `database_url`, `jwt_secret`, `jwt_ttl_seconds` are required (no fallbacks).
-/// - `server_host`, `server_port`, `org_email_domain` have sensible defaults.
 #[derive(Debug, Clone)]
 pub struct Config {
     /// PostgreSQL connection string (required).
@@ -30,43 +28,34 @@ pub struct Config {
     pub server_port: u16,
     /// Organization email domain for login validation (default: @179.ru).
     pub org_email_domain: String,
+    /// Redis URL for sessions and auth codes (required).
+    pub redis_url: String,
+    /// Telegram bot token (required for the bot binary).
+    pub telegram_bot_token: String,
 }
 
 impl Config {
-    /// Loads configuration from the environment.
-    ///
-    /// # Fail-fast behavior
-    /// Panics with a clear message if a required variable is missing or
-    /// malformed. This is acceptable for the composition root (`main.rs`)
-    /// because the app cannot function without these values.
     pub fn load() -> Self {
-        // Load .env if present; ignore the error when running in Docker/CI,
-        // where variables come from the orchestrator instead.
         dotenv().ok();
 
-        let database_url =
-            env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env or OS environment");
-
-        let jwt_secret =
-            env::var("JWT_SECRET").expect("JWT_SECRET must be set in .env or OS environment");
-
-        // JWT_TTL_SECONDS is strictly required. No fallbacks.
+        let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env");
+        let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set in .env");
         let jwt_ttl_seconds = env::var("JWT_TTL_SECONDS")
-            .expect("JWT_TTL_SECONDS must be set in .env or OS environment")
+            .expect("JWT_TTL_SECONDS must be set in .env")
             .parse::<u64>()
-            .expect("JWT_TTL_SECONDS must be a valid integer (e.g., 900)");
-
+            .expect("JWT_TTL_SECONDS must be a valid integer");
         let server_host = env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-
-        let telegram_bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set in .env ot OS environment");
-
         let server_port = env::var("SERVER_PORT")
             .unwrap_or_else(|_| "8080".to_string())
             .parse::<u16>()
             .expect("SERVER_PORT must be a valid u16");
-
         let org_email_domain =
             env::var("ORG_EMAIL_DOMAIN").unwrap_or_else(|_| "@179.ru".to_string());
+
+        // New fields — required for the bot binary.
+        let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set in .env");
+        let telegram_bot_token =
+            env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set in .env");
 
         Self {
             database_url,
@@ -75,11 +64,11 @@ impl Config {
             server_host,
             server_port,
             org_email_domain,
+            redis_url,
+            telegram_bot_token,
         }
     }
 
-    /// Creates a mock configuration for testing.
-    /// Allows tests to bypass the OS environment entirely.
     pub fn mock() -> Self {
         Self {
             database_url: "postgres://mock:test@localhost/mock_db".to_string(),
@@ -88,6 +77,8 @@ impl Config {
             server_host: "127.0.0.1".to_string(),
             server_port: 8080,
             org_email_domain: "@179.ru".to_string(),
+            redis_url: "redis://127.0.0.1:6379".to_string(),
+            telegram_bot_token: "mock_telegram_bot_token".to_string(),
         }
     }
 }

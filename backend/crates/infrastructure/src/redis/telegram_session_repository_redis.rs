@@ -42,7 +42,7 @@ impl TelegramSessionRepository for TelegramSessionRepositoryRedis {
             .get(Self::key(telegram_id))
             .await
             .map_err(|_| DomainError::InternalError)?;
-        
+
         match state {
             Some(s) => TelegramSessionState::from_str(&s).map_err(|_| DomainError::InternalError),
             None => Ok(TelegramSessionState::Unauthenticated),
@@ -56,7 +56,7 @@ impl TelegramSessionRepository for TelegramSessionRepositoryRedis {
         ttl_seconds: u64,
     ) -> Result<(), DomainError> {
         let mut conn = self.conn.clone();
-        conn.set_ex(Self::key(telegram_id), state.to_string(), ttl)
+        conn.set_ex::<_, _, ()>(Self::key(telegram_id), state.to_string(), ttl_seconds)
             .await
             .map_err(|_| DomainError::InternalError)?;
         Ok(())
@@ -64,7 +64,7 @@ impl TelegramSessionRepository for TelegramSessionRepositoryRedis {
 
     async fn delete(&self, telegram_id: i64) -> Result<(), DomainError> {
         let mut conn = self.conn.clone();
-        conn.del(Self::key(telegram_id))
+        conn.del::<_, ()>(Self::key(telegram_id))
             .await
             .map_err(|_| DomainError::InternalError)?;
         Ok(())
