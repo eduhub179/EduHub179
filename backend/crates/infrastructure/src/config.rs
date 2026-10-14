@@ -23,7 +23,7 @@ pub struct Config {
     /// JWT signing secret (required, minimum 32 bytes for HS256).
     pub jwt_secret: String,
     /// JWT token lifetime in seconds (required).
-    pub jwt_ttl_seconds: i64,
+    pub jwt_ttl_seconds: u64,
     /// Server bind host (default: 127.0.0.1).
     pub server_host: String,
     /// Server bind port (default: 8080).
@@ -53,7 +53,7 @@ impl Config {
         // JWT_TTL_SECONDS is strictly required. No fallbacks.
         let jwt_ttl_seconds = env::var("JWT_TTL_SECONDS")
             .expect("JWT_TTL_SECONDS must be set in .env or OS environment")
-            .parse::<i64>()
+            .parse::<u64>()
             .expect("JWT_TTL_SECONDS must be a valid integer (e.g., 900)");
 
         let server_host = env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());

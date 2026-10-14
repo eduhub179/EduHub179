@@ -116,6 +116,23 @@ impl TelegramBindingRepository for TelegramBindingRepositoryPg {
         Ok(())
     }
 
+    async fn get_pending_user_by_telegram_id(&self, telegram_id: i64) -> Result<Uuid, DomainError> {
+        let row: Option<(Uuid,)> = sqlx::query_as(
+            r#"
+            SELECT user_id FROM telegram_bindings
+            WHERE telegram_id = $1 AND status = 'pending'
+            "#,
+        )
+        .bind(telegram_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
+
+        match row {
+            Some((user_id,)) => Ok(user_id),
+            None => Err(DomainError::TelegramBindingNotFound),
+        }
+    }
     /// Activates the binding for the given Telegram chat_id.
     ///
     /// Returns the user_id of the activated binding.
