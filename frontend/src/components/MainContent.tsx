@@ -1,12 +1,19 @@
 import React, {useEffect, useState} from 'react';
 import {useLocation} from 'react-router-dom';
+import type {ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/MainContent.css';
 
-const MainContent: React.FC = () => {
+interface MainContentProps {
+    selectedLesson: ScheduleItem | null;
+    onCloseLesson: () => void;
+}
+
+const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson}) => {
     const location = useLocation();
     let path = location.pathname;
 
     const [pdfExists, setPdfExists] = useState<boolean | null>(null);
+    const [selectedFileIndex, setSelectedFileIndex] = useState(0);
 
     let fileName = path.split('/').pop();
     if (path == "/main")
@@ -37,6 +44,60 @@ const MainContent: React.FC = () => {
                 setPdfExists(false);
             });
     }, [path, pdfUrl]);
+
+    useEffect(() => {
+        setSelectedFileIndex(0);
+    }, [selectedLesson]);
+
+    if (selectedLesson) {
+        const {homework} = selectedLesson;
+        const selectedFile = homework?.files[selectedFileIndex];
+
+        return (
+            <main className="main-content main-content--homework">
+                <div className="homework-view">
+                    <button
+                        className="homework-view__close"
+                        type="button"
+                        onClick={onCloseLesson}
+                        aria-label="Закрыть сводку урока"
+                    >
+                        ×
+                    </button>
+                    <span className="homework-view__subject">Урок {selectedLesson.lessonNumber}</span>
+                    <h1 className="homework-view__title">{selectedLesson.title || 'Урок без названия'}</h1>
+                    <p className="homework-view__description">
+                        Время: {selectedLesson.startTime} – {selectedLesson.endTime}
+                    </p>
+                    <p className="homework-view__description">
+                        ДЗ: {homework?.description ?? 'Домашнего задания нет.'}
+                    </p>
+
+                    {homework && homework.files.length > 0 && (
+                        <section className="homework-view__files" aria-label="Файлы задания">
+                            <h2>Файлы</h2>
+                            <div className="homework-view__file-list">
+                                {homework.files.map((file, index) => (
+                                    <button
+                                        className={`homework-view__file${index === selectedFileIndex ? ' homework-view__file--active' : ''}`}
+                                        type="button"
+                                        key={file}
+                                        onClick={() => setSelectedFileIndex(index)}
+                                        aria-pressed={index === selectedFileIndex}
+                                    >
+                                        {file}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="homework-view__file-preview" aria-live="polite">
+                                {selectedFile}
+                            </div>
+                        </section>
+                    )}
+                </div>
+            </main>
+        );
+    }
 
     if (fileName === '') {
         return (

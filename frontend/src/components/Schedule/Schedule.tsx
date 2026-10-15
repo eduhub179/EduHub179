@@ -1,49 +1,26 @@
 import React, {useState} from 'react';
 import {Link} from 'react-router-dom';
 
+import {weekSchedule} from '../../local_data/ScheduleData.ts';
+import type {ScheduleItem} from '../../types/ScheduleTypes.ts';
 import '../../css/Schedule.css';
 
-interface ScheduleItem {
-    id: number;
-    startTime: string;
-    endTime: string;
-    lessonNumber: number;
-    title: string;
+interface ScheduleProps {
+    onLessonSelect: (lesson: ScheduleItem) => void;
 }
 
-const scheduleData_example: ScheduleItem[] = [
-    {id: 1, startTime: '08:30', endTime: '09:15', lessonNumber: 1, title: 'Математика'},
-    {id: 2, startTime: '09:25', endTime: '10:10', lessonNumber: 2, title: 'Русский язык'},
-    {id: 3, startTime: '10:20', endTime: '11:05', lessonNumber: 3, title: 'Физика'},
-    {id: 4, startTime: '11:15', endTime: '12:00', lessonNumber: 4, title: 'Химия'},
-    {id: 5, startTime: '12:10', endTime: '12:55', lessonNumber: 5, title: 'История'},
-    {id: 6, startTime: '13:05', endTime: '13:50', lessonNumber: 6, title: 'Английский язык'},
-    {id: 7, startTime: '14:00', endTime: '14:45', lessonNumber: 7, title: 'Физкультура'},
-];
-
-const days = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-];
-
-const Schedule: React.FC = () => {
+const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
     const [dayIndex, setDayIndex] = useState(0);
-    const [scheduleData] = useState<ScheduleItem[]>(scheduleData_example);
 
     const changeDay = (direction: number) => {
         setDayIndex((current) => {
             const newIndex = current + direction;
 
             if (newIndex < 0) {
-                return days.length - 1;
+                return weekSchedule.length - 1;
             }
 
-            if (newIndex >= days.length) {
+            if (newIndex >= weekSchedule.length) {
                 return 0;
             }
 
@@ -51,7 +28,8 @@ const Schedule: React.FC = () => {
         });
     };
 
-    const day = days[dayIndex];
+    const day = weekSchedule[dayIndex];
+    const scheduleData: ScheduleItem[] = day.items;
 
     return (
         <aside className="schedule">
@@ -75,7 +53,7 @@ const Schedule: React.FC = () => {
                             ←
                         </button>
 
-                        <span>{day}</span>
+                        <span>{day.name}</span>
 
                         <button
                             className="schedule__day-button"
@@ -91,20 +69,34 @@ const Schedule: React.FC = () => {
             <ul className="schedule__list">
                 {scheduleData.map((item) => (
                     <li key={item.id} className="schedule__item">
-                        <div className="schedule__time">
-                            <span>{item.startTime}</span>
-                            <span>{item.endTime}</span>
-                        </div>
-
-                        <div className="schedule__details">
-                            <div className="schedule__lesson-number">
-                                Урок {item.lessonNumber}
+                        <button
+                            className="schedule__lesson-button"
+                            type="button"
+                            onClick={() => onLessonSelect(item)}
+                            aria-label={`Урок ${item.lessonNumber}: ${item.title || 'без названия'}, ${item.startTime}–${item.endTime}`}
+                        >
+                            <div className="schedule__time">
+                                <span>{item.startTime}</span>
+                                <span>{item.endTime}</span>
                             </div>
 
-                            <div className="schedule__title">
-                                {item.title}
+                            <div className="schedule__details">
+                                <div className="schedule__lesson-content">
+                                    <div className="schedule__lesson-number">
+                                        Урок {item.lessonNumber}
+                                    </div>
+
+                                    <div className="schedule__title">
+                                        {item.title || '—'}
+                                    </div>
+                                </div>
+                                {item.homework && (
+                                    <span className="schedule__homework-button">
+                                    {item.homework.description}
+                                    </span>
+                                )}
                             </div>
-                        </div>
+                        </button>
                     </li>
                 ))}
             </ul>

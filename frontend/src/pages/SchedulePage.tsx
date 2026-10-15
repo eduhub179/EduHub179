@@ -3,6 +3,7 @@ import Header from '../components/Header';
 import FullScheduleTable from '../components/Schedule/ScheduleTable.tsx';
 import '../css/FullSchedule.css';
 
+
 const FullSchedule: React.FC = () => {
     return (
         <>
