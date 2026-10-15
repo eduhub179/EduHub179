@@ -2384,6 +2384,7 @@ dependencies = [
  "domain",
  "infrastructure",
  "telegram-adapter",
+ "teloxide",
  "tokio",
  "tracing",
  "tracing-subscriber",

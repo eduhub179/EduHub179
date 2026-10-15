@@ -17,6 +17,9 @@ application      = { path = "../application" }
 infrastructure   = { path = "../infrastructure" }
 domain           = { path = "../domain" }
 
+# Telegram Bot API
+teloxide = { version = "0.12", features = ["macros"] }
+
 # Async runtime
 tokio = { version = "1.40", features = ["full"] }
 

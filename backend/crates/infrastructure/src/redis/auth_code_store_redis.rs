@@ -57,15 +57,10 @@ impl AuthCodeStoreRedis {
 impl AuthCodeStore for AuthCodeStoreRedis {
     /// Сохраняет (перезаписывает) код с TTL. Хэш живёт только в этом стеке
     /// и в Redis; сырой код сразу сбрасывается.
-    async fn store(
-        &self,
-        user_id: Uuid,
-        code: &str,
-        ttl_seconds: u64,
-    ) -> Result<(), DomainError> {
+    async fn store(&self, user_id: Uuid, code: &str, ttl_seconds: u64) -> Result<(), DomainError> {
         let hash = self.hasher.hash(code)?;
         let mut conn = self.conn.clone();
-        conn.set_ex::<_, _, ()>(Self::key(user_id), hash, ttl)
+        conn.set_ex::<_, _, ()>(Self::key(user_id), hash, ttl_seconds)
             .await
             .map_err(|_| DomainError::InternalError)?;
         Ok(())
