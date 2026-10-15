@@ -2,7 +2,7 @@
 //!
 //! Гарантии: все адаптеры возвращают `Result`, ошибки Redis маппятся в
 //! `DomainError::InternalError` (fail-safe, без паник и без утечки деталей).
-// pub mod auth_code_store_redis;
-// pub use auth_code_store_redis::AuthCodeStoreRedis;
+pub mod auth_code_store_redis;
+pub use auth_code_store_redis::AuthCodeStoreRedis;
 pub mod telegram_session_repository_redis;
 pub use telegram_session_repository_redis::TelegramSessionRepositoryRedis;
