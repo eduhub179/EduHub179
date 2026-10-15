@@ -1,0 +1,147 @@
+.register-page {
+    min-height: calc(100vh - 64px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 72px 24px;
+    background: #fff;
+}
+
+.register-card {
+    width: 100%;
+    max-width: 420px;
+}
+
+.register-card h1 {
+    margin-bottom: 12px;
+    color: #191a1c;
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+}
+
+.register-card__description {
+    margin-bottom: 32px;
+    color: #666b73;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.register-card__error {
+    margin: -12px 0 20px;
+    color: #b42318;
+    font-size: 14px;
+}
+
+.register-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.register-form__field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: #292b30;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.register-form__field input {
+    width: 100%;
+    height: 46px;
+    padding: 0 12px;
+    border: 1px solid #c9cdd3;
+    border-radius: 4px;
+    background: #fff;
+    color: #191a1c;
+    font: inherit;
+    font-weight: 400;
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.register-form__field input::placeholder {
+    color: #9297a0;
+}
+
+.register-form__field input:focus {
+    border-color: #167dcb;
+    box-shadow: 0 0 0 2px rgb(22 125 203 / 16%);
+}
+
+.register-form__submit {
+    width: 100%;
+    min-height: 46px;
+    margin-top: 4px;
+    border: 0;
+    border-radius: 4px;
+    background: #087cce;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    transition: background-color 120ms ease;
+}
+
+.register-form__submit:hover {
+    background: #066db7;
+}
+
+.register-form__submit:focus-visible {
+    outline: 3px solid rgb(8 124 206 / 30%);
+    outline-offset: 2px;
+}
+
+.register-form__actions {
+    display: flex;
+    gap: 12px;
+}
+
+.register-form__actions .register-form__submit {
+    flex: 1;
+    width: auto;
+}
+
+.register-form__back {
+    min-height: 46px;
+    margin-top: 4px;
+    padding: 0 18px;
+    border: 1px solid #c9cdd3;
+    border-radius: 4px;
+    background: #fff;
+    color: #292b30;
+    cursor: pointer;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.register-form__back:hover {
+    background: #f5f6f7;
+}
+
+.register-card__signin {
+    margin-top: 24px;
+    color: #666b73;
+    font-size: 14px;
+}
+
+.register-card__signin a {
+    color: #087cce;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.register-card__signin a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 700px) {
+    .register-page {
+        min-height: calc(100vh - 64px);
+        padding: 48px 20px;
+    }
+}

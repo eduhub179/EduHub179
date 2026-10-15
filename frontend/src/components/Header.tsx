@@ -1,8 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../auth/AuthProvider';
 import '../css/Header.css';
 
 const Header: React.FC = () => {
+    const { user, logout } = useAuth();
+
     return (
         <header className="header">
             <div className="header__left">
@@ -20,17 +23,25 @@ const Header: React.FC = () => {
                     Расписание
                 </Link>
 
-                <Link to="/login" className="header__link">
-                    Вход
-                </Link>
-
-                <Link to="/register" className="header__link">
-                    Регистрация
-                </Link>
-
-                <Link to="/profile" className="header__link">
-                    Профиль
-                </Link>
+                {user ? (
+                    <>
+                        <Link to="/profile" className="header__link">
+                            Профиль
+                        </Link>
+                        <button className="header__link header__logout" onClick={logout} type="button">
+                            Выйти
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <Link to="/login" className="header__link">
+                            Вход
+                        </Link>
+                        <Link to="/register" className="header__link">
+                            Регистрация
+                        </Link>
+                    </>
+                )}
             </nav>
         </header>
     );
