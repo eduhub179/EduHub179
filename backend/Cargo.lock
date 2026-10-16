@@ -165,9 +165,11 @@ name = "backend-bin"
 version = "0.1.0"
 dependencies = [
  "application",
+ "axum",
  "domain",
  "infrastructure",
  "presentation",
+ "tokio",
 ]
 
 [[package]]
@@ -1636,6 +1638,7 @@ dependencies = [
  "application",
  "async-trait",
  "axum",
+ "chrono",
  "domain",
  "serde",
  "serde_json",
