@@ -32,14 +32,28 @@
 }
 
 .schedule__item {
-    display: flex;
-    gap: 16px;
-    padding: 12px 0;
     border-bottom: 1px solid var(--color-border);
 }
 
 .schedule__item:last-child {
     border-bottom: none;
+}
+
+.schedule__lesson-button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 16px;
+    padding: 12px 8px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+}
+
+.schedule__lesson-button:hover {
+    background: #f0f0f0;
 }
 
 .schedule__time {
@@ -58,7 +72,16 @@
 }
 
 .schedule__details {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     flex: 1;
+    min-width: 0;
+}
+
+.schedule__lesson-content {
+    min-width: 0;
 }
 
 .schedule__lesson-number {
@@ -74,6 +97,21 @@
     font-size: 1rem;
     font-weight: 700;
     color: var(--color-text);
+}
+
+.schedule__homework-button {
+    flex: 0 1 55%;
+    max-width: 55%;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    text-align: right;
+    overflow-wrap: anywhere;
+    cursor: inherit;
 }
 
 .schedule__date {
