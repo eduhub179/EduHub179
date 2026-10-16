@@ -1,9 +1,10 @@
 export interface User {
     name: string;
     email: string;
+    schoolClass: string | null;
 }
 
-export interface RegistrationData extends User {
+export interface RegistrationData extends Omit<User, 'schoolClass'> {
     password: string;
 }
 
@@ -16,10 +17,11 @@ export interface AuthService {
     getCurrentUser(): User | null;
     register(data: RegistrationData): User;
     login(credentials: Credentials): User;
+    updateSchoolClass(schoolClass: string): User;
     logout(): void;
 }
 
-type StoredAccount = RegistrationData;
+type StoredAccount = RegistrationData & { schoolClass?: string | null };
 
 const ACCOUNTS_KEY = 'eduhub.demo.accounts';
 const CURRENT_USER_KEY = 'eduhub.demo.currentUser';
@@ -32,8 +34,8 @@ class LocalStorageAuthService implements AuthService {
 
     register(data: RegistrationData): User {
         const accounts = this.getAccounts();
-        const user = { name: data.name, email: data.email };
-        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify([...accounts, data]));
+        const user: User = { name: data.name, email: data.email, schoolClass: null };
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify([...accounts, { ...data, schoolClass: null }]));
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
     }
@@ -50,9 +52,34 @@ class LocalStorageAuthService implements AuthService {
             throw new Error('Неверная почта или пароль.');
         }
 
-        const user = { name: account.name, email: account.email };
+        const user: User = {
+            name: account.name,
+            email: account.email,
+            schoolClass: account.schoolClass ?? null,
+        };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
+    }
+
+    updateSchoolClass(schoolClass: string): User {
+        const currentUser = this.getCurrentUser();
+        if (!currentUser) {
+            throw new Error('Войдите в аккаунт, чтобы изменить профиль.');
+        }
+
+        const accounts = this.getAccounts();
+        const accountIndex = accounts.findIndex(
+            (account) => account.email.toLowerCase() === currentUser.email.toLowerCase(),
+        );
+        if (accountIndex < 0) {
+            throw new Error('Не удалось найти аккаунт для обновления.');
+        }
+
+        accounts[accountIndex] = { ...accounts[accountIndex], schoolClass };
+        const updatedUser: User = { ...currentUser, schoolClass };
+        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+        return updatedUser;
     }
 
     logout(): void {
@@ -81,7 +108,10 @@ class LocalStorageAuthService implements AuthService {
             'email' in value &&
             typeof value.email === 'string' &&
             'password' in value &&
-            typeof value.password === 'string'
+            typeof value.password === 'string' &&
+            (!('schoolClass' in value) ||
+                value.schoolClass === null ||
+                typeof value.schoolClass === 'string')
         );
     }
 
@@ -93,11 +123,20 @@ class LocalStorageAuthService implements AuthService {
             !('name' in user) ||
             typeof user.name !== 'string' ||
             !('email' in user) ||
-            typeof user.email !== 'string'
+            typeof user.email !== 'string' ||
+            ('schoolClass' in user &&
+                user.schoolClass !== null &&
+                typeof user.schoolClass !== 'string')
         ) {
             throw new Error('Не удалось прочитать данные аккаунта.');
         }
-        return { name: user.name, email: user.email };
+        return {
+            name: user.name,
+            email: user.email,
+            schoolClass: 'schoolClass' in user && typeof user.schoolClass === 'string'
+                ? user.schoolClass
+                : null,
+        };
     }
 }
 

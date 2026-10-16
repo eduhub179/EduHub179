@@ -7,6 +7,7 @@ interface AuthContextValue {
     user: User | null;
     register: (data: RegistrationData) => void;
     login: (credentials: Credentials) => void;
+    updateSchoolClass: (schoolClass: string) => void;
     logout: () => void;
 }
 
@@ -21,13 +22,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const register = (data: RegistrationData) => setUser(authService.register(data));
     const login = (credentials: Credentials) => setUser(authService.login(credentials));
+    const updateSchoolClass = (schoolClass: string) =>
+        setUser(authService.updateSchoolClass(schoolClass));
     const logout = () => {
         authService.logout();
         setUser(null);
     };
 
     return (
-        <AuthContext.Provider value={{ user, register, login, logout }}>
+        <AuthContext.Provider value={{ user, register, login, updateSchoolClass, logout }}>
             {children}
         </AuthContext.Provider>
     );
