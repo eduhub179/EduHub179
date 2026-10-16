@@ -4,8 +4,8 @@
 //! DEPENDENCIES: `teloxide`, `application`.
 //! MASTER-DOC: docs/copilot-instructions.md §6.7
 
-use std::sync::Arc;
 use application::use_cases::telegram::TelegramAuthUseCase;
+use std::sync::Arc;
 use teloxide::Bot;
 
 /// Shared state injected into every handler via `dptree::deps!`.
@@ -18,4 +18,5 @@ pub struct BotState {
     /// Unified Telegram authorization flow.
     pub auth_use_case: Arc<TelegramAuthUseCase>,
     // Future: pub schedule_service: Arc<ScheduleService>,
+    pub bot_username: String,
 }
