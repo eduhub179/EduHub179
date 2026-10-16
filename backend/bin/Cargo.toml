@@ -8,3 +8,5 @@ presentation = { path = "../crates/presentation" }
 application = { path = "../crates/application" }
 infrastructure = { path = "../crates/infrastructure" }
 domain = { path = "../crates/domain" }
+axum = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
