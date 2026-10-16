@@ -1,12 +1,20 @@
 use std::sync::Arc;
 
-use application::use_cases::auth::login::LoginUseCase;
+use application::use_cases::{
+    auth::login::LoginUseCase,
+    schedule::ScheduleService,
+};
 use infrastructure::{
     auth::{Argon2PasswordHasher, JwtTokenIssuer},
     config::Config,
-    postgres::{create_pool, CredentialsStorePg, UserRepositoryPg},
+    postgres::{
+        create_pool, CabinetRepositoryPg, CredentialsStorePg, HomeworkRepositoryPg,
+        LessonInstanceRepositoryPg, LessonRepositoryPg, LessonTemplateRepositoryPg,
+        ScheduleWeekRepositoryPg, StudentGroupRepositoryPg, SubjectRepositoryPg,
+        UserRepositoryPg,
+    },
 };
-use presentation::create_app_with_auth;
+use presentation::create_app_with_auth_and_schedule;
 
 #[tokio::main]
 async fn main() {
@@ -26,7 +34,29 @@ async fn main() {
 
     let login_use_case = Arc::new(LoginUseCase::new(user_repo, credentials_store, token_issuer));
 
-    let app = create_app_with_auth(login_use_case);
+    let schedule_weeks = Arc::new(ScheduleWeekRepositoryPg::new(pool.clone()));
+    let student_groups = Arc::new(StudentGroupRepositoryPg::new(pool.clone()));
+    let instances = Arc::new(LessonInstanceRepositoryPg::new(pool.clone()));
+    let templates = Arc::new(LessonTemplateRepositoryPg::new(pool.clone()));
+    let lessons = Arc::new(LessonRepositoryPg::new(pool.clone()));
+    let subjects = Arc::new(SubjectRepositoryPg::new(pool.clone()));
+    let users = Arc::new(UserRepositoryPg::new(pool.clone()));
+    let cabinets = Arc::new(CabinetRepositoryPg::new(pool.clone()));
+    let homeworks = Arc::new(HomeworkRepositoryPg::new(pool.clone()));
+
+    let schedule_service = Arc::new(ScheduleService::new(
+        schedule_weeks,
+        student_groups,
+        instances,
+        templates,
+        lessons,
+        subjects,
+        users,
+        cabinets,
+        homeworks,
+    ));
+
+    let app = create_app_with_auth_and_schedule(login_use_case, schedule_service);
     let addr = format!("{}:{}", config.server_host, config.server_port);
 
     println!("starting EduHub179 API on {}", addr);
@@ -35,7 +65,7 @@ async fn main() {
         .await
         .expect("failed to bind server port");
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service())
         .await
         .expect("server failed");
 }
