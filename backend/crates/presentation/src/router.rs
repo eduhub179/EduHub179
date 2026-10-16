@@ -1,7 +1,6 @@
 //! Axum router for the HTTP API.
 //!
-//! This is the initial MVP. It exposes health and auth routes, and a schedule
-//! route stub that can later be wired to the real schedule service.
+//! This is the initial MVP. It exposes health, auth routes, and schedule routes.
 
 use application::use_cases::{
     auth::login::{LoginCommand, LoginUseCase},
@@ -48,6 +47,8 @@ pub struct PublicUser {
 #[derive(Debug, Deserialize)]
 pub struct ScheduleWeekQuery {
     pub date: String,
+    #[serde(default)]
+    pub student_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -86,7 +87,7 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    fn from_domain(error: DomainError) -> Self {
+    fn from_auth_domain(error: DomainError) -> Self {
         let (status, message) = match error {
             DomainError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid login or password")
@@ -96,6 +97,29 @@ impl ApiError {
                 (StatusCode::UNPROCESSABLE_ENTITY, "Invalid login format")
             }
             DomainError::UserNotFound => (StatusCode::UNAUTHORIZED, "Invalid login or password"),
+            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            _ => (StatusCode::BAD_REQUEST, "Bad request"),
+        };
+
+        Self {
+            status,
+            message: message.to_string(),
+        }
+    }
+
+    fn from_schedule_domain(error: DomainError) -> Self {
+        let (status, message) = match error {
+            DomainError::UserNotFound => (StatusCode::NOT_FOUND, "Student not found"),
+            DomainError::UserIsInactive => (StatusCode::FORBIDDEN, "User account is inactive"),
+            DomainError::InsufficientPermissions => {
+                (StatusCode::FORBIDDEN, "Insufficient permissions")
+            }
+            DomainError::ScheduleWeekNotFound => {
+                (StatusCode::NOT_FOUND, "Schedule week not found")
+            }
+            DomainError::InvalidLessonInstanceDate => {
+                (StatusCode::BAD_REQUEST, "Invalid lesson date")
+            }
             DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
         };
@@ -134,20 +158,36 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(login_handler))
+        .route("/api/schedule/week", get(schedule_week_handler))
         .with_state(AppState {
             login_use_case: Some(login_use_case),
             schedule_service: None,
         })
 }
 
-pub fn create_app_with_schedule(_schedule_service: Arc<ScheduleService>) -> Router {
+pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/schedule/week", get(schedule_week_handler))
         .with_state(AppState {
             login_use_case: None,
-            schedule_service: None,
+            schedule_service: Some(schedule_service),
+        })
+}
+
+pub fn create_app_with_auth_and_schedule(
+    login_use_case: Arc<LoginUseCase>,
+    schedule_service: Arc<ScheduleService>,
+) -> Router {
+    Router::new()
+        .route("/health", get(health_check))
+        .route("/api/health", get(health_check))
+        .route("/api/auth/login", post(login_handler))
+        .route("/api/schedule/week", get(schedule_week_handler))
+        .with_state(AppState {
+            login_use_case: Some(login_use_case),
+            schedule_service: Some(schedule_service),
         })
 }
 
@@ -168,12 +208,12 @@ async fn login_handler(
     })?;
 
     let command = LoginCommand::try_new(payload.login, payload.password)
-        .map_err(ApiError::from_domain)?;
+        .map_err(ApiError::from_auth_domain)?;
 
     let session = login_use_case
         .execute(command)
         .await
-        .map_err(ApiError::from_domain)?;
+        .map_err(ApiError::from_auth_domain)?;
 
     Ok(Json(LoginResponse {
         token: session.token,
@@ -191,15 +231,62 @@ async fn login_handler(
 }
 
 async fn schedule_week_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(query): Query<ScheduleWeekQuery>,
 ) -> Result<Json<ScheduleWeekResponse>, ApiError> {
     let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_domain(DomainError::InvalidLessonInstanceDate))?;
+        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
+
+    let student_id = query
+        .student_id
+        .as_deref()
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
+
+    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Schedule service not initialized".to_string(),
+    })?;
+
+    let response = schedule_service
+        .current_week_schedule(student_id, date)
+        .await
+        .map_err(ApiError::from_schedule_domain)?;
+
+    let days = response
+        .days
+        .into_iter()
+        .map(|day| ScheduleDayResponse {
+            date: day.date.to_string(),
+            lessons: day
+                .lessons
+                .into_iter()
+                .map(|lesson| ScheduleLessonResponse {
+                    id: lesson.instance.id.to_string(),
+                    start_time: lesson.start_time.format("%H:%M").to_string(),
+                    end_time: lesson.end_time.format("%H:%M").to_string(),
+                    subject_name: lesson.subject.name,
+                    teachers: lesson
+                        .teachers
+                        .into_iter()
+                        .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
+                        .collect(),
+                    cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
+                    homework: lesson.homework.map(|homework| HomeworkResponse {
+                        id: homework.homework.id.to_string(),
+                        text: homework
+                            .homework
+                            .text_content
+                            .unwrap_or_else(|| String::new()),
+                    }),
+                })
+                .collect(),
+        })
+        .collect();
 
     Ok(Json(ScheduleWeekResponse {
-        week_start_date: date.to_string(),
-        days: vec![],
+        week_start_date: response.week_start_date.to_string(),
+        days,
     }))
 }
 
