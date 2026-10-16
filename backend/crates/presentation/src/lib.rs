@@ -5,4 +5,4 @@
 
 pub mod router;
 
-pub use router::create_app;
+pub use router::{create_app, create_app_with_auth};

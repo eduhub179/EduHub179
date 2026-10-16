@@ -1,23 +1,25 @@
 //! Axum router for the HTTP API.
 //!
-//! This is the initial skeleton. It exposes a minimal `/health` route and can be
-//! expanded with feature-specific endpoints (`auth`, `homework`, `schedule`, etc.).
+//! This is the initial MVP. It exposes health and auth routes, and a schedule
+//! route stub that can later be wired to the real schedule service.
 
-use application::use_cases::auth::{
-    login::{LoginCommand, LoginUseCase},
-    AuthSession,
+use application::use_cases::{
+    auth::login::{LoginCommand, LoginUseCase},
+    schedule::ScheduleService,
 };
 use axum::{
-    extract::State,
-    http::{StatusCode},
+    extract::{Query, State},
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use chrono::NaiveDate;
 use domain::errors::DomainError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -43,6 +45,40 @@ pub struct PublicUser {
     pub class_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ScheduleWeekQuery {
+    pub date: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScheduleWeekResponse {
+    pub week_start_date: String,
+    pub days: Vec<ScheduleDayResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScheduleDayResponse {
+    pub date: String,
+    pub lessons: Vec<ScheduleLessonResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScheduleLessonResponse {
+    pub id: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub subject_name: String,
+    pub teachers: Vec<String>,
+    pub cabinet: Option<String>,
+    pub homework: Option<HomeworkResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HomeworkResponse {
+    pub id: String,
+    pub text: String,
+}
+
 #[derive(Debug)]
 pub struct ApiError {
     status: StatusCode,
@@ -52,9 +88,13 @@ pub struct ApiError {
 impl ApiError {
     fn from_domain(error: DomainError) -> Self {
         let (status, message) = match error {
-            DomainError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "Invalid login or password"),
+            DomainError::InvalidCredentials => {
+                (StatusCode::UNAUTHORIZED, "Invalid login or password")
+            }
             DomainError::UserIsInactive => (StatusCode::FORBIDDEN, "User account is inactive"),
-            DomainError::InvalidLoginFormat => (StatusCode::UNPROCESSABLE_ENTITY, "Invalid login format"),
+            DomainError::InvalidLoginFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid login format")
+            }
             DomainError::UserNotFound => (StatusCode::UNAUTHORIZED, "Invalid login or password"),
             DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
@@ -77,6 +117,12 @@ impl IntoResponse for ApiError {
     }
 }
 
+#[derive(Clone)]
+pub struct AppState {
+    pub login_use_case: Option<Arc<LoginUseCase>>,
+    pub schedule_service: Option<Arc<ScheduleService>>,
+}
+
 pub fn create_app() -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -88,7 +134,21 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(login_handler))
-        .with_state(login_use_case)
+        .with_state(AppState {
+            login_use_case: Some(login_use_case),
+            schedule_service: None,
+        })
+}
+
+pub fn create_app_with_schedule(_schedule_service: Arc<ScheduleService>) -> Router {
+    Router::new()
+        .route("/health", get(health_check))
+        .route("/api/health", get(health_check))
+        .route("/api/schedule/week", get(schedule_week_handler))
+        .with_state(AppState {
+            login_use_case: None,
+            schedule_service: None,
+        })
 }
 
 async fn health_check() -> Json<Value> {
@@ -99,9 +159,14 @@ async fn health_check() -> Json<Value> {
 }
 
 async fn login_handler(
-    State(login_use_case): State<Arc<LoginUseCase>>,
+    State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, ApiError> {
+    let login_use_case = state.login_use_case.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Login use case not initialized".to_string(),
+    })?;
+
     let command = LoginCommand::try_new(payload.login, payload.password)
         .map_err(ApiError::from_domain)?;
 
@@ -125,10 +190,23 @@ async fn login_handler(
     }))
 }
 
+async fn schedule_week_handler(
+    State(_state): State<AppState>,
+    Query(query): Query<ScheduleWeekQuery>,
+) -> Result<Json<ScheduleWeekResponse>, ApiError> {
+    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
+        .map_err(|_| ApiError::from_domain(DomainError::InvalidLessonInstanceDate))?;
+
+    Ok(Json(ScheduleWeekResponse {
+        week_start_date: date.to_string(),
+        days: vec![],
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use application::use_cases::auth::login::{LoginCommand, LoginUseCase};
+    use application::use_cases::auth::login::LoginUseCase;
     use axum::{
         body::Body,
         http::{Request, StatusCode},
