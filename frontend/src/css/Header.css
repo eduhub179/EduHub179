@@ -40,6 +40,18 @@
     text-decoration: none;
 }
 
+.header__logout {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.header__logout:hover {
+    text-decoration: underline;
+}
+
 @media (max-width: 700px) {
     .header {
         height: auto;
