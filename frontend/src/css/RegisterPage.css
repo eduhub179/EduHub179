@@ -139,6 +139,16 @@
     text-decoration: underline;
 }
 
+.profile-form {
+    margin-bottom: 20px;
+}
+
+.profile-form__success {
+    margin-top: -8px;
+    color: #16803c;
+    font-size: 14px;
+}
+
 @media (max-width: 700px) {
     .register-page {
         min-height: calc(100vh - 64px);
