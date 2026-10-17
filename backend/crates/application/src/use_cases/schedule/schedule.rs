@@ -226,6 +226,106 @@ impl ScheduleService {
         self.build_week_schedule(week_start_date, student_id).await
     }
 
+    /// Loads the weekly schedule for a concrete class.
+    ///
+    /// This variant is used by staff screens or registration flows that need the
+    /// schedule for a class, without resolving a student account first.
+    pub async fn class_week_schedule(
+        &self,
+        class_id: uuid::Uuid,
+        date: NaiveDate,
+    ) -> Result<WeeklySchedule, DomainError> {
+        let week_start_date = monday_of(date);
+        let week = self.schedule_weeks.get_by_id(week_start_date).await?;
+        if !week.is_published() {
+            return Err(DomainError::ScheduleWeekNotFound);
+        }
+
+        self.build_week_schedule_for_class(week_start_date, class_id).await
+    }
+
+    /// Loads the day schedule for a concrete class.
+    pub async fn class_day_schedule(
+        &self,
+        class_id: uuid::Uuid,
+        date: NaiveDate,
+    ) -> Result<ScheduleDay, DomainError> {
+        let week_start_date = monday_of(date);
+        let week = self.schedule_weeks.get_by_id(week_start_date).await?;
+        if !week.is_published() {
+            return Err(DomainError::ScheduleWeekNotFound);
+        }
+
+        let students_in_class = self.users.get_active_students_by_class(class_id).await?;
+        let mut class_group_ids = std::collections::HashSet::new();
+        for student in students_in_class {
+            let groups = self.student_groups.get_groups_by_student(student.id).await?;
+            for group in groups {
+                class_group_ids.insert(group.id);
+            }
+        }
+
+        self.build_day_schedule(date, Some(class_id), &class_group_ids)
+            .await
+    }
+
+    /// Composes the complete week for a class from the repositories stored in the service.
+    async fn build_week_schedule_for_class(
+        &self,
+        week_start_date: NaiveDate,
+        class_id: uuid::Uuid,
+    ) -> Result<WeeklySchedule, DomainError> {
+        let week_instances = self.instances.get_by_week(week_start_date).await?;
+        let students_in_class = self.users.get_active_students_by_class(class_id).await?;
+        let class_group_ids = students_in_class
+            .into_iter()
+            .map(|student| self.student_groups.get_groups_by_student(student.id))
+            .collect::<Vec<_>>();
+
+        let mut all_group_ids = std::collections::HashSet::new();
+        for group_list in class_group_ids {
+            for group in group_list.await? {
+                all_group_ids.insert(group.id);
+            }
+        }
+
+        let mut days = (0..7)
+            .map(|offset| ScheduleDay {
+                date: week_start_date + chrono::Duration::days(offset),
+                lessons: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+
+        for instance in week_instances {
+            let template = self.templates.get_by_id(instance.template_id).await?;
+            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
+            let belongs_to_class = lesson.class_id() == Some(class_id);
+            let belongs_to_group = lesson
+                .group_id()
+                .is_some_and(|group_id| all_group_ids.contains(&group_id));
+            if !(belongs_to_class || belongs_to_group) {
+                continue;
+            }
+
+            let day = self.build_schedule_lesson(instance).await?;
+            let day_index = usize::try_from(day.instance.day_of_week())
+                .map_err(|_| DomainError::InvalidLessonInstanceDate)?;
+            if let Some(schedule_day) = days.get_mut(day_index) {
+                schedule_day.lessons.push(day);
+            } else {
+                return Err(DomainError::InvalidLessonInstanceDate);
+            }
+        }
+
+        for day in &mut days {
+            day.lessons.sort_by_key(|lesson| lesson.start_time);
+        }
+        Ok(WeeklySchedule {
+            week_start_date,
+            days,
+        })
+    }
+
     /// Composes one frontend-ready day from the repositories stored in the service.
     async fn build_day_schedule(
         &self,
