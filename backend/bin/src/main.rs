@@ -12,10 +12,10 @@ use infrastructure::{
     auth::{Argon2PasswordHasher, JwtTokenIssuer},
     config::Config,
     postgres::{
-        create_pool, CabinetRepositoryPg, CredentialsStorePg, HomeworkRepositoryPg,
-        LessonInstanceRepositoryPg, LessonRepositoryPg, LessonTemplateRepositoryPg,
-        ScheduleWeekRepositoryPg, StudentGroupRepositoryPg, SubjectRepositoryPg,
-        UserRepositoryPg,
+        create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg,
+        HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonRepositoryPg,
+        LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
+        SubjectRepositoryPg, UserRepositoryPg,
     },
 };
 use presentation::create_app_with_auth_and_schedule;
@@ -27,6 +27,8 @@ async fn main() {
     let pool = create_pool(&config.database_url)
         .await
         .expect("failed to create PostgreSQL pool");
+
+    let class_repo = Arc::new(ClassRepositoryPg::new(pool.clone()));
 
     let user_repo = Arc::new(UserRepositoryPg::new(pool.clone()));
     let password_hasher = Arc::new(Argon2PasswordHasher);
@@ -68,6 +70,7 @@ async fn main() {
         schedule_service,
         create_homework_use_case,
         update_homework_use_case,
+        class_repo,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
