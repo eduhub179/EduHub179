@@ -12,7 +12,7 @@ use application::use_cases::{
 };
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode},
     response::IntoResponse,
     routing::{get, patch, post},
     Json, Router,
@@ -26,6 +26,7 @@ use domain::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{str::FromStr, sync::Arc};
+use tower_http::cors::{CorsLayer};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -244,10 +245,27 @@ pub struct AppState {
     pub class_repository: Option<Arc<dyn ClassRepository>>,
 }
 
+fn cors_layer() -> CorsLayer {
+    let allow_origin = [
+        "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+        "http://127.0.0.1:5173".parse::<HeaderValue>().unwrap(),
+    ];
+
+    CorsLayer::new()
+        .allow_origin(allow_origin)
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PATCH])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+        ])
+        .allow_credentials(true)
+}
+
 pub fn create_app() -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
+        .layer(cors_layer())
 }
 
 pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
@@ -262,6 +280,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
         .route("/api/homework", post(create_homework_handler))
         .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
         .route("/api/classes", get(classes_handler))
+        .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
             schedule_service: None,
@@ -282,6 +301,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
         .route("/api/homework", post(create_homework_handler))
         .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
         .route("/api/classes", get(classes_handler))
+        .layer(cors_layer())
         .with_state(AppState {
             login_use_case: None,
             schedule_service: Some(schedule_service),
@@ -309,6 +329,7 @@ pub fn create_app_with_auth_and_schedule(
         .route("/api/homework", post(create_homework_handler))
         .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
         .route("/api/classes", get(classes_handler))
+        .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
             schedule_service: Some(schedule_service),
