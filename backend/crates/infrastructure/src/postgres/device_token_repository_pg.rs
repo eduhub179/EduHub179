@@ -10,6 +10,7 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
 struct DeviceTokenRow {
     device_token_id: Uuid,
     user_id: Uuid,
@@ -33,7 +34,8 @@ impl DeviceTokenRow {
             self.token,
             self.created_at,
             self.updated_at,
-        ).map(|mut token| {
+        )
+        .map(|mut token| {
             token.is_active = self.is_active;
             token
         })

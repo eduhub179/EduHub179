@@ -241,7 +241,8 @@ impl ScheduleService {
             return Err(DomainError::ScheduleWeekNotFound);
         }
 
-        self.build_week_schedule_for_class(week_start_date, class_id).await
+        self.build_week_schedule_for_class(week_start_date, class_id)
+            .await
     }
 
     /// Loads the day schedule for a concrete class.
@@ -259,7 +260,10 @@ impl ScheduleService {
         let students_in_class = self.users.get_active_students_by_class(class_id).await?;
         let mut class_group_ids = std::collections::HashSet::new();
         for student in students_in_class {
-            let groups = self.student_groups.get_groups_by_student(student.id).await?;
+            let groups = self
+                .student_groups
+                .get_groups_by_student(student.id)
+                .await?;
             for group in groups {
                 class_group_ids.insert(group.id);
             }
@@ -523,11 +527,7 @@ impl ScheduleService {
             .await?;
 
         // Ensure or create target week
-        let target_week = match self
-            .schedule_weeks
-            .get_by_id(target_week_start_date)
-            .await
-        {
+        let target_week = match self.schedule_weeks.get_by_id(target_week_start_date).await {
             Ok(w) => w,
             Err(DomainError::ScheduleWeekNotFound) => {
                 let new = ScheduleWeek::new(
@@ -612,39 +612,69 @@ mod tests {
     struct DummyStudentGroups;
     #[async_trait]
     impl StudentGroupRepository for DummyStudentGroups {
-        async fn get_by_id(&self, _group_id: uuid::Uuid) -> Result<domain::entities::student_group::StudentGroup, DomainError> {
+        async fn get_by_id(
+            &self,
+            _group_id: uuid::Uuid,
+        ) -> Result<domain::entities::student_group::StudentGroup, DomainError> {
             Err(DomainError::StudentGroupNotFound)
         }
 
-        async fn get_all(&self) -> Result<Vec<domain::entities::student_group::StudentGroup>, DomainError> {
+        async fn get_all(
+            &self,
+        ) -> Result<Vec<domain::entities::student_group::StudentGroup>, DomainError> {
             Ok(Vec::new())
         }
 
-        async fn save(&self, _group: domain::entities::student_group::StudentGroup) -> Result<domain::entities::student_group::StudentGroup, DomainError> {
+        async fn save(
+            &self,
+            _group: domain::entities::student_group::StudentGroup,
+        ) -> Result<domain::entities::student_group::StudentGroup, DomainError> {
             Err(DomainError::InternalError)
         }
 
-        async fn add_member(&self, _group_id: uuid::Uuid, _student_id: uuid::Uuid) -> Result<(), DomainError> {
+        async fn add_member(
+            &self,
+            _group_id: uuid::Uuid,
+            _student_id: uuid::Uuid,
+        ) -> Result<(), DomainError> {
             Err(DomainError::StudentGroupNotFound)
         }
 
-        async fn add_members(&self, _group_id: uuid::Uuid, _student_ids: &[uuid::Uuid]) -> Result<(), DomainError> {
+        async fn add_members(
+            &self,
+            _group_id: uuid::Uuid,
+            _student_ids: &[uuid::Uuid],
+        ) -> Result<(), DomainError> {
             Err(DomainError::StudentGroupNotFound)
         }
 
-        async fn remove_member(&self, _group_id: uuid::Uuid, _student_id: uuid::Uuid) -> Result<(), DomainError> {
+        async fn remove_member(
+            &self,
+            _group_id: uuid::Uuid,
+            _student_id: uuid::Uuid,
+        ) -> Result<(), DomainError> {
             Err(DomainError::StudentGroupNotFound)
         }
 
-        async fn get_member_ids(&self, _group_id: uuid::Uuid) -> Result<Vec<uuid::Uuid>, DomainError> {
+        async fn get_member_ids(
+            &self,
+            _group_id: uuid::Uuid,
+        ) -> Result<Vec<uuid::Uuid>, DomainError> {
             Ok(Vec::new())
         }
 
-        async fn get_groups_by_student(&self, _student_id: uuid::Uuid) -> Result<Vec<domain::entities::student_group::StudentGroup>, DomainError> {
+        async fn get_groups_by_student(
+            &self,
+            _student_id: uuid::Uuid,
+        ) -> Result<Vec<domain::entities::student_group::StudentGroup>, DomainError> {
             Ok(Vec::new())
         }
 
-        async fn has_member(&self, _group_id: uuid::Uuid, _student_id: uuid::Uuid) -> Result<bool, DomainError> {
+        async fn has_member(
+            &self,
+            _group_id: uuid::Uuid,
+            _student_id: uuid::Uuid,
+        ) -> Result<bool, DomainError> {
             Ok(false)
         }
     }
@@ -655,7 +685,10 @@ mod tests {
         async fn get_by_id(&self, _lesson_id: uuid::Uuid) -> Result<Lesson, DomainError> {
             Err(DomainError::LessonNotFound)
         }
-        async fn get_teacher_ids(&self, _lesson_id: uuid::Uuid) -> Result<Vec<uuid::Uuid>, DomainError> {
+        async fn get_teacher_ids(
+            &self,
+            _lesson_id: uuid::Uuid,
+        ) -> Result<Vec<uuid::Uuid>, DomainError> {
             Ok(Vec::new())
         }
         async fn save(&self, _lesson: Lesson) -> Result<Lesson, DomainError> {
@@ -667,13 +700,24 @@ mod tests {
         async fn get_by_group(&self, _group_id: uuid::Uuid) -> Result<Vec<Lesson>, DomainError> {
             Ok(Vec::new())
         }
-        async fn get_by_teacher(&self, _teacher_id: uuid::Uuid) -> Result<Vec<Lesson>, DomainError> {
+        async fn get_by_teacher(
+            &self,
+            _teacher_id: uuid::Uuid,
+        ) -> Result<Vec<Lesson>, DomainError> {
             Ok(Vec::new())
         }
-        async fn assign_teacher(&self, _lesson_id: uuid::Uuid, _teacher_id: uuid::Uuid) -> Result<(), DomainError> {
+        async fn assign_teacher(
+            &self,
+            _lesson_id: uuid::Uuid,
+            _teacher_id: uuid::Uuid,
+        ) -> Result<(), DomainError> {
             Err(DomainError::LessonNotFound)
         }
-        async fn unassign_teacher(&self, _lesson_id: uuid::Uuid, _teacher_id: uuid::Uuid) -> Result<(), DomainError> {
+        async fn unassign_teacher(
+            &self,
+            _lesson_id: uuid::Uuid,
+            _teacher_id: uuid::Uuid,
+        ) -> Result<(), DomainError> {
             Err(DomainError::LessonNotFound)
         }
     }
@@ -695,35 +739,92 @@ mod tests {
     struct DummyUserRepo;
     #[async_trait]
     impl UserRepository for DummyUserRepo {
-        async fn get_by_id(&self, _user_id: uuid::Uuid) -> Result<domain::entities::user::User, DomainError> {
+        async fn get_by_id(
+            &self,
+            _user_id: uuid::Uuid,
+        ) -> Result<domain::entities::user::User, DomainError> {
             Err(DomainError::UserNotFound)
         }
-        async fn get_by_login(&self, _login: &str) -> Result<domain::entities::user::User, DomainError> { Err(DomainError::UserNotFound) }
-        async fn get_active_students_by_class(&self, _class_id: uuid::Uuid) -> Result<Vec<domain::entities::user::User>, DomainError> { Ok(Vec::new()) }
-        async fn save(&self, _user: domain::entities::user::User) -> Result<domain::entities::user::User, DomainError> { Err(DomainError::InternalError) }
+        async fn get_by_login(
+            &self,
+            _login: &str,
+        ) -> Result<domain::entities::user::User, DomainError> {
+            Err(DomainError::UserNotFound)
+        }
+        async fn get_active_students_by_class(
+            &self,
+            _class_id: uuid::Uuid,
+        ) -> Result<Vec<domain::entities::user::User>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn save(
+            &self,
+            _user: domain::entities::user::User,
+        ) -> Result<domain::entities::user::User, DomainError> {
+            Err(DomainError::InternalError)
+        }
     }
 
     struct DummyCabinetRepo;
     #[async_trait]
     impl CabinetRepository for DummyCabinetRepo {
-        async fn get_by_id(&self, _cabinet_id: uuid::Uuid) -> Result<Cabinet, DomainError> { Err(DomainError::CabinetNotFound) }
-        async fn get_by_number(&self, _number: i32) -> Result<Cabinet, DomainError> { Err(DomainError::CabinetNotFound) }
-        async fn get_all(&self) -> Result<Vec<Cabinet>, DomainError> { Ok(Vec::new()) }
-        async fn get_by_floor(&self, _floor: i32) -> Result<Vec<Cabinet>, DomainError> { Ok(Vec::new()) }
-        async fn save(&self, _cabinet: Cabinet) -> Result<Cabinet, DomainError> { Err(DomainError::InternalError) }
+        async fn get_by_id(&self, _cabinet_id: uuid::Uuid) -> Result<Cabinet, DomainError> {
+            Err(DomainError::CabinetNotFound)
+        }
+        async fn get_by_number(&self, _number: i32) -> Result<Cabinet, DomainError> {
+            Err(DomainError::CabinetNotFound)
+        }
+        async fn get_all(&self) -> Result<Vec<Cabinet>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn get_by_floor(&self, _floor: i32) -> Result<Vec<Cabinet>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn save(&self, _cabinet: Cabinet) -> Result<Cabinet, DomainError> {
+            Err(DomainError::InternalError)
+        }
     }
 
     struct DummyHomeworkRepo;
     #[async_trait]
     impl HomeworkRepository for DummyHomeworkRepo {
-        async fn get_by_id(&self, _homework_id: uuid::Uuid) -> Result<Homework, DomainError> { Err(DomainError::HomeworkNotFound) }
-        async fn get_by_lesson_instance(&self, _lesson_instance_id: uuid::Uuid) -> Result<Homework, DomainError> { Err(DomainError::HomeworkNotFound) }
-        async fn get_files(&self, _homework_id: uuid::Uuid) -> Result<Vec<HomeworkFile>, DomainError> { Ok(Vec::new()) }
-        async fn save(&self, _homework: Homework) -> Result<Homework, DomainError> { Err(DomainError::InternalError) }
-        async fn add_file(&self, _file: domain::entities::homework::HomeworkFile) -> Result<domain::entities::homework::HomeworkFile, DomainError> { Err(DomainError::InternalError) }
-        async fn remove_file(&self, _file_id: uuid::Uuid) -> Result<(), DomainError> { Err(DomainError::InternalError) }
-        async fn delete(&self, _homework_id: uuid::Uuid) -> Result<(), DomainError> { Err(DomainError::InternalError) }
-        async fn create_with_files(&self, _homework: Homework, _files: Vec<domain::entities::homework::HomeworkFile>) -> Result<Homework, DomainError> { Err(DomainError::InternalError) }
+        async fn get_by_id(&self, _homework_id: uuid::Uuid) -> Result<Homework, DomainError> {
+            Err(DomainError::HomeworkNotFound)
+        }
+        async fn get_by_lesson_instance(
+            &self,
+            _lesson_instance_id: uuid::Uuid,
+        ) -> Result<Homework, DomainError> {
+            Err(DomainError::HomeworkNotFound)
+        }
+        async fn get_files(
+            &self,
+            _homework_id: uuid::Uuid,
+        ) -> Result<Vec<HomeworkFile>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn save(&self, _homework: Homework) -> Result<Homework, DomainError> {
+            Err(DomainError::InternalError)
+        }
+        async fn add_file(
+            &self,
+            _file: domain::entities::homework::HomeworkFile,
+        ) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
+            Err(DomainError::InternalError)
+        }
+        async fn remove_file(&self, _file_id: uuid::Uuid) -> Result<(), DomainError> {
+            Err(DomainError::InternalError)
+        }
+        async fn delete(&self, _homework_id: uuid::Uuid) -> Result<(), DomainError> {
+            Err(DomainError::InternalError)
+        }
+        async fn create_with_files(
+            &self,
+            _homework: Homework,
+            _files: Vec<domain::entities::homework::HomeworkFile>,
+        ) -> Result<Homework, DomainError> {
+            Err(DomainError::InternalError)
+        }
     }
 
     struct MockScheduleWeekRepo {
@@ -740,7 +841,9 @@ mod tests {
                 Err(DomainError::ScheduleWeekNotFound)
             }
         }
-        async fn get_all(&self) -> Result<Vec<ScheduleWeek>, DomainError> { Ok(vec![self.week.clone()]) }
+        async fn get_all(&self) -> Result<Vec<ScheduleWeek>, DomainError> {
+            Ok(vec![self.week.clone()])
+        }
         async fn save(&self, week: ScheduleWeek) -> Result<ScheduleWeek, DomainError> {
             *self.saved.lock().unwrap() = Some(week.clone());
             Ok(week)
@@ -753,11 +856,35 @@ mod tests {
 
     #[async_trait]
     impl LessonTemplateRepository for MockTemplateRepo {
-        async fn get_by_id(&self, _template_id: uuid::Uuid) -> Result<domain::entities::lesson_template::LessonTemplate, DomainError> { Err(DomainError::LessonTemplateNotFound) }
-        async fn get_by_lesson(&self, _lesson_id: uuid::Uuid) -> Result<Vec<domain::entities::lesson_template::LessonTemplate>, DomainError> { Ok(Vec::new()) }
-        async fn get_active_for_day(&self, _day: domain::value_objects::day_of_week::DayOfWeek) -> Result<Vec<domain::entities::lesson_template::LessonTemplate>, DomainError> { Ok(Vec::new()) }
-        async fn get_all_active(&self) -> Result<Vec<domain::entities::lesson_template::LessonTemplate>, DomainError> { Ok(self.templates.clone()) }
-        async fn save(&self, _template: domain::entities::lesson_template::LessonTemplate) -> Result<domain::entities::lesson_template::LessonTemplate, DomainError> { Err(DomainError::InternalError) }
+        async fn get_by_id(
+            &self,
+            _template_id: uuid::Uuid,
+        ) -> Result<domain::entities::lesson_template::LessonTemplate, DomainError> {
+            Err(DomainError::LessonTemplateNotFound)
+        }
+        async fn get_by_lesson(
+            &self,
+            _lesson_id: uuid::Uuid,
+        ) -> Result<Vec<domain::entities::lesson_template::LessonTemplate>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn get_active_for_day(
+            &self,
+            _day: domain::value_objects::day_of_week::DayOfWeek,
+        ) -> Result<Vec<domain::entities::lesson_template::LessonTemplate>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn get_all_active(
+            &self,
+        ) -> Result<Vec<domain::entities::lesson_template::LessonTemplate>, DomainError> {
+            Ok(self.templates.clone())
+        }
+        async fn save(
+            &self,
+            _template: domain::entities::lesson_template::LessonTemplate,
+        ) -> Result<domain::entities::lesson_template::LessonTemplate, DomainError> {
+            Err(DomainError::InternalError)
+        }
     }
 
     struct MockInstanceRepo {
@@ -767,8 +894,13 @@ mod tests {
 
     #[async_trait]
     impl LessonInstanceRepository for MockInstanceRepo {
-        async fn get_by_id(&self, _instance_id: uuid::Uuid) -> Result<LessonInstance, DomainError> { Err(DomainError::LessonInstanceNotFound) }
-        async fn get_by_week(&self, week_start_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError> {
+        async fn get_by_id(&self, _instance_id: uuid::Uuid) -> Result<LessonInstance, DomainError> {
+            Err(DomainError::LessonInstanceNotFound)
+        }
+        async fn get_by_week(
+            &self,
+            week_start_date: NaiveDate,
+        ) -> Result<Vec<LessonInstance>, DomainError> {
             let mut out = Vec::new();
             for inst in &self.week_instances {
                 if inst.week_start_date == week_start_date {
@@ -777,8 +909,18 @@ mod tests {
             }
             Ok(out)
         }
-        async fn get_by_date(&self, _lesson_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError> { Ok(Vec::new()) }
-        async fn get_by_template(&self, _template_id: uuid::Uuid) -> Result<Vec<LessonInstance>, DomainError> { Ok(Vec::new()) }
+        async fn get_by_date(
+            &self,
+            _lesson_date: NaiveDate,
+        ) -> Result<Vec<LessonInstance>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn get_by_template(
+            &self,
+            _template_id: uuid::Uuid,
+        ) -> Result<Vec<LessonInstance>, DomainError> {
+            Ok(Vec::new())
+        }
         async fn save(&self, instance: LessonInstance) -> Result<LessonInstance, DomainError> {
             self.saved.lock().unwrap().push(instance.clone());
             Ok(instance)
@@ -787,12 +929,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_from_templates_creates_instances() {
-        use domain::value_objects::day_of_week::DayOfWeek;
         use chrono::NaiveTime;
+        use domain::value_objects::day_of_week::DayOfWeek;
 
         let week_date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
         let week = ScheduleWeek::new(week_date, WeekStatus::Draft, None);
-        let schedule_repo = MockScheduleWeekRepo { week: week.clone(), saved: Mutex::new(None) };
+        let schedule_repo = MockScheduleWeekRepo {
+            week: week.clone(),
+            saved: Mutex::new(None),
+        };
 
         let template = domain::entities::lesson_template::LessonTemplate::try_new(
             uuid::Uuid::new_v4(),
@@ -803,10 +948,16 @@ mod tests {
             domain::value_objects::week_parity::WeekParity::Every,
             None,
             true,
-        ).unwrap();
+        )
+        .unwrap();
 
-        let template_repo = MockTemplateRepo { templates: vec![template] };
-        let instance_repo = MockInstanceRepo { saved: Mutex::new(Vec::new()), week_instances: Vec::new() };
+        let template_repo = MockTemplateRepo {
+            templates: vec![template],
+        };
+        let instance_repo = MockInstanceRepo {
+            saved: Mutex::new(Vec::new()),
+            week_instances: Vec::new(),
+        };
 
         let service = ScheduleService::new(
             Arc::new(schedule_repo),
@@ -820,14 +971,16 @@ mod tests {
             Arc::new(DummyHomeworkRepo),
         );
 
-        let created = service.generate_from_templates(week_date).await.expect("generate ok");
+        let created = service
+            .generate_from_templates(week_date)
+            .await
+            .expect("generate ok");
         assert_eq!(created.len(), 1);
         assert_eq!(created[0].week_start_date, week_date);
     }
 
     #[tokio::test]
     async fn test_copy_week_copies_scheduled_instances_and_sets_copied_from() {
-        use chrono::NaiveTime;
         use domain::value_objects::lesson_instance_status::LessonInstanceStatus;
         // source week
         let source_date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
@@ -840,11 +993,20 @@ mod tests {
             source_date,
             LessonInstanceStatus::Scheduled,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
-        let schedule_repo = MockScheduleWeekRepo { week: ScheduleWeek::new(source_date, WeekStatus::Draft, None), saved: Mutex::new(None) };
-        let template_repo = MockTemplateRepo { templates: Vec::new() };
-        let instance_repo = MockInstanceRepo { saved: Mutex::new(Vec::new()), week_instances: vec![inst.clone()] };
+        let schedule_repo = MockScheduleWeekRepo {
+            week: ScheduleWeek::new(source_date, WeekStatus::Draft, None),
+            saved: Mutex::new(None),
+        };
+        let template_repo = MockTemplateRepo {
+            templates: Vec::new(),
+        };
+        let instance_repo = MockInstanceRepo {
+            saved: Mutex::new(Vec::new()),
+            week_instances: vec![inst.clone()],
+        };
 
         let service = ScheduleService::new(
             Arc::new(schedule_repo),
@@ -858,10 +1020,16 @@ mod tests {
             Arc::new(DummyHomeworkRepo),
         );
 
-        let created = service.copy_week(source_date, target_date).await.expect("copy ok");
+        let created = service
+            .copy_week(source_date, target_date)
+            .await
+            .expect("copy ok");
         assert_eq!(created.len(), 1);
         assert_eq!(created[0].week_start_date, target_date);
         // lesson_date should be shifted by one week
-        assert_eq!(created[0].lesson_date, inst.lesson_date + chrono::Duration::days(7));
+        assert_eq!(
+            created[0].lesson_date,
+            inst.lesson_date + chrono::Duration::days(7)
+        );
     }
 }

@@ -12,7 +12,6 @@ use domain::value_objects::telegram_session_state::TelegramSessionState;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::str::FromStr;
-use std::sync::Arc;
 
 pub struct TelegramSessionRepositoryRedis {
     conn: ConnectionManager,

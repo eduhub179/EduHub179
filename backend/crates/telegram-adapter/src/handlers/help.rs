@@ -40,13 +40,13 @@ pub async fn handle_unknown_command(
     let cmd_token = raw_text.split_whitespace().next().unwrap_or(raw_text);
 
     let reply = format!(
-        "⚠️ Неизвестная команда: `{}`.\n\
-Используйте /help для списка доступных команд.",
+        "⚠️ Неизвестная команда: `{}`\\.\n\
+Используйте /help для списка доступных команд\\.",
         cmd_token
     );
 
     bot.send_message(msg.chat.id, reply)
-        .parse_mode(teloxide::types::ParseMode::Markdown)
+        .parse_mode(teloxide::types::ParseMode::MarkdownV2)
         .await?;
     Ok(())
 }

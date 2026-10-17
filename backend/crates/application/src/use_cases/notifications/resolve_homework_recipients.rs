@@ -49,7 +49,10 @@ impl ResolveHomeworkRecipientsUseCase {
             .lesson_instances
             .get_by_id(homework.lesson_instance_id)
             .await?;
-        let template = self.lesson_templates.get_by_id(instance.template_id).await?;
+        let template = self
+            .lesson_templates
+            .get_by_id(instance.template_id)
+            .await?;
         let lesson = self.lessons.get_by_id(template.lesson_id).await?;
 
         match lesson.target {
@@ -79,23 +82,23 @@ impl ResolveHomeworkRecipientsUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use domain::entities::class::Class;
-    use domain::entities::device_token::DeviceToken;
+    use chrono::{NaiveDate, NaiveTime, Utc};
     use domain::entities::homework::Homework;
     use domain::entities::lesson::Lesson;
     use domain::entities::lesson_instance::LessonInstance;
     use domain::entities::lesson_template::LessonTemplate;
     use domain::entities::student_group::StudentGroup;
     use domain::entities::user::User;
-    use domain::repositories::device_token_repository::DeviceTokenRepository;
     use domain::repositories::homework_repository::HomeworkRepository;
     use domain::repositories::lesson_instance_repository::LessonInstanceRepository;
     use domain::repositories::lesson_repository::LessonRepository;
     use domain::repositories::lesson_template_repository::LessonTemplateRepository;
     use domain::repositories::student_group_repository::StudentGroupRepository;
     use domain::repositories::user_repository::UserRepository;
-    use domain::value_objects::{class_letter::ClassLetter, day_of_week::DayOfWeek, homework_status::HomeworkStatus, lesson_instance_status::LessonInstanceStatus, role::UserRole, week_parity::WeekParity};
-    use chrono::{NaiveDate, NaiveTime, Utc};
+    use domain::value_objects::{
+        day_of_week::DayOfWeek, homework_status::HomeworkStatus,
+        lesson_instance_status::LessonInstanceStatus, role::UserRole, week_parity::WeekParity,
+    };
 
     struct MockHomeworkRepo {
         homework: Homework,
@@ -107,11 +110,17 @@ mod tests {
             Ok(self.homework.clone())
         }
 
-        async fn get_by_lesson_instance(&self, _lesson_instance_id: Uuid) -> Result<Homework, DomainError> {
+        async fn get_by_lesson_instance(
+            &self,
+            _lesson_instance_id: Uuid,
+        ) -> Result<Homework, DomainError> {
             unimplemented!()
         }
 
-        async fn get_files(&self, _homework_id: Uuid) -> Result<Vec<domain::entities::homework::HomeworkFile>, DomainError> {
+        async fn get_files(
+            &self,
+            _homework_id: Uuid,
+        ) -> Result<Vec<domain::entities::homework::HomeworkFile>, DomainError> {
             Ok(Vec::new())
         }
 
@@ -119,7 +128,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn add_file(&self, _file: domain::entities::homework::HomeworkFile) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
+        async fn add_file(
+            &self,
+            _file: domain::entities::homework::HomeworkFile,
+        ) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
             unimplemented!()
         }
 
@@ -150,15 +162,24 @@ mod tests {
             Ok(self.instance.clone())
         }
 
-        async fn get_by_week(&self, _week_start_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError> {
+        async fn get_by_week(
+            &self,
+            _week_start_date: NaiveDate,
+        ) -> Result<Vec<LessonInstance>, DomainError> {
             unimplemented!()
         }
 
-        async fn get_by_date(&self, _lesson_date: NaiveDate) -> Result<Vec<LessonInstance>, DomainError> {
+        async fn get_by_date(
+            &self,
+            _lesson_date: NaiveDate,
+        ) -> Result<Vec<LessonInstance>, DomainError> {
             unimplemented!()
         }
 
-        async fn get_by_template(&self, _template_id: Uuid) -> Result<Vec<LessonInstance>, DomainError> {
+        async fn get_by_template(
+            &self,
+            _template_id: Uuid,
+        ) -> Result<Vec<LessonInstance>, DomainError> {
             unimplemented!()
         }
 
@@ -177,11 +198,17 @@ mod tests {
             Ok(self.template.clone())
         }
 
-        async fn get_by_lesson(&self, _lesson_id: Uuid) -> Result<Vec<LessonTemplate>, DomainError> {
+        async fn get_by_lesson(
+            &self,
+            _lesson_id: Uuid,
+        ) -> Result<Vec<LessonTemplate>, DomainError> {
             unimplemented!()
         }
 
-        async fn get_active_for_day(&self, _day: domain::value_objects::day_of_week::DayOfWeek) -> Result<Vec<LessonTemplate>, DomainError> {
+        async fn get_active_for_day(
+            &self,
+            _day: domain::value_objects::day_of_week::DayOfWeek,
+        ) -> Result<Vec<LessonTemplate>, DomainError> {
             unimplemented!()
         }
 
@@ -220,11 +247,19 @@ mod tests {
             unimplemented!()
         }
 
-        async fn assign_teacher(&self, _lesson_id: Uuid, _teacher_id: Uuid) -> Result<(), DomainError> {
+        async fn assign_teacher(
+            &self,
+            _lesson_id: Uuid,
+            _teacher_id: Uuid,
+        ) -> Result<(), DomainError> {
             unimplemented!()
         }
 
-        async fn unassign_teacher(&self, _lesson_id: Uuid, _teacher_id: Uuid) -> Result<(), DomainError> {
+        async fn unassign_teacher(
+            &self,
+            _lesson_id: Uuid,
+            _teacher_id: Uuid,
+        ) -> Result<(), DomainError> {
             unimplemented!()
         }
 
@@ -253,11 +288,19 @@ mod tests {
             unimplemented!()
         }
 
-        async fn add_members(&self, _group_id: Uuid, _student_ids: &[Uuid]) -> Result<(), DomainError> {
+        async fn add_members(
+            &self,
+            _group_id: Uuid,
+            _student_ids: &[Uuid],
+        ) -> Result<(), DomainError> {
             unimplemented!()
         }
 
-        async fn remove_member(&self, _group_id: Uuid, _student_id: Uuid) -> Result<(), DomainError> {
+        async fn remove_member(
+            &self,
+            _group_id: Uuid,
+            _student_id: Uuid,
+        ) -> Result<(), DomainError> {
             unimplemented!()
         }
 
@@ -265,11 +308,18 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn get_groups_by_student(&self, _student_id: Uuid) -> Result<Vec<StudentGroup>, DomainError> {
+        async fn get_groups_by_student(
+            &self,
+            _student_id: Uuid,
+        ) -> Result<Vec<StudentGroup>, DomainError> {
             unimplemented!()
         }
 
-        async fn has_member(&self, _group_id: Uuid, _student_id: Uuid) -> Result<bool, DomainError> {
+        async fn has_member(
+            &self,
+            _group_id: Uuid,
+            _student_id: Uuid,
+        ) -> Result<bool, DomainError> {
             Ok(false)
         }
     }
@@ -292,7 +342,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn get_active_students_by_class(&self, _class_id: Uuid) -> Result<Vec<User>, DomainError> {
+        async fn get_active_students_by_class(
+            &self,
+            _class_id: Uuid,
+        ) -> Result<Vec<User>, DomainError> {
             Ok(self.students.clone())
         }
 
@@ -349,7 +402,12 @@ mod tests {
         )
         .unwrap();
 
-        let lesson = Lesson::new(Uuid::new_v4(), domain::value_objects::lesson_target::LessonTarget::Class(class_id), Uuid::new_v4(), true);
+        let lesson = Lesson::new(
+            Uuid::new_v4(),
+            domain::value_objects::lesson_target::LessonTarget::Class(class_id),
+            Uuid::new_v4(),
+            true,
+        );
         let template = LessonTemplate::try_new(
             lesson_instance.template_id,
             lesson.id,
@@ -364,11 +422,15 @@ mod tests {
 
         let use_case = ResolveHomeworkRecipientsUseCase::new(
             Arc::new(MockHomeworkRepo { homework }),
-            Arc::new(MockLessonInstanceRepo { instance: lesson_instance }),
+            Arc::new(MockLessonInstanceRepo {
+                instance: lesson_instance,
+            }),
             Arc::new(MockLessonTemplateRepo { template }),
             Arc::new(MockLessonRepo { lesson }),
             Arc::new(MockStudentGroupRepo),
-            Arc::new(MockUserRepo { students: vec![user_1.clone(), user_2.clone()] }),
+            Arc::new(MockUserRepo {
+                students: vec![user_1.clone(), user_2.clone()],
+            }),
         );
 
         let recipients = use_case.execute(homework_id).await.unwrap();
