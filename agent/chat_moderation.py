@@ -16,13 +16,16 @@
 каналы проверяет --channel.
 """
 import json
+import sys
 import threading
 import time
 from pathlib import Path
 
+import backend_api
 import moderator
 
 TYPES = ("homework", "test", "lesson_change", "material", "info")
+RETRY_EVERY = 600  # раз в столько секунд повторяем то, что не ушло в бэкенд
 SYNC_EVERY = 30  # раз в столько секунд новые находки уходят модератору карточками
 LOCK = threading.RLock()  # файлы очереди пишут и агент (новые находки), и бот (решения)
 
@@ -109,16 +112,32 @@ def start(channel=False):
     moderator.handle = _locked(moderator.handle)  # нажатие кнопки не должно совпасть с записью новой находки
 
     def worker():
-        if channel:
-            import watch_channel
-        next_check = 0
+        channels = channel
+        if channels:
+            # llm_extract и fetch_channel читают sys.argv при импорте (там аргументы chat_agent.py), прячем их
+            argv, sys.argv = sys.argv, sys.argv[:1]
+            try:
+                import watch_channel
+            except Exception as e:  # без каналов бот-модератор для чатов всё равно работает
+                print("каналы: не запустились, проверяю только чаты:", repr(e))
+                channels = False
+            finally:
+                sys.argv = argv
+        next_check = next_retry = 0
         while True:
-            if channel and time.time() >= next_check:
+            if channels and time.time() >= next_check:
                 try:
                     watch_channel.check_once()
                 except Exception as e:  # нет сети или Ollama — попробуем в следующий раз
                     print("каналы: ошибка", e)
                 next_check = time.time() + watch_channel.INTERVAL
+            if time.time() >= next_retry:  # то, что не ушло в бэкенд (сервер лежал, урока не было в расписании)
+                try:
+                    with LOCK:
+                        backend_api.retry()
+                except Exception as e:
+                    print("в бэкенд: ошибка", repr(e))
+                next_retry = time.time() + RETRY_EVERY
             try:
                 with LOCK:
                     moderator.sync()
