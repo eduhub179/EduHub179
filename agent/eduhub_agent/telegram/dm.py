@@ -159,6 +159,17 @@ def subjects_in(text, names):
     return hit
 
 
+def subjects_typo(text, names):
+    """Опечатки в предмете: «алгерба», «химмия», «физке». Сравниваем слово с началом названия той же длины."""
+    hit = []
+    for w in re.findall(r"[а-яё]{5,}", text.lower()):
+        for n in names:
+            first = n.lower().split()[0]
+            if n not in hit and questions.close(w[:len(first) + 1], first, 0.75):
+                hit.append(n)
+    return hit
+
+
 def resolve(d, it):
     """Урок для находки: предмет и дата есть — ищем урок; даты нет — ближайший урок предмета.
     Ставит it["lesson"] или it["problem"] (что спросить кнопками)."""
@@ -271,7 +282,8 @@ def answer_question(intent, cid, day=None, subject=None):
     if day:
         d, les = day, lessons_now(cid, day)
         if not les:
-            return f"{when(d, today).capitalize()} уроков нет."
+            return (f"{when(d, today).capitalize()}" if d <= today + timedelta(days=1)
+                    else f"В {day_label(d.isoformat())}") + " уроков нет."
     else:
         d, les = next_school_day(cid, today)
         if not d:
@@ -424,7 +436,7 @@ def _question(msg, chat_id, text, cid):
     q = questions.classify(text, llm=None if questions.rule_intent(text) else _llm_with_typing(chat_id))
     names = class_subjects(cid, NOW().date())
     if q["intent"] == "add":
-        if subjects_in(text, names) or questions.HOMEWORK_TEXT.search(text) or not WORTH or WORTH(text):
+        if subjects_in(text, names) or subjects_typo(text, names) or questions.HOMEWORK_TEXT.search(text) or not WORTH or WORTH(text):
             return False  # похоже на ДЗ: черновик, как раньше
         print("ЛС: похоже на болтовню, не разбираю как ДЗ")
         q["intent"] = "other"
@@ -432,7 +444,8 @@ def _question(msg, chat_id, text, cid):
     if q["intent"] == "other":
         tg("sendMessage", chat_id=chat_id, text=CAN, reply_markup=MENU)
         return True
-    found = subjects_in(text, names) or (q.get("subject") and subjects_in(q["subject"], names)) or []
+    found = subjects_in(text, names) or (q.get("subject") and subjects_in(q["subject"], names)) or \
+        subjects_typo(text, names)
     if not found and q.get("subject"):
         found = [n for n in names if timetable.same_subject(n, q["subject"])]
     day = questions.parse_day(text, NOW().date()) or (q.get("day") and questions.parse_day(q["day"], NOW().date()))
@@ -474,7 +487,7 @@ def _draft(msg, chat_id, text, user, cls, cid):
          "links": [], "files": [], "reply_to": None, "forwarded": False, "message_ids": [msg["message_id"]]}
     d = {"id": secrets.token_hex(4), "tg": chat_id, "msg_id": msg["message_id"], "posted": posted,
          "user": user, "cls": cls, "cid": cid, "subjects": names, "status": "draft",
-         "items": understand(m, cls, subjects_in(text, names))}
+         "items": understand(m, cls, subjects_in(text, names) or subjects_typo(text, names))}
     for it in d["items"]:
         resolve(d, it)
     body, kb = preview(d)
