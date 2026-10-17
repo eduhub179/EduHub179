@@ -20,6 +20,7 @@ LOGIN_BOT=@имя_основного_бота — чтобы подсказат�
 import json
 import re
 import secrets
+import threading
 import time
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -269,7 +270,29 @@ def _on_message(msg):
             tg("sendMessage", chat_id=chat_id, text="Напиши в сообщении класс, например: «11Б физика к пятнице §12».")
             return
         cid = backend_api.class_id(cls)
-    tg("sendChatAction", chat_id=chat_id, action="typing")
+    done = typing(chat_id)
+    try:
+        _draft(msg, chat_id, text, user, cls, cid)
+    finally:
+        done()
+
+
+def typing(chat_id):
+    """«Печатает…» в Telegram гаснет через 5 секунд, а модель думает дольше: повторяем, пока не ответим."""
+    stop = threading.Event()
+
+    def loop():
+        while not stop.is_set():
+            try:
+                tg("sendChatAction", chat_id=chat_id, action="typing")
+            except Exception:
+                pass
+            stop.wait(4)
+    threading.Thread(target=loop, daemon=True).start()
+    return stop.set
+
+
+def _draft(msg, chat_id, text, user, cls, cid):
     posted = datetime.fromtimestamp(msg["date"]).strftime("%Y-%m-%dT%H:%M:%S")
     names = class_subjects(cid, date.fromisoformat(posted[:10]))
     m = {"chat": "ЛС", "id": msg["message_id"], "date": posted, "author": "?", "author_id": None, "text": text,
