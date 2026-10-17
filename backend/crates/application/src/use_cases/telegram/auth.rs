@@ -12,7 +12,6 @@ use domain::repositories::telegram_session_repository::TelegramSessionRepository
 use domain::repositories::user_repository::UserRepository;
 use domain::value_objects::login::Login;
 use domain::value_objects::telegram_session_state::TelegramSessionState;
-use uuid::Uuid;
 
 use crate::use_cases::auth::OneTimeCodeService;
 use super::{TelegramAuthAction, TelegramAuthCommand, TelegramAuthResult};
