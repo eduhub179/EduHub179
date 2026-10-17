@@ -71,7 +71,14 @@ def api(method, **params):
 
 
 def send_to_server(item):
-    pass  # TODO: POST на бэкенд, когда Миша сделает эндпоинт. Сюда попадает только подтверждённое.
+    """Сюда попадает только подтверждённое. ДЗ и контрольные из чатов уходят в бэкенд (backend_api.py),
+    для событий и лекций эндпоинтов пока нет."""
+    if item.get("item"):
+        try:
+            import backend_api
+            backend_api.send(item["id"], item["item"])
+        except Exception as e:  # ошибка отправки не должна ронять бота
+            print("в бэкенд: ошибка", repr(e))
 
 
 # ---------- что ждёт решения ----------

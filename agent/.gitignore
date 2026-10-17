@@ -36,3 +36,5 @@ __pycache__/
 posts.json
 kruzhochek.json
 labels.json
+api_sent.json
+api_queue.json
