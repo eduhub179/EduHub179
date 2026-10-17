@@ -8,25 +8,48 @@
 import json
 import os
 import re
+from difflib import SequenceMatcher
 import urllib.request
 from datetime import date, timedelta
 
 MODEL = os.environ.get("MODEL", "qwen2.5:7b")
 URL = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/chat"
 
-WEEKDAYS = ["понедельник", "вторник", "сред", "четверг", "пятниц", "суббот", "воскресен"]
+WEEKDAY_WORD = re.compile(r"^(?:(понедельник\w*)|(вторник\w*)|(сред[ауы])|(четверг\w*)|(пятниц\w*)|(суббот\w*)|(воскресень\w*))$")
+NOT_DAY = re.compile(r"^(?:четверт|средн|среди|сред$|пятер|пятёр|второ|завтрак)")  # похожие слова, но не дни
 SHORT = {"пн": 0, "вт": 1, "ср": 2, "чт": 3, "пт": 4, "сб": 5, "вс": 6}
+
+
+# слова для сравнения с опечатками: «вторний», «пятницк», «завра», «сегодян»
+FUZZY_DAYS = {"сегодня": "today", "завтра": 1, "послезавтра": 2, "понедельник": 0, "вторник": 1, "среда": 2, "среду": 2,
+              "четверг": 3, "пятница": 4, "пятницу": 4, "суббота": 5, "субботу": 5, "воскресенье": 6}
+
+
+def close(word, target, cutoff=0.75):
+    """Похожи ли слова с учётом опечатки (одна-две буквы)."""
+    return len(word) >= 4 and SequenceMatcher(None, word, target).ratio() >= cutoff
+
+
+def fuzzy_day(word, today):
+    for target, v in FUZZY_DAYS.items():
+        if close(word, target, 0.8 if len(target) <= 6 else 0.75):
+            if v == "today":
+                return today
+            if target in ("завтра", "послезавтра"):
+                return today + timedelta(days=v)
+            return today + timedelta(days=(v - today.weekday()) % 7)
+    return None
 
 
 def parse_day(text, today):
     """«сегодня», «завтра», «послезавтра», «в среду», «на пт», «20.10» -> date или None.
     День недели — ближайший такой, начиная с сегодня."""
     t = (text or "").lower()
-    if "послезавтра" in t:
+    if re.search(r"\bпослезавтра", t):
         return today + timedelta(days=2)
-    if "завтра" in t:
+    if re.search(r"\bзавтра(?:шн\w*)?\b", t):
         return today + timedelta(days=1)
-    if "сегодня" in t:
+    if re.search(r"\bсегодня", t):
         return today
     m = re.search(r"\b(\d{1,2})\.(\d{1,2})\b", t)
     if m:
@@ -35,10 +58,16 @@ def parse_day(text, today):
         except ValueError:
             return None
         return d if d >= today - timedelta(days=30) else d.replace(year=today.year + 1)
-    for w in re.findall(r"[а-яё]+", t):
-        wd = next((i for i, s in enumerate(WEEKDAYS) if w.startswith(s)), SHORT.get(w))
+    words = re.findall(r"[а-яё]+", t)
+    for w in words:
+        m = WEEKDAY_WORD.match(w)
+        wd = next(i for i, g in enumerate(m.groups()) if g) if m else SHORT.get(w)
         if wd is not None:
             return today + timedelta(days=(wd - today.weekday()) % 7)
+    for w in words:  # опечатки: «на вторний», «в пятницк», «завра»
+        d = None if NOT_DAY.match(w) else fuzzy_day(w, today)
+        if d:
+            return d
     return None
 
 

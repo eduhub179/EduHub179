@@ -300,6 +300,17 @@ def main():
     press(111, "no")
     dm.REFINE = None
 
+    # опечатки в дне и предмете
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)
+    dm.NOW = lambda: datetime(2099, 10, 21, 15, 0)  # ср: «завтра» был бы четверг
+    out = write(111, "дз на вторний")
+    check("«дз на вторний» — вторник 27.10, а не «завтра»", "В вт 27.10 уроков нет" in out)
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)
+    out = write(111, "что по алгерба?")
+    check("«что по алгерба?» — алгебра", out.strip().startswith("Алгебра (завтра)"))
+    out = write(111, "расписание на четвег")
+    check("«расписание на четвег» — четверг", "чт 22.10" in out)
+
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket
     import urllib.error
