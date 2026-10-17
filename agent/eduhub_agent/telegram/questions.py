@@ -48,7 +48,7 @@ HW_WORDS = re.compile(r"задал|дз\b|домашк|домашн|задани
 SCHEDULE_WORDS = re.compile(r"расписан|какие уроки|что за уроки|сколько уроков|уроки (сегодня|завтра|в |на )", re.I)
 NEXT_WORDS = re.compile(r"кабинет|\bкаб\b|где\b|куда\b|следующ|когда\b|во сколько", re.I)
 PO_SUBJECT = re.compile(r"^(а\s+)?(что\s+)?(задали\s+)?по\s+[а-яё.\-]+(\s+[а-яё]+)?\s*\??$", re.I)
-HOMEWORK_TEXT = re.compile(r"§|№|\bстр\b|\bупр|параграф|выучить|решить|прочитать|сделать|написать|подготовить", re.I)
+HOMEWORK_TEXT = re.compile(r"§|№|\bномер|\bзадач|\bстр\b|\bстраниц|\bупр|параграф|выучить|решить|прочитать|сделать|написать|подготовить", re.I)
 
 
 def rule_intent(text):
@@ -58,6 +58,8 @@ def rule_intent(text):
         return "other"
     if SCHEDULE_WORDS.search(t):
         return "schedule"
+    if not QUESTION.search(t) and re.search(r"\d", re.sub(r"\b\d{1,2}\.\d{1,2}\b", "", t)):
+        return "add"  # «дз по алгебре 7, 9» — числа без вопроса (кроме даты 20.10) — это задание
     if HOMEWORK_TEXT.search(t):
         return "add"  # есть само задание (§, №, «решить») — записываем, запись подтверждается кнопкой
     if PO_SUBJECT.match(t):
