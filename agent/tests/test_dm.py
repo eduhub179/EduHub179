@@ -231,6 +231,40 @@ def main():
     out = write(111, dm.B_ADD)
     check("«Добавить ДЗ» — подсказка, черновик не создаётся", "Пришли сюда домашку" in out and "Записать" not in out)
 
+    # вопросы своими словами: правила, а если не уверены — модель (подменена); ответ — из расписания
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)  # пн
+    asked = []
+
+    def llm(text):
+        asked.append(text)
+        a = llm_answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    dm.questions.llm_intent = llm
+    llm_answers = []
+    out = write(111, "что задали по алгебре?")
+    check("«что задали по алгебре?» — ДЗ ближайшей алгебры, без модели",
+          out.startswith("Алгебра (завтра): № 101–104") and not asked)
+    out = write(111, "расписание на четверг")
+    check("«расписание на четверг» — уроки чт", "чт 22.10" in out and "11:00 Физика" in out)
+    out = write(111, "где физика?")
+    check("«где физика?» — когда и кабинет", out.startswith("Физика, завтра в 09:00. Кабинет 305."))
+    out = write(111, "дз на субботу")
+    check("«дз на субботу» — уроков нет", "уроков нет" in out)
+    out = write(111, "привет")
+    check("«привет» — что умею, без черновика", out.startswith("Я умею") and "Записать" not in out)
+    llm_answers.append({"intent": "schedule", "day": "пятница", "subject": None})
+    out = write(111, "что у нас в пятницу?")
+    check("непонятное правилам спрашиваем у модели: расписание пт", asked and "10:00 Алгебра" in out)
+    llm_answers.append(ConnectionError("Ollama"))
+    out = write(111, "а что по алгебре?")
+    check("модель не ответила — подсказка, не падаем", out.strip().startswith("Я умею"))
+    answers.append([{"quote": "алгебра к пятнице № 7", "type": "homework", "summary": "№ 7", "date": "2099-10-23"}])
+    out = write(111, "алгебра к пятнице № 7")
+    check("задание без вопроса — по-прежнему черновик ДЗ", "✅ Записать" in buttons() and "алгебра к пятнице № 7" not in asked)
+    press(111, "no")
+
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket
     import urllib.error
