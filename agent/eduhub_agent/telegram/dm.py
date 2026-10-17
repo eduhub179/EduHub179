@@ -12,6 +12,8 @@
 4. «Записать». Учитель: сразу в бэкенд от своего имени (created_by = он, created_by_role = teacher).
    Ученик: в бота-модератора, как находки из чатов; после подтверждения ДЗ записывается от имени ученика
    (роль student), а ученику приходит «записал». Без бота-модератора (--no-moderator) — сразу.
+5. Кнопки внизу (для учеников): «ДЗ на завтра» (ближайший учебный день), «Расписание на сегодня»,
+   «Где следующий урок» (предмет, время, кабинет), «Добавить ДЗ» (подсказка). Всё из расписания бэкенда.
 Черновики лежат в chats/dm_drafts.json (там тексты учеников, папка chats/ не коммитится).
 
 Запускается из chat_agent.py live сам; в .env нужны API_URL и AGENT_KEY (тот же, что в backend/.env),
@@ -42,6 +44,12 @@ PARSE = None  # (m, chat) -> находки модели после refine; ст
 MODERATE = False  # работает бот-модератор: ДЗ учеников идёт через него
 _users = {}  # telegram id -> (пользователь или None, когда спросили)
 _days = {}  # (class_id, дата) -> (уроки, когда спросили)
+_menu_shown = set()  # кому уже показали кнопки внизу
+
+B_HW, B_TODAY, B_NEXT, B_ADD = "📚 ДЗ на завтра", "📅 Расписание на сегодня", "🚪 Где следующий урок", "➕ Добавить ДЗ"
+MENU = {"keyboard": [[{"text": B_HW}, {"text": B_TODAY}], [{"text": B_NEXT}, {"text": B_ADD}]],
+        "resize_keyboard": True, "is_persistent": True}
+NOW = datetime.now  # подменяется в тесте
 
 
 def setup(api, parse, moderate):
@@ -174,6 +182,59 @@ def resolve(d, it):
     it["lesson"] = {"start": nxt[0][1]["start_time"], "subject": nxt[0][1]["subject_name"]}
 
 
+# ---------- кнопки внизу: ДЗ, расписание, кабинет ----------
+
+def lessons_now(cid, day):
+    """Уроки дня без кэша: домашка могла появиться минуту назад."""
+    _days.pop((cid, day.isoformat()), None)
+    return sorted(lessons_on(cid, day), key=lambda l: l["start_time"])
+
+
+def next_school_day(cid, day):
+    """Ближайший день после day, когда у класса есть уроки: (дата, уроки) или (None, [])."""
+    for k in range(1, 8):
+        d = day + timedelta(days=k)
+        les = lessons_now(cid, d)
+        if les:
+            return d, les
+    return None, []
+
+
+def lesson_line(l):
+    room = f", каб. {l['cabinet']}" if l.get("cabinet") else ""
+    return f"{l['start_time'][:5]} {l['subject_name']}{room}"
+
+
+def answer_menu(button, cid):
+    now = NOW()
+    today = now.date()
+    if button == B_TODAY:
+        les = lessons_now(cid, today)
+        if not les:
+            return f"Сегодня ({day_label(today.isoformat())}) уроков нет."
+        return f"Сегодня, {day_label(today.isoformat())}:\n" + "\n".join(lesson_line(l) for l in les)
+    if button == B_HW:
+        day, les = next_school_day(cid, today)
+        if not day:
+            return "В ближайшую неделю уроков не нашёл."
+        when = "завтра" if day == today + timedelta(days=1) else day_label(day.isoformat())
+        hw = [l for l in les if l.get("homework") and (l["homework"].get("text") or "").strip()]
+        if not hw:
+            return f"На {when} домашки пока нет."
+        return f"ДЗ на {when}:\n\n" + "\n\n".join(f"{l['subject_name']}: {l['homework']['text'].strip()}" for l in hw)
+    # B_NEXT
+    les = [l for l in lessons_now(cid, today) if l["start_time"][:5] > now.strftime("%H:%M")]
+    day = today
+    if not les:
+        day, les = next_school_day(cid, today)
+    if not les:
+        return "Ближайших уроков не нашёл."
+    l = les[0]
+    when = ("сегодня" if day == today else day_label(day.isoformat())) + f" в {l['start_time'][:5]}"
+    room = f"Кабинет {l['cabinet']}." if l.get("cabinet") else "Кабинет в расписании не указан."
+    return f"Следующий урок: {l['subject_name']}, {when}. {room}"
+
+
 # ---------- сообщение ----------
 
 def day_label(iso):
@@ -247,16 +308,26 @@ def on_message(msg):
 
 def _on_message(msg):
     chat_id, text = msg["chat"]["id"], (msg.get("text") or msg.get("caption") or "").strip()
-    if not text or text.startswith("/"):
-        tg("sendMessage", chat_id=chat_id, text=(
+    if not text or text.startswith("/") or text == B_ADD:
+        _menu_shown.add(chat_id)
+        tg("sendMessage", chat_id=chat_id, reply_markup=MENU, text=(
             "Пришли сюда домашку текстом, например: «физика к пятнице §12, № 5–7». Я найду урок в расписании и запишу"
             " задание от твоего имени. Учителю нужно написать и класс: «11Б физика к пятнице …»."
-            + ("\nФайлы и фото пока не принимаю, только текст." if not text and (msg.get("document") or msg.get("photo")) else "")))
+            + ("\nФайлы и фото пока не принимаю, только текст." if not text and (msg.get("document") or msg.get("photo")) else "")
+            + "\nКнопки внизу: домашка на завтра, расписание на сегодня и где следующий урок."))
         return
     user = user_of(msg["from"]["id"])
     if not user:
         print(f"ЛС: Telegram id {msg['from']['id']} не привязан к пользователю (нет входа в основном боте)")
         tg("sendMessage", chat_id=chat_id, text=login_hint())
+        return
+    if text in (B_HW, B_TODAY, B_NEXT):
+        _menu_shown.add(chat_id)
+        if user["role"] != "student" or not user.get("class_id"):
+            reply = "Эти кнопки пока работают только для учеников: расписание учителя бэкенд ещё не отдаёт."
+        else:
+            reply = answer_menu(text, user["class_id"])
+        tg("sendMessage", chat_id=chat_id, text=reply, reply_markup=MENU)
         return
     if user["role"] == "student":
         cid = user.get("class_id")
@@ -307,6 +378,10 @@ def _draft(msg, chat_id, text, user, cls, cid):
     drafts = load()
     drafts[d["id"]] = d
     save(drafts)
+    if chat_id not in _menu_shown:  # человек сразу прислал ДЗ и ещё не видел кнопок внизу
+        _menu_shown.add(chat_id)
+        tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
+           text="Внизу кнопки: домашка на завтра, расписание на сегодня и где следующий урок.")
 
 
 def on_button(cb):

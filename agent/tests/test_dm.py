@@ -17,7 +17,8 @@ KEY = "test-agent-key"
 USERS = {111: {"user_id": STUDENT, "login": "student.test", "role": "student", "class_id": CLASS},
          222: {"user_id": TEACHER, "login": "teacher.test", "role": "teacher", "class_id": None}}
 LESSONS = {  # дата -> уроки 11Б; сообщения пишут в пн 2099-10-19
-    "2099-10-20": [{"id": str(uuid.uuid4()), "start_time": "09:00", "end_time": "09:45", "subject_name": "Физика"},
+    "2099-10-20": [{"id": str(uuid.uuid4()), "start_time": "09:00", "end_time": "09:45", "subject_name": "Физика",
+                    "cabinet": "305"},
                    {"id": str(uuid.uuid4()), "start_time": "09:55", "end_time": "10:40", "subject_name": "Алгебра"}],
     "2099-10-22": [{"id": str(uuid.uuid4()), "start_time": "11:00", "end_time": "11:45", "subject_name": "Физика"}],
     "2099-10-23": [{"id": str(uuid.uuid4()), "start_time": "10:00", "end_time": "10:45", "subject_name": "Алгебра"}],
@@ -55,7 +56,7 @@ class Api(BaseHTTPRequestHandler):
         out = []
         for l in LESSONS.get(day, []):
             hw = HOMEWORK.get(l["id"])
-            out.append({**l, "teachers": [], "cabinet": None, "homework": hw and {"id": hw["id"], "text": hw["text"]}})
+            out.append({"cabinet": None, **l, "teachers": [], "homework": hw and {"id": hw["id"], "text": hw["text"]}})
         self.answer(200, {"date": day, "lessons": out})
 
     def do_POST(self):
@@ -131,7 +132,8 @@ def main():
         return "\n".join(p.get("text", "") for _, p in sent if "text" in p)
 
     def buttons():
-        kb = next((p["reply_markup"] for _, p in reversed(sent) if p.get("reply_markup")), {"inline_keyboard": []})
+        kb = next((p["reply_markup"] for _, p in reversed(sent) if "inline_keyboard" in p.get("reply_markup", {})),
+                  {"inline_keyboard": []})
         return [b["text"] for row in kb["inline_keyboard"] for b in row]
 
     phys20, alg20 = (l["id"] for l in LESSONS["2099-10-20"])
@@ -204,6 +206,30 @@ def main():
     dm.backend_api.send("mod:1", it)  # модератор подтвердил (moderator.send_to_server)
     check("после подтверждения записано от имени ученика", "формулы" in HOMEWORK[phys22]["text"])
     check("... и ученику пришло «✅ Записал»", any(p.get("chat_id") == 111 and "✅ Записал" in p["text"] for _, p in sent))
+
+    # кнопки внизу: ДЗ на завтра, расписание на сегодня, где следующий урок
+    menu = lambda: any(p.get("reply_markup") == dm.MENU for _, p in sent)
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)  # пн, уроков нет; завтра физика (каб. 305) и алгебра
+    out = write(111, "/start")
+    check("подсказка показывает кнопки внизу", menu() and "расписание" in out)
+    out = write(111, dm.B_TODAY)
+    check("расписание на сегодня: уроков нет", "уроков нет" in out and menu())
+    HOMEWORK[alg20] = {"id": str(uuid.uuid4()), "text": "№ 101–104", "created_by": TEACHER, "created_by_role": "teacher"}
+    out = write(111, dm.B_HW)
+    check("ДЗ на завтра: алгебра с текстом", out.startswith("ДЗ на завтра") and "Алгебра: № 101–104" in out)
+    out = write(111, dm.B_NEXT)
+    check("следующий урок завтра: физика, кабинет 305", "Физика" in out and "09:00" in out and "305" in out)
+    dm.NOW = lambda: datetime(2099, 10, 20, 9, 30)  # вт, идёт физика
+    out = write(111, dm.B_TODAY)
+    check("расписание на сегодня: оба урока с кабинетом", "09:00 Физика, каб. 305" in out and "09:55 Алгебра" in out)
+    out = write(111, dm.B_NEXT)
+    check("следующий урок сегодня: алгебра, кабинет не указан", "Алгебра, сегодня в 09:55" in out and "не указан" in out)
+    out = write(111, dm.B_HW)
+    check("ДЗ на ближайший учебный день (чт), если завтра уроков нет", out.startswith("ДЗ на чт 22.10") and "Физика:" in out)
+    out = write(222, dm.B_HW)
+    check("учителю кнопки пока не работают, так и говорим", "только для учеников" in out)
+    out = write(111, dm.B_ADD)
+    check("«Добавить ДЗ» — подсказка, черновик не создаётся", "Пришли сюда домашку" in out and "Записать" not in out)
 
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket
