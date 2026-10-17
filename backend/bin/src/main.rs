@@ -2,6 +2,10 @@ use std::sync::Arc;
 
 use application::use_cases::{
     auth::login::LoginUseCase,
+    homework::{
+        create_homework::CreateHomeworkUseCase,
+        update_homework_text::UpdateHomeworkTextUseCase,
+    },
     schedule::ScheduleService,
 };
 use infrastructure::{
@@ -53,10 +57,19 @@ async fn main() {
         subjects,
         users,
         cabinets,
-        homeworks,
+        homeworks.clone(),
     ));
 
-    let app = create_app_with_auth_and_schedule(login_use_case, schedule_service);
+    let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));
+    let update_homework_use_case = Arc::new(UpdateHomeworkTextUseCase::new(homeworks));
+
+    let app = create_app_with_auth_and_schedule(
+        login_use_case,
+        schedule_service,
+        create_homework_use_case,
+        update_homework_use_case,
+    );
+
     let addr = format!("{}:{}", config.server_host, config.server_port);
 
     println!("starting EduHub179 API on {}", addr);

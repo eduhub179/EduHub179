@@ -4,20 +4,27 @@
 
 use application::use_cases::{
     auth::login::{LoginCommand, LoginUseCase},
+    homework::{
+        create_homework::{CreateHomeworkCommand, CreateHomeworkUseCase},
+        update_homework_text::{UpdateHomeworkTextCommand, UpdateHomeworkTextUseCase},
+    },
     schedule::ScheduleService,
 };
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use chrono::NaiveDate;
-use domain::errors::DomainError;
+use domain::{
+    errors::DomainError,
+    value_objects::{homework_status::HomeworkStatus, role::UserRole},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +49,49 @@ pub struct PublicUser {
     pub middle_name: Option<String>,
     pub is_active: bool,
     pub class_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateHomeworkRequest {
+    pub lesson_instance_id: String,
+    pub created_by: String,
+    #[serde(default)]
+    pub created_by_role: String,
+    #[serde(default)]
+    pub text_content: Option<String>,
+    #[serde(default)]
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateHomeworkResponse {
+    pub id: String,
+    pub lesson_instance_id: String,
+    pub created_by: String,
+    pub created_by_role: String,
+    pub text_content: Option<String>,
+    pub status: String,
+    pub locked_by_teacher: bool,
+    pub last_edited_by: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateHomeworkRequest {
+    pub text_content: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateHomeworkResponse {
+    pub id: String,
+    pub lesson_instance_id: String,
+    pub created_by: String,
+    pub created_by_role: String,
+    pub text_content: Option<String>,
+    pub status: String,
+    pub locked_by_teacher: bool,
+    pub last_edited_by: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +179,35 @@ impl ApiError {
             message: message.to_string(),
         }
     }
+
+    fn from_homework_domain(error: DomainError) -> Self {
+        let (status, message) = match error {
+            DomainError::InvalidHomeworkTextFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid homework text format")
+            }
+            DomainError::HomeworkAlreadyExists => {
+                (StatusCode::CONFLICT, "Homework already exists for this lesson")
+            }
+            DomainError::LessonInstanceNotFound => {
+                (StatusCode::NOT_FOUND, "Lesson instance not found")
+            }
+            DomainError::HomeworkNotFound => (StatusCode::NOT_FOUND, "Homework not found"),
+            DomainError::InvalidHomeworkStatus => {
+                (StatusCode::BAD_REQUEST, "Invalid homework status")
+            }
+            DomainError::InvalidNameFormat => (StatusCode::BAD_REQUEST, "Invalid role format"),
+            DomainError::InsufficientPermissions => {
+                (StatusCode::FORBIDDEN, "Insufficient permissions")
+            }
+            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            _ => (StatusCode::BAD_REQUEST, "Bad request"),
+        };
+
+        Self {
+            status,
+            message: message.to_string(),
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -145,6 +224,8 @@ impl IntoResponse for ApiError {
 pub struct AppState {
     pub login_use_case: Option<Arc<LoginUseCase>>,
     pub schedule_service: Option<Arc<ScheduleService>>,
+    pub create_homework_use_case: Option<Arc<CreateHomeworkUseCase>>,
+    pub update_homework_use_case: Option<Arc<UpdateHomeworkTextUseCase>>,
 }
 
 pub fn create_app() -> Router {
@@ -159,9 +240,14 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(login_handler))
         .route("/api/schedule/week", get(schedule_week_handler))
+        .route("/api/schedule/day", get(day_schedule_handler))
+        .route("/api/homework", post(create_homework_handler))
+        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
         .with_state(AppState {
             login_use_case: Some(login_use_case),
             schedule_service: None,
+            create_homework_use_case: None,
+            update_homework_use_case: None,
         })
 }
 
@@ -170,24 +256,36 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/schedule/week", get(schedule_week_handler))
+        .route("/api/schedule/day", get(day_schedule_handler))
+        .route("/api/homework", post(create_homework_handler))
+        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
         .with_state(AppState {
             login_use_case: None,
             schedule_service: Some(schedule_service),
+            create_homework_use_case: None,
+            update_homework_use_case: None,
         })
 }
 
 pub fn create_app_with_auth_and_schedule(
     login_use_case: Arc<LoginUseCase>,
     schedule_service: Arc<ScheduleService>,
+    create_homework_use_case: Arc<CreateHomeworkUseCase>,
+    update_homework_use_case: Arc<UpdateHomeworkTextUseCase>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(login_handler))
         .route("/api/schedule/week", get(schedule_week_handler))
+        .route("/api/schedule/day", get(day_schedule_handler))
+        .route("/api/homework", post(create_homework_handler))
+        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
         .with_state(AppState {
             login_use_case: Some(login_use_case),
             schedule_service: Some(schedule_service),
+            create_homework_use_case: Some(create_homework_use_case),
+            update_homework_use_case: Some(update_homework_use_case),
         })
 }
 
@@ -227,6 +325,79 @@ async fn login_handler(
             is_active: session.user.is_active,
             class_id: session.user.class_id.map(|id| id.to_string()),
         },
+    }))
+}
+
+async fn create_homework_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateHomeworkRequest>,
+) -> Result<Json<CreateHomeworkResponse>, ApiError> {
+    let create_homework_use_case = state.create_homework_use_case.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Create homework use case not initialized".to_string(),
+    })?;
+
+    let lesson_instance_id = Uuid::parse_str(&payload.lesson_instance_id)
+        .map_err(|_| ApiError::from_homework_domain(DomainError::LessonInstanceNotFound))?;
+    let created_by = Uuid::parse_str(&payload.created_by)
+        .map_err(|_| ApiError::from_homework_domain(DomainError::UserNotFound))?;
+    let created_by_role = UserRole::from_str(&payload.created_by_role)
+        .map_err(ApiError::from_homework_domain)?;
+    let status = HomeworkStatus::from_str(&payload.status)
+        .map_err(ApiError::from_homework_domain)?;
+
+    let homework = create_homework_use_case
+        .execute(CreateHomeworkCommand::new(
+            lesson_instance_id,
+            created_by,
+            created_by_role,
+            payload.text_content,
+            status,
+        ))
+        .await
+        .map_err(ApiError::from_homework_domain)?;
+
+    Ok(Json(CreateHomeworkResponse {
+        id: homework.id.to_string(),
+        lesson_instance_id: homework.lesson_instance_id.to_string(),
+        created_by: homework.created_by.to_string(),
+        created_by_role: homework.created_by_role.to_string(),
+        text_content: homework.text_content,
+        status: homework.status.to_string(),
+        locked_by_teacher: homework.locked_by_teacher,
+        last_edited_by: homework.last_edited_by.map(|id| id.to_string()),
+        created_at: homework.created_at.to_rfc3339(),
+    }))
+}
+
+async fn update_homework_text_handler(
+    State(state): State<AppState>,
+    Path(homework_id): Path<String>,
+    Json(payload): Json<UpdateHomeworkRequest>,
+) -> Result<Json<UpdateHomeworkResponse>, ApiError> {
+    let update_homework_use_case = state.update_homework_use_case.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Update homework use case not initialized".to_string(),
+    })?;
+
+    let homework_uuid = Uuid::parse_str(&homework_id)
+        .map_err(|_| ApiError::from_homework_domain(DomainError::HomeworkNotFound))?;
+
+    let homework = update_homework_use_case
+        .execute(UpdateHomeworkTextCommand::new(homework_uuid, payload.text_content))
+        .await
+        .map_err(ApiError::from_homework_domain)?;
+
+    Ok(Json(UpdateHomeworkResponse {
+        id: homework.id.to_string(),
+        lesson_instance_id: homework.lesson_instance_id.to_string(),
+        created_by: homework.created_by.to_string(),
+        created_by_role: homework.created_by_role.to_string(),
+        text_content: homework.text_content,
+        status: homework.status.to_string(),
+        locked_by_teacher: homework.locked_by_teacher,
+        last_edited_by: homework.last_edited_by.map(|id| id.to_string()),
+        created_at: homework.created_at.to_rfc3339(),
     }))
 }
 
@@ -287,6 +458,72 @@ async fn schedule_week_handler(
     Ok(Json(ScheduleWeekResponse {
         week_start_date: response.week_start_date.to_string(),
         days,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScheduleDayQuery {
+    pub date: String,
+    #[serde(default)]
+    pub student_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ScheduleDayResponseDto {
+    pub date: String,
+    pub lessons: Vec<ScheduleLessonResponse>,
+}
+
+async fn day_schedule_handler(
+    State(state): State<AppState>,
+    Query(query): Query<ScheduleDayQuery>,
+) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
+    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
+        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
+
+    let student_id = query
+        .student_id
+        .as_deref()
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
+
+    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Schedule service not initialized".to_string(),
+    })?;
+
+    let response = schedule_service
+        .day_schedule(student_id, date)
+        .await
+        .map_err(ApiError::from_schedule_domain)?;
+
+    let lessons = response
+        .lessons
+        .into_iter()
+        .map(|lesson| ScheduleLessonResponse {
+            id: lesson.instance.id.to_string(),
+            start_time: lesson.start_time.format("%H:%M").to_string(),
+            end_time: lesson.end_time.format("%H:%M").to_string(),
+            subject_name: lesson.subject.name,
+            teachers: lesson
+                .teachers
+                .into_iter()
+                .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
+                .collect(),
+            cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
+            homework: lesson.homework.map(|homework| HomeworkResponse {
+                id: homework.homework.id.to_string(),
+                text: homework
+                    .homework
+                    .text_content
+                    .unwrap_or_else(|| String::new()),
+            }),
+        })
+        .collect();
+
+    Ok(Json(ScheduleDayResponseDto {
+        date: response.date.to_string(),
+        lessons,
     }))
 }
 
