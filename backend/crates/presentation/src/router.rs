@@ -12,7 +12,7 @@ use application::use_cases::{
 };
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::{get, patch, post},
     Json, Router,
@@ -20,7 +20,11 @@ use axum::{
 use chrono::NaiveDate;
 use domain::{
     errors::DomainError,
-    repositories::class_repository::ClassRepository,
+    repositories::{
+        class_repository::ClassRepository,
+        telegram_bindigs_repository::TelegramBindingRepository,
+        user_repository::UserRepository,
+    },
     value_objects::{homework_status::HomeworkStatus, role::UserRole},
 };
 use serde::{Deserialize, Serialize};
@@ -243,6 +247,16 @@ pub struct AppState {
     pub create_homework_use_case: Option<Arc<CreateHomeworkUseCase>>,
     pub update_homework_use_case: Option<Arc<UpdateHomeworkTextUseCase>>,
     pub class_repository: Option<Arc<dyn ClassRepository>>,
+    pub telegram_lookup: Option<TelegramLookup>,
+}
+
+/// What `GET /api/telegram/users/{telegram_id}` needs: active bindings, users, and the agent key.
+#[derive(Clone)]
+pub struct TelegramLookup {
+    pub bindings: Arc<dyn TelegramBindingRepository>,
+    pub users: Arc<dyn UserRepository>,
+    /// Shared secret of the chat agent (`X-Agent-Key` header). Route is closed when empty.
+    pub agent_key: String,
 }
 
 fn cors_layer() -> CorsLayer {
@@ -287,6 +301,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             create_homework_use_case: None,
             update_homework_use_case: None,
             class_repository: None,
+            telegram_lookup: None,
         })
 }
 
@@ -308,6 +323,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             create_homework_use_case: None,
             update_homework_use_case: None,
             class_repository: None,
+            telegram_lookup: None,
         })
 }
 
@@ -317,6 +333,7 @@ pub fn create_app_with_auth_and_schedule(
     create_homework_use_case: Arc<CreateHomeworkUseCase>,
     update_homework_use_case: Arc<UpdateHomeworkTextUseCase>,
     class_repository: Arc<dyn ClassRepository>,
+    telegram_lookup: Option<TelegramLookup>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -329,6 +346,7 @@ pub fn create_app_with_auth_and_schedule(
         .route("/api/homework", post(create_homework_handler))
         .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
         .route("/api/classes", get(classes_handler))
+        .route("/api/telegram/users/:telegram_id", get(telegram_user_handler))
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -336,6 +354,7 @@ pub fn create_app_with_auth_and_schedule(
             create_homework_use_case: Some(create_homework_use_case),
             update_homework_use_case: Some(update_homework_use_case),
             class_repository: Some(class_repository),
+            telegram_lookup,
         })
 }
 
@@ -731,6 +750,54 @@ async fn classes_handler(
     };
 
     Ok(Json(response))
+}
+
+#[derive(Debug, Serialize)]
+pub struct TelegramUserResponse {
+    pub user_id: String,
+    pub login: String,
+    pub role: String,
+    pub class_id: Option<String>,
+}
+
+/// Who is writing to the bot: Telegram id -> school user, only for an active binding
+/// (made by the login flow in telegram-adapter). Used by the chat agent to set the homework author.
+/// Requires `X-Agent-Key` equal to `AGENT_KEY`; without it the route answers 404 to everyone.
+async fn telegram_user_handler(
+    State(state): State<AppState>,
+    Path(telegram_id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Json<TelegramUserResponse>, ApiError> {
+    let not_found = || ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: "Telegram account is not linked".to_string(),
+    };
+    let lookup = state.telegram_lookup.as_ref().ok_or_else(not_found)?;
+    let key = headers.get("x-agent-key").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if lookup.agent_key.is_empty() || key != lookup.agent_key {
+        return Err(ApiError {
+            status: StatusCode::UNAUTHORIZED,
+            message: "Agent key required".to_string(),
+        });
+    }
+
+    let user_id = match lookup.bindings.get_active_user_by_telegram_id(telegram_id).await {
+        Ok(id) => id,
+        Err(DomainError::TelegramBindingNotFound) => return Err(not_found()),
+        Err(e) => return Err(ApiError::from_homework_domain(e)),
+    };
+    let user = match lookup.users.get_by_id(user_id).await {
+        Ok(user) if user.is_active => user,
+        Ok(_) | Err(DomainError::UserNotFound) => return Err(not_found()),
+        Err(e) => return Err(ApiError::from_homework_domain(e)),
+    };
+
+    Ok(Json(TelegramUserResponse {
+        user_id: user.id.to_string(),
+        login: user.login,
+        role: user.role.to_string(),
+        class_id: user.class_id.map(|id| id.to_string()),
+    }))
 }
 
 #[cfg(test)]

@@ -25,6 +25,8 @@ due_lesson и due_kind — к какому уроку («на следующий
     (каналы отдельно: /manual_channels; /manual показывает, что как настроено).
     live --channel — заодно проверять каналы (тогда watch_channel.py loop отдельно не запускать),
     live --no-moderator — без бота.
+    В личку этому же боту можно прислать ДЗ текстом: оно запишется от имени того, кто прислал (dm.py; нужен вход
+    в основном боте EduHub179 и AGENT_KEY в .env).
 
 Экспорт: Telegram Desktop → чат → ⋮ → «Экспорт истории чата» → JSON → папка chats/.
 Галочки «Фото» и «Файлы» оставить (ДЗ бывает файлом), видео, голосовые и стикеры снять.
@@ -39,6 +41,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.request
 from datetime import date, timedelta
@@ -46,6 +49,7 @@ from pathlib import Path
 
 import board
 import chat_moderation
+import dm
 import files as attachments
 import timetable
 from baseline_rules import WEEKDAYS, extract as rules_extract
@@ -697,6 +701,11 @@ def find_corrected(found, it, m):
 def same_item(a, b):
     if a["type"] != b["type"] or a.get("date") != b.get("date"):
         return False
+    # те же номера в чатах разных предметов или классов — разные задания (химия 179, 548 ≠ математика 179, 548)
+    if a.get("subject") and b.get("subject") and not timetable.same_subject(a["subject"], b["subject"]):
+        return False
+    if a.get("class") and b.get("class") and timetable.norm(a["class"]) != timetable.norm(b["class"]):
+        return False
     return difflib.SequenceMatcher(None, a["summary"].lower(), b["summary"].lower()).ratio() > 0.6
 
 
@@ -1009,6 +1018,49 @@ BURST = int(os.environ.get("BURST", 20))
 AFTER_WAIT = int(os.environ.get("AFTER_WAIT", 300))
 
 
+def listen(addr):
+    """Один бот для всех: getUpdates читает основной бот (бот Яши), а сюда пересылает POST /telegram/update
+    то, что ему не нужно: сообщения из чатов, ДЗ в личку от вошедших и нажатия наших кнопок (AGENT_URL у него).
+    Отвечаем тем же токеном через Bot API. -> очередь обновлений."""
+    import queue
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    q, key = queue.Queue(), chat_moderation.moderator.env("AGENT_KEY") or ""
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            if self.path != "/telegram/update" or not key or self.headers.get("X-Agent-Key") != key:
+                self.send_response(403)
+                self.end_headers()
+                return
+            try:
+                q.put(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                self.send_response(200)
+            except ValueError:
+                self.send_response(400)
+            self.end_headers()
+
+    host, _, port = addr.rpartition(":")
+    server = ThreadingHTTPServer((host or "127.0.0.1", int(port)), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"Жду обновления от основного бота на http://{host or '127.0.0.1'}:{port}/telegram/update")
+    return q
+
+
+def next_updates(q, wait):
+    """Обновления из очереди listen(): ждём первое до wait секунд, остальные забираем сразу."""
+    import queue
+    try:
+        out = [q.get(timeout=wait)]
+    except queue.Empty:
+        return []
+    while not q.empty():
+        out.append(q.get_nowait())
+    return out
+
+
 def run_live():
     token = chat_moderation.moderator.env("BOT_TOKEN")  # из переменной окружения или из файла .env
     if not token:
@@ -1021,6 +1073,10 @@ def run_live():
         MODERATE = True
         chat_moderation.start(channel="--channel" in sys.argv)
     api = f"https://api.telegram.org/bot{token}/"
+    listen_at = chat_moderation.moderator.env("AGENT_LISTEN")  # 127.0.0.1:8091 — обновления шлёт основной бот
+    inbox = listen(listen_at) if listen_at else None
+    # личка боту: человек сам присылает ДЗ, оно записывается от его имени (dm.py)
+    dm.setup(api, lambda m, chat: refine(m, ask(m, [], chat)), MODERATE)
     items_path = Path("chats/live_items.json")
     items_path.parent.mkdir(exist_ok=True)
     found = json.load(open(items_path, encoding="utf-8")) if items_path.exists() else []
@@ -1089,18 +1145,30 @@ def run_live():
             json.dump(found, open(items_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
     while True:
-        try:
-            wait = 5 if pending or any(waiting.values()) else 50  # есть недосказанное — опрашиваем чаще, чтобы вовремя разобрать
-            q = f"getUpdates?timeout={wait}&allowed_updates=%5B%22message%22%2C%22edited_message%22%5D" + (f"&offset={offset}" if offset else "")
-            with urllib.request.urlopen(api + q, timeout=wait + 20) as r:
-                updates = json.loads(r.read())["result"]
-        except Exception as e:  # нет сети — подождём
-            print("ошибка:", e)
-            time.sleep(10)
-            updates = []
+        wait = 5 if pending or any(waiting.values()) else 50  # есть недосказанное — опрашиваем чаще, чтобы вовремя разобрать
+        if inbox:
+            updates = next_updates(inbox, wait)
+        else:
+            try:
+                q = f"getUpdates?timeout={wait}&allowed_updates=%5B%22message%22%2C%22edited_message%22%2C%22callback_query%22%5D" + (f"&offset={offset}" if offset else "")
+                with urllib.request.urlopen(api + q, timeout=wait + 20) as r:
+                    updates = json.loads(r.read())["result"]
+            except Exception as e:  # нет сети — подождём
+                print("ошибка:", e)
+                time.sleep(10)
+                updates = []
         for u in updates:
             offset = u["update_id"] + 1
             msg = u.get("message") or u.get("edited_message")
+            if u.get("callback_query") or msg and msg["chat"]["type"] == "private":
+                try:  # кнопки под черновиком и ДЗ, присланное в личку
+                    if u.get("callback_query"):
+                        dm.on_button(u["callback_query"])
+                    elif u.get("message"):
+                        dm.on_message(msg)
+                except Exception as e:
+                    print("ЛС: ошибка", repr(e))
+                continue
             if not msg or msg["chat"]["type"] not in ("group", "supergroup"):
                 say(f"\n(пропускаю: не сообщение из группы — {msg['chat']['type'] if msg else list(u)})")
                 continue

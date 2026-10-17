@@ -15,10 +15,10 @@ use infrastructure::{
         create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg,
         HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
-        SubjectRepositoryPg, UserRepositoryPg,
+        SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
     },
 };
-use presentation::create_app_with_auth_and_schedule;
+use presentation::{create_app_with_auth_and_schedule, TelegramLookup};
 
 #[tokio::main]
 async fn main() {
@@ -65,12 +65,21 @@ async fn main() {
     let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));
     let update_homework_use_case = Arc::new(UpdateHomeworkTextUseCase::new(homeworks));
 
+    // Chat agent asks "who wrote to the bot?" (GET /api/telegram/users/{id}); off without AGENT_KEY.
+    let agent_key = std::env::var("AGENT_KEY").unwrap_or_default();
+    let telegram_lookup = (!agent_key.is_empty()).then(|| TelegramLookup {
+        bindings: Arc::new(TelegramBindingRepositoryPg::new(pool.clone())),
+        users: Arc::new(UserRepositoryPg::new(pool.clone())),
+        agent_key,
+    });
+
     let app = create_app_with_auth_and_schedule(
         login_use_case,
         schedule_service,
         create_homework_use_case,
         update_homework_use_case,
         class_repo,
+        telegram_lookup,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
