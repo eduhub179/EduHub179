@@ -44,6 +44,7 @@ KINDS = {"homework": "ДЗ", "test": "Контрольная"}
 API = None  # https://api.telegram.org/bot<BOT_TOKEN>/
 PARSE = None  # (m, chat) -> находки модели после refine; ставит chat_agent.run_live
 MODERATE = False  # работает бот-модератор: ДЗ учеников идёт через него
+WORTH = None  # text -> похоже ли на ДЗ (фильтр болтовни chat_agent.dm_worth); None — не проверяем
 _users = {}  # telegram id -> (пользователь или None, когда спросили)
 _days = {}  # (class_id, дата) -> (уроки, когда спросили)
 _menu_shown = set()  # кому уже показали кнопки внизу
@@ -54,9 +55,9 @@ MENU = {"keyboard": [[{"text": B_HW}, {"text": B_TODAY}], [{"text": B_NEXT}, {"t
 NOW = datetime.now  # подменяется в тесте
 
 
-def setup(api, parse, moderate):
-    global API, PARSE, MODERATE
-    API, PARSE, MODERATE = api, parse, moderate
+def setup(api, parse, moderate, worth=None):
+    global API, PARSE, MODERATE, WORTH
+    API, PARSE, MODERATE, WORTH = api, parse, moderate, worth
     backend_api.ON_SENT = on_sent
 
 
@@ -406,13 +407,16 @@ def _on_message(msg):
 def _question(msg, chat_id, text, cid):
     """Вопрос, а не новое ДЗ: ответить и вернуть True. Новое ДЗ — False (дальше обычный черновик)."""
     q = questions.classify(text, llm=None if questions.rule_intent(text) else _llm_with_typing(chat_id))
+    names = class_subjects(cid, NOW().date())
     if q["intent"] == "add":
-        return False
+        if subjects_in(text, names) or questions.HOMEWORK_TEXT.search(text) or not WORTH or WORTH(text):
+            return False  # похоже на ДЗ: черновик, как раньше
+        print("ЛС: похоже на болтовню, не разбираю как ДЗ")
+        q["intent"] = "other"
     _menu_shown.add(chat_id)
     if q["intent"] == "other":
         tg("sendMessage", chat_id=chat_id, text=CAN, reply_markup=MENU)
         return True
-    names = class_subjects(cid, NOW().date())
     found = subjects_in(text, names) or (q.get("subject") and subjects_in(q["subject"], names)) or []
     if not found and q.get("subject"):
         found = [n for n in names if timetable.same_subject(n, q["subject"])]

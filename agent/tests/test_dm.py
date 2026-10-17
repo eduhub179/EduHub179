@@ -267,6 +267,20 @@ def main():
     check("«а по алгебре?» — домашка по алгебре, без модели", out.strip().startswith("Алгебра (завтра)"))
     press(111, "no")
 
+    # болтовня в личке: фильтр (подменён) — без модели, сразу подсказка; похожее на ДЗ — черновик
+    dm.WORTH = lambda text: "главу" in text
+    out = write(111, "ну и погодка сегодня жесть")
+    check("болтовня без предмета и дня — подсказка, модель не вызывается", out.strip().startswith("Я умею") and not answers)
+    answers.append([])
+    out = write(111, "прочитай главу пять")
+    check("фильтр счёл похожим на ДЗ — черновик с выбором предмета", "Не понял предмет" in out)
+    press(111, "no")
+    dm.WORTH = None
+    answers.append([{"quote": "дз по алгебре номер 7", "type": "homework", "summary": "№ 7", "date": None}])
+    out = write(111, "дз по алгебре номер 7")
+    check("«дз по алгебре номер 7» — это новое ДЗ, а не вопрос", "✅ Записать" in buttons() and "Алгебра" in out)
+    press(111, "no")
+
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket
     import urllib.error
