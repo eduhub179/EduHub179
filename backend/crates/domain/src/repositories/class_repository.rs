@@ -22,6 +22,11 @@ pub trait ClassRepository: Send + Sync {
     /// `CREATE INDEX idx_classes_graduation_year ON classes (graduation_year) WHERE is_active = TRUE;`
     async fn get_active_by_year(&self, graduation_year: i32) -> Result<Vec<Class>, DomainError>;
 
+    /// Fetches all active classes across all graduation years, sorted by year and letter.
+    ///
+    /// This is used for school-wide class directories and registration screens.
+    async fn get_all_active(&self) -> Result<Vec<Class>, DomainError>;
+
     /// Saves or updates a class.
     ///
     /// Uses PostgreSQL `INSERT ... ON CONFLICT` for atomic upsert.
