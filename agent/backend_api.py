@@ -15,7 +15,9 @@ GET /api/classes/schedule/day?date=...&class_id=... Из уроков на да�
   API_URL=http://localhost:8080          адрес бэкенда (SERVER_PORT из backend/.env)
   AGENT_USER_ID=<uuid>                   кто записывается автором домашки (created_by)
   AGENT_USER_ROLE=teacher                его роль: student / teacher / admin, как в таблице users
-Без API_URL ничего не отправляется.
+  AGENT_KEY=<секрет>                     тот же, что AGENT_KEY в backend/.env: по нему бэкенд отвечает, кто пишет боту
+Без API_URL ничего не отправляется. ДЗ из личных сообщений боту (dm.py) записывается от имени того, кто прислал:
+в находке есть author_user_id и author_role, тогда AGENT_USER_ID не нужен.
 """
 import json
 import sys
@@ -49,10 +51,10 @@ class ApiError(Exception):
         self.status = status
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, headers=None):
     req = urllib.request.Request(env("API_URL").rstrip("/") + path, method=method,
                                  data=None if body is None else json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             return json.loads(r.read() or "null")
@@ -65,6 +67,18 @@ def call(method, path, body=None):
 
 
 _classes = {}
+_names = {}  # id класса -> «11Б»
+
+
+def _reload_classes():
+    end = timetable.school_year_end()
+    _classes.clear()
+    _names.clear()
+    for c in call("GET", "/api/classes")["classes"]:
+        grade = 11 - (c["graduation_year"] - end)
+        _classes[timetable.norm(f"{grade}{c['letter']}")] = c["id"]
+        _classes[timetable.norm(c["name"])] = c["id"]
+        _names[c["id"]] = f"{grade}{c['letter'].upper()}"
 
 
 def class_id(cls):
@@ -72,13 +86,26 @@ def class_id(cls):
     Список классов запоминаем и перечитываем, когда класса в нём не нашлось (вдруг добавили)."""
     key = timetable.norm(cls or "")
     if key and key not in _classes:
-        end = timetable.school_year_end()
-        _classes.clear()
-        for c in call("GET", "/api/classes")["classes"]:
-            grade = 11 - (c["graduation_year"] - end)
-            _classes[timetable.norm(f"{grade}{c['letter']}")] = c["id"]
-            _classes[timetable.norm(c["name"])] = c["id"]
+        _reload_classes()
     return _classes.get(key)
+
+
+def class_name(cid):
+    """id класса -> «11Б» (обратное к class_id). None, если такого нет."""
+    if cid not in _names:
+        _reload_classes()
+    return _names.get(cid)
+
+
+def telegram_user(telegram_id):
+    """Кто пишет боту: {"user_id", "login", "role", "class_id"} по Telegram id, если человек вошёл в основном боте
+    (таблица telegram_bindings, статус active). None — не вошёл. Нужен AGENT_KEY в .env и в backend/.env."""
+    try:
+        return call("GET", f"/api/telegram/users/{int(telegram_id)}", headers={"X-Agent-Key": env("AGENT_KEY") or ""})
+    except ApiError as e:
+        if e.status == 404:
+            return None
+        raise
 
 
 def class_of(it):
@@ -107,14 +134,27 @@ def find_lesson(it):
     subjects = [s.strip() for s in (it.get("subject") or "").split(" / ") if s.strip()]
     if not subjects:
         return None, "непонятен предмет"
-    lessons = [l for l in day_lessons(cid, it["date"])
-               if any(timetable.same_subject(l["subject_name"], s) for s in subjects)]
+    day = sorted(day_lessons(cid, it["date"]), key=lambda l: l["start_time"])
+    lessons = [l for l in day if any(timetable.same_subject(l["subject_name"], s) for s in subjects)]
     if not lessons:
         return None, f"{it['date']} в расписании нет урока «{' / '.join(subjects)}»"
     start = (it.get("due_lesson") or {}).get("start")
     lesson = next((l for l in lessons if l["start_time"] == start), lessons[0])
-    lesson["_class"], lesson["_date"] = cid, it["date"]
+    for l in pair_of(day, lesson):
+        l["_class"], l["_date"] = cid, it["date"]
+    lesson["_pair"] = [l for l in pair_of(day, lesson) if l is not lesson]
     return lesson, None
+
+
+def pair_of(day, lesson):
+    """Сдвоенный урок: lesson и стоящие вплотную к нему уроки того же предмета (домашку пишем на каждый)."""
+    i = day.index(lesson)
+    lo, hi = i, i
+    while lo > 0 and day[lo - 1]["subject_name"] == lesson["subject_name"]:
+        lo -= 1
+    while hi + 1 < len(day) and day[hi + 1]["subject_name"] == lesson["subject_name"]:
+        hi += 1
+    return day[lo:hi + 1]
 
 
 def text_of(it):
@@ -124,7 +164,9 @@ def text_of(it):
     lines = [head]
     if quote and quote != head:
         lines.append(f"«{quote}»")
-    if it.get("chat"):
+    if it.get("via") == "dm":
+        lines = [head]  # человек сам прислал задание боту: цитата и чат не нужны, автор записан в created_by
+    elif it.get("chat"):
         lines.append(f"Из чата «{it['chat']}»")
     return "\n".join(lines)
 
@@ -139,14 +181,21 @@ def set_text(homework_id, text):
     call("PATCH", f"/api/homework/{homework_id}/text", {"text_content": text})
 
 
-def add_to(lesson, text):
-    """Кладёт text в домашку урока: создаёт её или дописывает. -> id домашки."""
+def author(it):
+    """(created_by, created_by_role): кто прислал ДЗ боту, а для находок из чатов — пользователь агента."""
+    if it.get("author_user_id"):
+        return it["author_user_id"], it.get("author_role") or "student"
+    return env("AGENT_USER_ID"), env("AGENT_USER_ROLE") or "teacher"
+
+
+def add_to(lesson, text, by=None):
+    """Кладёт text в домашку урока: создаёт её или дописывает. by — (created_by, created_by_role). -> id домашки."""
     hw = lesson.get("homework")
+    by = by or author({})
     if not hw:
         try:
             return call("POST", "/api/homework", {
-                "lesson_instance_id": lesson["id"], "created_by": env("AGENT_USER_ID"),
-                "created_by_role": env("AGENT_USER_ROLE") or "teacher",
+                "lesson_instance_id": lesson["id"], "created_by": by[0], "created_by_role": by[1],
                 "text_content": text, "status": "published"})["id"]
         except ApiError as e:
             if e.status != 409:
@@ -172,12 +221,29 @@ def remove_from(prev):
 
 
 def _send(key, it):
-    """Одна находка. -> None, если записали, иначе причина (тогда находка ждёт в очереди)."""
-    if not env("AGENT_USER_ID"):
+    """Одна находка. -> None, если записали, иначе причина (тогда находка ждёт в очереди).
+    На сдвоенный урок пишем на оба: второй помним в api_sent.json под ключом «key+1»."""
+    if not author(it)[0]:
         return "нет AGENT_USER_ID в .env"
     lesson, why = find_lesson(it)
     if not lesson:
         return why
+    targets = [lesson] + lesson.pop("_pair")
+    for n, l in enumerate(targets):
+        _send_to(key if n == 0 else f"{key}+{n}", it, l)
+    sent = load(SENT, {})
+    for k in [k for k in sent if k.startswith(key + "+") and int(k.rsplit("+", 1)[1]) >= len(targets)]:
+        remove_from(sent.pop(k))  # раньше урок был сдвоенный, теперь нет: убираем лишнюю копию
+    save(SENT, sent)
+    if ON_SENT:
+        try:
+            ON_SENT(key, it, lesson)
+        except Exception as e:  # уведомление не должно мешать записи
+            print("  в бэкенд: уведомление не ушло:", repr(e))
+    return None
+
+
+def _send_to(key, it, lesson):
     text = text_of(it)
     sent = load(SENT, {})
     prev = sent.get(key)
@@ -191,7 +257,7 @@ def _send(key, it):
     else:
         if prev:
             remove_from(prev)
-        homework_id = add_to(lesson, text)
+        homework_id = add_to(lesson, text, author(it))
     sent[key] = {"homework_id": homework_id, "lesson_id": lesson["id"], "date": it["date"],
                  "class_id": lesson["_class"], "text": text}
     save(SENT, sent)
@@ -200,12 +266,16 @@ def _send(key, it):
     return None
 
 
+ON_SENT = None  # dm.py ставит сюда функцию: написать ученику, что его ДЗ записали
+
+
 def send(key, it):
-    """Подтверждённая находка из чата (moderator.send_to_server). key — постоянный id находки."""
+    """Подтверждённая находка из чата (moderator.send_to_server). key — постоянный id находки.
+    -> None, если записали (или отправлять не нужно), иначе причина: находка осталась ждать в очереди."""
     if it.get("type") not in KINDS or not env("API_URL"):
-        return
+        return None
     queue = [q for q in load(QUEUE, []) if q["key"] != key] + [{"key": key, "item": it}]
-    flush(queue)
+    return next((q["why"] for q in flush(queue) if q["key"] == key), None)
 
 
 def retry():
@@ -228,6 +298,7 @@ def flush(queue):
             print(f"  в бэкенд: «{q['item'].get('summary', '')[:40]}» ждёт: {why}")
             left.append({**q, "why": why})
     save(QUEUE, left)
+    return left
 
 
 if __name__ == "__main__":
