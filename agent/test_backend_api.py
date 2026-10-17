@@ -6,9 +6,11 @@ import tempfile
 import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from datetime import date
 from urllib.parse import parse_qs, urlparse
 
-STUDENT, TEACHER = str(uuid.uuid4()), str(uuid.uuid4())
+CLASS, TEACHER = str(uuid.uuid4()), str(uuid.uuid4())
+GRAD = date.today().year + (1 if date.today().month >= 9 else 0)  # год выпуска нынешних 11-х
 LESSONS = {  # дата -> уроки 11Б
     "2099-10-22": [{"id": str(uuid.uuid4()), "start_time": "09:00", "end_time": "09:45", "subject_name": "Алгебра"},
                    {"id": str(uuid.uuid4()), "start_time": "09:55", "end_time": "10:40", "subject_name": "Физика"}],
@@ -36,8 +38,12 @@ class Api(BaseHTTPRequestHandler):
             return self.answer(500, {"error": "Internal server error"})
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if u.path != "/api/schedule/day" or q["student_id"] != [STUDENT]:
-            return self.answer(404, {"error": "Student not found"})
+        if u.path == "/api/classes":
+            return self.answer(200, {"classes": [
+                {"id": CLASS, "graduation_year": GRAD, "letter": "б", "name": f"{GRAD}б", "is_active": True},
+                {"id": str(uuid.uuid4()), "graduation_year": GRAD, "letter": "в", "name": f"{GRAD}в", "is_active": True}]})
+        if u.path != "/api/classes/schedule/day" or q["class_id"] != [CLASS]:
+            return self.answer(404, {"error": "Class not found"})
         day = q["date"][0]
         out = []
         for l in LESSONS.get(day, []):
@@ -64,7 +70,7 @@ def main():
     server = HTTPServer(("127.0.0.1", 0), Api)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     os.environ.update(API_URL=f"http://127.0.0.1:{server.server_port}", AGENT_USER_ID=TEACHER,
-                      AGENT_USER_ROLE="teacher", API_STUDENTS=f"11Б:{STUDENT}")
+                      AGENT_USER_ROLE="teacher")
     here = os.path.dirname(os.path.abspath(__file__))
     os.chdir(tempfile.mkdtemp())  # api_sent.json и api_queue.json — во временной папке
     import sys
@@ -121,10 +127,13 @@ def main():
     check("инфо в бэкенд не идёт", len(b.load(b.SENT, {})) == 4)
 
     b.send("a7", {**hw, "class": None, "chat": "Физика 10А"})
-    check("класса нет в API_STUDENTS: в очереди с причиной",
-          any(x["key"] == "a7" and "API_STUDENTS" in x["why"] for x in b.load(b.QUEUE, [])))
+    check("класса нет в /api/classes: в очереди с причиной",
+          any(x["key"] == "a7" and "/api/classes" in x["why"] for x in b.load(b.QUEUE, [])))
 
-    total = 12
+    b.send("a8", {**hw, "class": None, "chat": f"Физика {GRAD}Б", "summary": "лаба 4", "quote": "лаба 4"})
+    check("класс по году выпуска из названия чата", "лаба 4" in HOMEWORK[phys1]["text"])
+
+    total = 13
     print(f"{ok}/{total}")
     server.shutdown()
     raise SystemExit(0 if ok == total else 1)
