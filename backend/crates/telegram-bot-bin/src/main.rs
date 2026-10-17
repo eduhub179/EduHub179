@@ -12,6 +12,7 @@ use infrastructure::auth::{Argon2PasswordHasher, LoggingCodeSender, NumericCodeG
 use infrastructure::config::Config;
 use infrastructure::postgres::{create_pool, TelegramBindingRepositoryPg, UserRepositoryPg};
 use infrastructure::redis::{AuthCodeStoreRedis, TelegramSessionRepositoryRedis};
+use telegram_adapter::agent_forward::AgentForwarder;
 use telegram_adapter::bot::run_bot;
 use telegram_adapter::state::BotState;
 use teloxide::requests::Requester;
@@ -47,6 +48,7 @@ async fn main() {
     let tg_binding_repo: Arc<
         dyn domain::repositories::telegram_bindigs_repository::TelegramBindingRepository,
     > = Arc::new(TelegramBindingRepositoryPg::new(pg_pool));
+    let agent_bindings = tg_binding_repo.clone();
 
     let tg_session_repo: Arc<
         dyn domain::repositories::telegram_session_repository::TelegramSessionRepository,
@@ -97,7 +99,15 @@ async fn main() {
             .username
             .clone()
             .unwrap_or("".to_string()),
+        bindings: agent_bindings,
+        agent: config
+            .agent_url
+            .clone()
+            .map(|url| Arc::new(AgentForwarder::new(url, config.agent_key.clone()))),
     };
+    if bot_state.agent.is_some() {
+        tracing::info!("Forwarding class chats and homework DMs to the chat agent");
+    }
 
     tracing::info!("Telegram bot polling started");
 

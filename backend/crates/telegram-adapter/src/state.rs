@@ -4,7 +4,9 @@
 //! DEPENDENCIES: `teloxide`, `application`.
 //! MASTER-DOC: docs/copilot-instructions.md §6.7
 
+use crate::agent_forward::AgentForwarder;
 use application::use_cases::telegram::TelegramAuthUseCase;
+use domain::repositories::telegram_bindigs_repository::TelegramBindingRepository;
 use std::sync::Arc;
 use teloxide::Bot;
 
@@ -19,4 +21,8 @@ pub struct BotState {
     pub auth_use_case: Arc<TelegramAuthUseCase>,
     // Future: pub schedule_service: Arc<ScheduleService>,
     pub bot_username: String,
+    /// "Is this Telegram account logged in?" — plain DM text from a logged-in user goes to the agent.
+    pub bindings: Arc<dyn TelegramBindingRepository>,
+    /// Chat agent endpoint; `None` = the bot works alone, as before.
+    pub agent: Option<Arc<AgentForwarder>>,
 }

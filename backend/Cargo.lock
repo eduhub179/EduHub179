@@ -2532,10 +2532,13 @@ dependencies = [
  "chrono",
  "domain",
  "infrastructure",
+ "reqwest",
+ "serde_json",
  "sqlx",
  "teloxide",
  "thiserror 2.0.19",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

@@ -32,6 +32,11 @@ pub struct Config {
     pub redis_url: String,
     /// Telegram bot token (required for the bot binary).
     pub telegram_bot_token: String,
+    /// Where the bot forwards updates it does not handle itself: class chat messages, homework sent
+    /// in DM by a logged-in user, agent buttons (optional; e.g. http://127.0.0.1:8091/telegram/update).
+    pub agent_url: Option<String>,
+    /// Shared secret sent to the agent in `X-Agent-Key` (optional).
+    pub agent_key: Option<String>,
 }
 
 impl Config {
@@ -56,6 +61,8 @@ impl Config {
         let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set in .env");
         let telegram_bot_token =
             env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set in .env");
+        let agent_url = env::var("AGENT_URL").ok().filter(|v| !v.is_empty());
+        let agent_key = env::var("AGENT_KEY").ok().filter(|v| !v.is_empty());
 
         Self {
             database_url,
@@ -66,6 +73,8 @@ impl Config {
             org_email_domain,
             redis_url,
             telegram_bot_token,
+            agent_url,
+            agent_key,
         }
     }
 
@@ -79,6 +88,8 @@ impl Config {
             org_email_domain: "@179.ru".to_string(),
             redis_url: "redis://127.0.0.1:6379".to_string(),
             telegram_bot_token: "mock_telegram_bot_token".to_string(),
+            agent_url: None,
+            agent_key: None,
         }
     }
 }
