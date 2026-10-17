@@ -1,8 +1,8 @@
 """Подтверждённые ДЗ и контрольные из чатов -> домашка в бэкенде EduHub (HTTP API из presentation/src/router.rs).
 
-Как ищется урок. В homeworks нужен lesson_instance_id — конкретный урок в конкретный день. Расписание API отдаёт
-только «глазами ученика»: GET /api/schedule/day?date=...&student_id=..., поэтому на каждый класс нужен id одного
-ученика этого класса (API_STUDENTS). Из уроков на дату срока берём урок того же предмета
+Как ищется урок. В homeworks нужен lesson_instance_id — конкретный урок в конкретный день. Класс находки («11Б» из названия
+чата) ищем в GET /api/classes (там «2027б»: год выпуска + буква), берём его id и расписание класса со всеми группами:
+GET /api/classes/schedule/day?date=...&class_id=... Из уроков на дату срока берём урок того же предмета
 (если агент уже знает номер урока по timetable.py, то урок с тем же временем начала).
 
 Как пишется. У одного урока одна домашка. Если её ещё нет — POST /api/homework, если есть (учитель уже записал
@@ -15,7 +15,6 @@
   API_URL=http://localhost:8080          адрес бэкенда (SERVER_PORT из backend/.env)
   AGENT_USER_ID=<uuid>                   кто записывается автором домашки (created_by)
   AGENT_USER_ROLE=teacher                его роль: student / teacher / admin, как в таблице users
-  API_STUDENTS=11Б:<uuid>,11В:<uuid>     по ученику на класс, чьими глазами смотреть расписание
 Без API_URL ничего не отправляется.
 """
 import json
@@ -65,14 +64,21 @@ def call(method, path, body=None):
         raise ApiError(e.code, message)
 
 
-def students():
-    """API_STUDENTS=11Б:uuid,11В:uuid -> {"11Б": uuid}. Класс сравнивается без пробелов и дефисов."""
-    out = {}
-    for pair in (env("API_STUDENTS") or "").split(","):
-        cls, _, uid = pair.partition(":")
-        if cls.strip() and uid.strip():
-            out[timetable.norm(cls)] = uid.strip()
-    return out
+_classes = {}
+
+
+def class_id(cls):
+    """«11Б» -> id класса из GET /api/classes (там год выпуска: в 2026/27 это «2027б»). None, если такого класса нет.
+    Список классов запоминаем и перечитываем, когда класса в нём не нашлось (вдруг добавили)."""
+    key = timetable.norm(cls or "")
+    if key and key not in _classes:
+        end = timetable.school_year_end()
+        _classes.clear()
+        for c in call("GET", "/api/classes")["classes"]:
+            grade = 11 - (c["graduation_year"] - end)
+            _classes[timetable.norm(f"{grade}{c['letter']}")] = c["id"]
+            _classes[timetable.norm(c["name"])] = c["id"]
+    return _classes.get(key)
 
 
 def class_of(it):
@@ -84,27 +90,31 @@ def class_of(it):
         return None
 
 
-def day_lessons(student, day):
-    return call("GET", f"/api/schedule/day?date={day}&student_id={student}")["lessons"]
+def day_lessons(class_id, day):
+    return call("GET", f"/api/classes/schedule/day?date={day}&class_id={class_id}")["lessons"]
 
 
 def find_lesson(it):
     """-> (урок из /api/schedule/day, None) или (None, почему не нашли)."""
     cls = class_of(it)
-    student = students().get(timetable.norm(cls or ""))
-    if not student:
-        return None, f"нет ученика класса {cls or '?'} в API_STUDENTS"
+    if not cls:
+        return None, "непонятен класс"
+    cid = class_id(cls)
+    if not cid:
+        return None, f"класса {cls} нет в /api/classes"
     if not it.get("date"):
         return None, "у находки нет даты"
     subjects = [s.strip() for s in (it.get("subject") or "").split(" / ") if s.strip()]
     if not subjects:
         return None, "непонятен предмет"
-    lessons = [l for l in day_lessons(student, it["date"])
+    lessons = [l for l in day_lessons(cid, it["date"])
                if any(timetable.same_subject(l["subject_name"], s) for s in subjects)]
     if not lessons:
         return None, f"{it['date']} в расписании нет урока «{' / '.join(subjects)}»"
     start = (it.get("due_lesson") or {}).get("start")
-    return next((l for l in lessons if l["start_time"] == start), lessons[0]), None
+    lesson = next((l for l in lessons if l["start_time"] == start), lessons[0])
+    lesson["_class"], lesson["_date"] = cid, it["date"]
+    return lesson, None
 
 
 def text_of(it):
@@ -141,7 +151,7 @@ def add_to(lesson, text):
         except ApiError as e:
             if e.status != 409:
                 raise
-            hw = next((l.get("homework") for l in day_lessons(lesson["_student"], lesson["_date"])
+            hw = next((l.get("homework") for l in day_lessons(lesson["_class"], lesson["_date"])
                        if l["id"] == lesson["id"]), None)  # кто-то успел записать раньше нас
             if not hw:
                 raise
@@ -153,7 +163,7 @@ def add_to(lesson, text):
 def remove_from(prev):
     """Убирает наш текст из домашки урока, куда записали раньше."""
     try:
-        lesson = next((l for l in day_lessons(prev["student"], prev["date"]) if l["id"] == prev["lesson_id"]), None)
+        lesson = next((l for l in day_lessons(prev.get("class_id"), prev["date"]) if l["id"] == prev["lesson_id"]), None)
     except ApiError:
         lesson = None
     hw = lesson and lesson.get("homework")
@@ -168,7 +178,6 @@ def _send(key, it):
     lesson, why = find_lesson(it)
     if not lesson:
         return why
-    lesson["_student"], lesson["_date"] = students()[timetable.norm(class_of(it))], it["date"]
     text = text_of(it)
     sent = load(SENT, {})
     prev = sent.get(key)
@@ -184,7 +193,7 @@ def _send(key, it):
             remove_from(prev)
         homework_id = add_to(lesson, text)
     sent[key] = {"homework_id": homework_id, "lesson_id": lesson["id"], "date": it["date"],
-                 "student": lesson["_student"], "text": text}
+                 "class_id": lesson["_class"], "text": text}
     save(SENT, sent)
     print(f"  в бэкенд: {it['type']} «{it.get('summary', '')[:40]}» -> урок {it['date']} {lesson['start_time']} "
           f"{lesson['subject_name']}")
