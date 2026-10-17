@@ -1090,7 +1090,7 @@ def run_live():
     listen_at = chat_moderation.moderator.env("AGENT_LISTEN")  # 127.0.0.1:8091 — обновления шлёт основной бот
     inbox = listen(listen_at) if listen_at else None
     # личка боту: человек сам присылает ДЗ, оно записывается от его имени (dm.py)
-    dm.setup(api, lambda m, chat: refine(m, ask(m, [], chat)), MODERATE, worth=dm_worth)
+    dm.setup(api, lambda m, chat: refine(m, ask(m, [], chat)), MODERATE, worth=dm_worth, refine=refine)
     items_path = Path("chats/live_items.json")
     items_path.parent.mkdir(exist_ok=True)
     found = json.load(open(items_path, encoding="utf-8")) if items_path.exists() else []

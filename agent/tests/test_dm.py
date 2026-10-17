@@ -281,6 +281,25 @@ def main():
     check("«дз по алгебре номер 7» — это новое ДЗ, а не вопрос", "✅ Записать" in buttons() and "Алгебра" in out)
     press(111, "no")
 
+    # быстрый путь: короткое сообщение про один предмет — без модели, дату ставят правила
+    dm.REFINE = chat_agent.refine
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)
+    out = write(111, "физика к четвергу выучить формулы 3-5")
+    d = list(dm.load().values())[-1]
+    check("быстрый путь: физика к чт без модели", not answers and d["items"][0]["subject"] == "Физика"
+          and d["items"][0]["date"] == "2099-10-22" and "✅ Записать" in buttons())
+    press(111, "no")
+    out = write(111, "алгебра в пятницу контрольная")
+    d = list(dm.load().values())[-1]
+    check("быстрый путь: контрольная по алгебре в пт", d["items"][0]["type"] == "test" and d["items"][0]["date"] == "2099-10-23")
+    press(111, "no")
+    answers.append([{"quote": "физика §3", "type": "homework", "summary": "§3"},
+                    {"quote": "алгебра №7", "type": "homework", "summary": "№7"}])
+    out = write(111, "физика §3, алгебра №7")
+    check("два предмета — всё-таки модель", not answers and len(list(dm.load().values())[-1]["items"]) == 2)
+    press(111, "no")
+    dm.REFINE = None
+
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket
     import urllib.error

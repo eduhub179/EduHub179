@@ -44,6 +44,7 @@ KINDS = {"homework": "ДЗ", "test": "Контрольная"}
 API = None  # https://api.telegram.org/bot<BOT_TOKEN>/
 PARSE = None  # (m, chat) -> находки модели после refine; ставит chat_agent.run_live
 MODERATE = False  # работает бот-модератор: ДЗ учеников идёт через него
+REFINE = None  # (m, находки) -> находки с датой по правилам (chat_agent.refine): быстрый путь без модели
 WORTH = None  # text -> похоже ли на ДЗ (фильтр болтовни chat_agent.dm_worth); None — не проверяем
 _users = {}  # telegram id -> (пользователь или None, когда спросили)
 _days = {}  # (class_id, дата) -> (уроки, когда спросили)
@@ -55,9 +56,9 @@ MENU = {"keyboard": [[{"text": B_HW}, {"text": B_TODAY}], [{"text": B_NEXT}, {"t
 NOW = datetime.now  # подменяется в тесте
 
 
-def setup(api, parse, moderate, worth=None):
-    global API, PARSE, MODERATE, WORTH
-    API, PARSE, MODERATE, WORTH = api, parse, moderate, worth
+def setup(api, parse, moderate, worth=None, refine=None):
+    global API, PARSE, MODERATE, WORTH, REFINE
+    API, PARSE, MODERATE, WORTH, REFINE = api, parse, moderate, worth, refine
     backend_api.ON_SENT = on_sent
 
 
@@ -331,11 +332,25 @@ def preview(d):
     return "\n".join(lines), {"inline_keyboard": rows}
 
 
+TEST_WORDS = re.compile(r"контрольн|самостоятельн|проверочн|\bкр\b|\bср\b|зач[её]т|диктант|\bтест", re.I)
+
+
+def quick(m, subjects):
+    """Короткое сообщение про один предмет («физика к пятнице §12, № 5–7») — одно задание: модель не нужна,
+    дату находят правила (refine). Модель (~20 с на Mac) — только для длинных и про несколько предметов."""
+    text = m["text"].strip()
+    if not REFINE or len(subjects) > 1 or len(text) > 200 or "\n" in text:
+        return []
+    kind = "test" if TEST_WORDS.search(text) else "homework"
+    return [x for x in REFINE(m, [{"quote": text, "type": kind, "summary": text}]) if x.get("type") in KINDS]
+
+
 def understand(m, cls, subjects):
     """Находки ДЗ/контрольных из текста. Модель недоступна или ничего не нашла — всё сообщение одно ДЗ."""
     chat = f"Личные сообщения боту, {cls}" + (f" {subjects[0]}" if len(subjects) == 1 else "")
+    items = quick(m, subjects)
     try:
-        items = [x for x in PARSE(m, chat) if x.get("type") in KINDS]
+        items = items or [x for x in PARSE(m, chat) if x.get("type") in KINDS]
     except Exception as e:  # Ollama не отвечает и т.п.
         print("ЛС: модель не ответила:", repr(e))
         items = []
