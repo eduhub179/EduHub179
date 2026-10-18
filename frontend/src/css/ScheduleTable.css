@@ -56,11 +56,11 @@
 
 .schedule-day:hover .schedule-day__header,
 .schedule-day:hover .schedule-day__lessons {
-    background-color: #ffedd5;
+    background-color: #002f55;
 }
 
 .schedule-day:hover .schedule-day__lesson {
-    background-color: #fed7aa;
+    background-color: #16466a;
 }
 
 .schedule-day:hover .schedule-day__lesson:hover {
@@ -81,18 +81,11 @@
     background: #ffffff;
 }
 
-.schedule-day__short-name {
-    display: block;
-    color: #1e293b;
-    font-size: 0.95rem;
-    font-weight: 700;
-}
-
 .schedule-day__name {
     display: block;
-    margin-top: 3px;
-    color: #64748b;
-    font-size: 0.7rem;
+    color: #1e293b;
+    font-size: 1rem;
+    font-weight: 700;
 }
 
 .schedule-day__lessons {
