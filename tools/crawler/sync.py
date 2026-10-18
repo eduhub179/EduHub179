@@ -79,6 +79,7 @@ def event_row(kind, source, item, text_status="not_downloaded", text=""):
         "hash": item.get("hash", ""),
         "text_status": text_status,
         "text_chars": len(text),
+        "link": item.get("link"),
         "local_path": item.get("local_path"),
         **meta,
     }

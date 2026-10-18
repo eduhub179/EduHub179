@@ -13,7 +13,7 @@ import urllib.parse
 
 API = "https://www.googleapis.com/drive/v3"
 FOLDER_MIME = "application/vnd.google-apps.folder"
-FILE_FIELDS = "id,name,mimeType,size,modifiedTime,md5Checksum,version,parents,trashed"
+FILE_FIELDS = "id,name,mimeType,size,modifiedTime,md5Checksum,version,parents,trashed,webViewLink"
 CHANGE_FIELDS = f"nextPageToken,newStartPageToken,changes(changeType,fileId,removed,file({FILE_FIELDS}))"
 
 
@@ -44,6 +44,8 @@ class DriveSource:
             # у Google-документов md5 нет — отличие даёт version
             "hash": f.get("md5Checksum") or f"v{f.get('version', '')}",
             "mime": f.get("mimeType", ""),
+            # файлы не копируем: платформа будет хранить ссылку на оригинал в Drive
+            "link": f.get("webViewLink") or f"https://drive.google.com/file/d/{f['id']}/view",
         }
 
     # --- путь из id ------------------------------------------------------------------
