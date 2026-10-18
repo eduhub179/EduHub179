@@ -29,11 +29,16 @@ def check(name, cond, detail=""):
 # --- правила приёма ---------------------------------------------------------------
 print_text = Reading(text="Первый сплав содержит 10% меди", words=42, numbers=2, mean_conf=91.0, psm=3, ms=500, engine="t")
 handwritten = Reading(text="Яомемикее joparwue", words=45, numbers=3, mean_conf=41.0, psm=3, ms=900, engine="t")
-table = Reading(text="625 12 1:3:5 407", words=2, numbers=14, mean_conf=52.0, psm=3, ms=400, engine="t")
+table = Reading(text="625 12 1:3:5 407", words=2, numbers=14, mean_conf=85.0, psm=3, ms=400, engine="t")
+garbage_nums = Reading(text="45 -37 72 -1 #0 1 2", words=16, numbers=12, mean_conf=35.7, psm=3, ms=400, engine="t")
+axis = Reading(text="0 5 10 15 20 25 30", words=0, numbers=12, mean_conf=95.0, psm=3, ms=200, engine="t",
+               axis_like=True)
 
 check("печатный текст принимается", T.accept(print_text)[0])
 check("рукописное отклоняется", not T.accept(handwritten)[0], T.accept(handwritten)[1])
-check("таблица чисел принимается без высокого порога", T.accept(table)[0], T.accept(table)[1])
+check("таблица чисел принимается", T.accept(table)[0], T.accept(table)[1])
+check("неразборчивое фото с цифрами отклоняется", not T.accept(garbage_nums)[0], T.accept(garbage_nums)[1])
+check("подписи оси графика отклоняются", not T.accept(axis)[0], T.accept(axis)[1])
 check("пустое не принимается", not T.accept(Reading("", 0, 0, 0.0, 3, 10, "t"))[0])
 check("граница порога: 70 берём, 69 нет",
       T.accept(Reading("текст", 10, 0, 70.0, 3, 1, "t"))[0] and not T.accept(Reading("текст", 10, 0, 69.9, 3, 1, "t"))[0])
@@ -43,10 +48,15 @@ TSV = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\tw\th\
       "5\t1\t1\t1\t1\t1\t0\t0\t10\t10\t96.0\tДомашнее\n" + \
       "5\t1\t1\t1\t1\t2\t0\t0\t10\t10\t88.0\tзадание\n" + \
       "5\t1\t1\t1\t2\t1\t0\t0\t10\t10\t0.0\t-\n"
-text, words, numbers, conf = P._parse_tsv(TSV)
+text, words, numbers, conf, _axis = P._parse_tsv(TSV)
 check("TSV: слова и строки", words == 2 and text.count("\n") == 1, repr(text))
 check("TSV: уверенность", abs(conf - ((96 + 88 + 0) / 3)) < 0.1, str(conf))
 check("TSV: числа считаются", P._parse_tsv(TSV.replace("задание", "625"))[2] == 1)
+axis_tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\tw\th\tconf\ttext\n" + \
+           "".join(f"5\t1\t1\t1\t1\t{i}\t0\t0\t1\t1\t95.0\t{n}\n" for i, n in enumerate(
+               ["0", "5", "10", "15", "20", "25"], 1))
+check("TSV: ось графика распознаётся", P._parse_tsv(axis_tsv)[4] is True)
+check("TSV: не ось", P._parse_tsv(TSV)[4] is False)
 
 # --- провайдеры ----------------------------------------------------------------------
 ok, why = P.get("local_tesseract").available()
