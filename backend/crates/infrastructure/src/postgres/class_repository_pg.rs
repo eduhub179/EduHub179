@@ -171,6 +171,25 @@ impl ClassRepository for ClassRepositoryPg {
             .collect()
     }
 
+    /// Fetches all active classes across all graduation years, sorted by year and letter.
+    async fn get_all_active(&self) -> Result<Vec<Class>, DomainError> {
+        let rows = sqlx::query_as::<_, ClassRow>(
+            r#"
+            SELECT class_id, graduation_year, letter, is_active
+            FROM classes
+            WHERE is_active = TRUE
+            ORDER BY graduation_year ASC, letter ASC
+            "#,
+        )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Self::map_db_error)?;
+
+        rows.into_iter()
+            .map(ClassRow::into_domain)
+            .collect()
+    }
+
     /// Saves or updates a class.
     ///
     /// Uses PostgreSQL `INSERT ... ON CONFLICT` for atomic upsert.

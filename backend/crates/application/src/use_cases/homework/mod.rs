@@ -2,6 +2,8 @@
 //!
 //! This module groups application flows for homework attachments and file management.
 //! Planned scenarios:
+//! - create homework
+//! - update homework text
 //! - upload homework file
 //! - attach uploaded file to a homework
 //! - delete homework file
@@ -10,5 +12,7 @@
 //! Guarantees: all flows return `Result` and stay independent from PostgreSQL/S3 details.
 
 pub mod attach_to_homework;
+pub mod create_homework;
 pub mod delete_file;
+pub mod update_homework_text;
 pub mod upload_file;

@@ -1,0 +1,39 @@
+[package]
+name = "telegram-adapter"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "telegram_adapter"
+path = "src/lib.rs"
+
+[dependencies]
+# Application layer — use cases
+application = { path = "../application" }
+
+# Domain layer — error types and value objects
+domain = { path = "../domain" }
+
+# Telegram Bot API
+teloxide = { version = "0.12", features = ["macros"] }
+
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# Common utilities (already in project)
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4"] }
+async-trait = "0.1"
+
+# Error handling
+thiserror = "2.0"
+
+# Forwarding updates to the chat agent (same reqwest that teloxide uses)
+reqwest = "0.11"
+serde_json = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+# For integration tests with real database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
+infrastructure = { path = "../infrastructure" }
