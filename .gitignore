@@ -27,5 +27,13 @@ backend/bin/src/bin/import_timetable_agent.rs
 # Dumps
 project_dump*.txt
 dump*.txt
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
 # Database dumps contain personal data (names, emails) — never commit them.
 *.dump
