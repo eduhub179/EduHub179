@@ -2,19 +2,26 @@ import { apiFetch } from './client';
 
 export interface CreateHomeworkRequest {
   lesson_instance_id: string;
-  text: string;
+  created_by: string;
+  created_by_role: 'student' | 'teacher' | 'admin' | string;
+  text_content?: string | null;
+  status: 'draft' | 'published' | 'archived' | string;
 }
 
 export interface UpdateHomeworkTextRequest {
-  text: string;
+  text_content?: string | null;
 }
 
 export interface HomeworkResponse {
   id: string;
   lesson_instance_id: string;
-  text: string;
-  created_at?: string;
-  updated_at?: string;
+  created_by: string;
+  created_by_role: string;
+  text_content?: string | null;
+  status: string;
+  locked_by_teacher: boolean;
+  last_edited_by?: string | null;
+  created_at: string;
 }
 
 export async function createHomework(
