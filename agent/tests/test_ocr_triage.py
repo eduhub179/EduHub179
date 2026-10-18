@@ -16,9 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from eduhub_agent.media import ocr_triage as T
-from eduhub_agent.media import ocr_providers as P
-from eduhub_agent.media.ocr_providers import Reading
+from eduhub_agent.files import ocr_triage as T
+from eduhub_agent.files import ocr_providers as P
+from eduhub_agent.files.ocr_providers import Reading
 
 fails = 0
 

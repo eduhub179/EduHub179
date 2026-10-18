@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 
 from eduhub_agent.classify import classify
-from eduhub_agent.ingest.extract import extract
+from eduhub_agent.files.decide import decide
+from eduhub_agent.files.read import read
 from eduhub_agent.ingest.grade import grade_of
 
 from .state import SyncState
@@ -66,10 +67,12 @@ def apply_changes(changes, state):
     return events
 
 
-def event_row(kind, source, item, text_status="not_downloaded", text="", classifier=None):
+def event_row(kind, source, item, text_status="not_downloaded", text="", classifier=None,
+              ocr_confidence=None, read_engine="none"):
     """Одна схема на все источники: импорт не должен ветвиться по source."""
     meta = (classifier or classify)(item.get("path") or item.get("name", ""), item.get("name", ""), text)
     meta = {**meta, "grade": grade_of(item.get("path") or item.get("id", ""), item.get("name", ""))}
+    route, route_reason = decide(text_status, meta)
     return {
         "kind": kind,
         "source": source,
@@ -81,6 +84,12 @@ def event_row(kind, source, item, text_status="not_downloaded", text="", classif
         "hash": item.get("hash", ""),
         "text_status": text_status,
         "text_chars": len(text),
+        "read_engine": read_engine,
+        "ocr_confidence": ocr_confidence,
+        # вариант 1: Drive отдаёт ссылку, а не файл — метки получены только по имени и пути
+        "input_mode": "text" if text_status in ("native", "ocr") else "name_only",
+        "route": route,
+        "route_reason": route_reason,
         "link": item.get("link"),
         "local_path": item.get("local_path"),
         **meta,
@@ -88,9 +97,11 @@ def event_row(kind, source, item, text_status="not_downloaded", text="", classif
 
 
 def enrich_local(item):
-    """Для папки текст доступен сразу — читаем; для Drive в этом шаге не качаем."""
-    text, status = extract(Path(item["local_path"])) if item.get("local_path") else ("", "not_downloaded")
-    return status, text
+    """Для папки файл на диске — читаем общим read.py; для Drive в этом шаге не качаем."""
+    if not item.get("local_path"):
+        return "not_downloaded", "", None, "none"
+    r = read(Path(item["local_path"]))
+    return r.status, r.text, r.ocr_confidence, r.engine
 
 
 def run(source, state_path, out_dir, classifier=None):
@@ -114,8 +125,8 @@ def run(source, state_path, out_dir, classifier=None):
     with open(out / "events.jsonl", "w", encoding="utf-8") as f:
         for ev in events:
             item = ev["item"]
-            status, text = enrich_local(item) if item.get("local_path") else ("not_downloaded", "")
-            row = event_row(ev["kind"], source.name, item, status, text, classifier)
+            status, text, conf, engine = enrich_local(item)
+            row = event_row(ev["kind"], source.name, item, status, text, classifier, conf, engine)
             rows.append(row)
             f.write(_json(row) + "\n")
 
