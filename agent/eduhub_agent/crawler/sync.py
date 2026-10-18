@@ -11,8 +11,9 @@ import json
 import time
 from pathlib import Path
 
-from tools.drive_ingest.classify import classify
-from tools.drive_ingest.extract import extract
+from eduhub_agent.classify import classify
+from eduhub_agent.ingest.extract import extract
+from eduhub_agent.ingest.grade import grade_of
 
 from .state import SyncState
 
@@ -65,9 +66,10 @@ def apply_changes(changes, state):
     return events
 
 
-def event_row(kind, source, item, text_status="not_downloaded", text=""):
+def event_row(kind, source, item, text_status="not_downloaded", text="", classifier=None):
     """Одна схема на все источники: импорт не должен ветвиться по source."""
-    meta = classify(item.get("path") or item.get("name", ""), item.get("name", ""), text)
+    meta = (classifier or classify)(item.get("path") or item.get("name", ""), item.get("name", ""), text)
+    meta = {**meta, "grade": grade_of(item.get("path") or item.get("id", ""), item.get("name", ""))}
     return {
         "kind": kind,
         "source": source,
@@ -91,7 +93,7 @@ def enrich_local(item):
     return status, text
 
 
-def run(source, state_path, out_dir):
+def run(source, state_path, out_dir, classifier=None):
     state = SyncState(state_path)
     t0 = time.time()
     out = Path(out_dir)
@@ -113,7 +115,7 @@ def run(source, state_path, out_dir):
         for ev in events:
             item = ev["item"]
             status, text = enrich_local(item) if item.get("local_path") else ("not_downloaded", "")
-            row = event_row(ev["kind"], source.name, item, status, text)
+            row = event_row(ev["kind"], source.name, item, status, text, classifier)
             rows.append(row)
             f.write(_json(row) + "\n")
 
@@ -127,10 +129,10 @@ def _json(obj):
     return json.dumps(obj, ensure_ascii=False)
 
 
-def sync_folder(root, state_path, out_dir):
+def sync_folder(root, state_path, out_dir, classifier=None):
     """Удобная обёртка для папки — ею пользуется CLI и тесты."""
     from .sources.local import LocalFolderSource
-    return run(LocalFolderSource(root), state_path, out_dir)
+    return run(LocalFolderSource(root), state_path, out_dir, classifier)
 
 
 def write_summary(path, rows, dur, source_name):

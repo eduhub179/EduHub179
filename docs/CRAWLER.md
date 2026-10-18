@@ -1,6 +1,6 @@
 # Краулер: сбор материалов в платформу
 
-Дата: 18.10.2026. Код: `tools/crawler/` (синхронизация), `tools/drive_ingest/` (разовый разбор папки).
+Дата: 18.10.2026. Код: `agent/eduhub_agent/crawler/` (синхронизация), `agent/eduhub_agent/ingest/` (разовый разбор папки).
 
 ## Что это
 
@@ -47,8 +47,8 @@
 
 ## Классификация
 
-Используется тот же классификатор, что в архивном треке P2 (`tools/drive_ingest/classify.py`).
-Категории вынесены в `tools/drive_ingest/categories.json`: новый предмет или тип добавляется
+Используется тот же классификатор, что в архивном треке P2 (`agent/eduhub_agent/classify/`).
+Категории вынесены в `agent/eduhub_agent/classify/prompt.md`: новый предмет или тип добавляется
 строкой в файле, без правки кода.
 subject ∈ {algebra, geometry, calculus, digital_tech, misc}, type ∈ {worksheet, homework,
 test, independent_work, notes, textbook, program, other}.
@@ -81,15 +81,15 @@ in-sample оценка, а не честный тест на новых данн
 
 ## Шаг 1 — Drive-адаптер (сделано 18.10.2026)
 
-Готово: `tools/crawler` синхронизирует Google Drive по `changes.list`, проверено на
-записанных ответах API, без сети (`tools/crawler/test_drive_source.py`, 18 проверок).
+Готово: `eduhub_agent.crawler` синхронизирует Google Drive по `changes.list`, проверено на
+записанных ответах API, без сети (`agent/tests/test_crawler_drive.py`, 18 проверок).
 День, когда появится service account, — это день, когда задаётся токен, а не день, когда
 начинается разработка.
 
 Показать без ключей:
 
 ```
-python3 -m tools.crawler sync --fixture tools/crawler/fixtures/drive_first.json \
+python3 -m eduhub_agent.crawler sync --fixture agent/eduhub_agent/crawler/fixtures/drive_first.json \
     --folder-id PROOT --state state/fake.json --out out/fake    # 2 события
 # повторный запуск с тем же state -> 0 событий
 ```
@@ -97,7 +97,7 @@ python3 -m tools.crawler sync --fixture tools/crawler/fixtures/drive_first.json 
 ### Что появляется в коде
 
 ```
-tools/crawler/
+eduhub_agent.crawler/
   sources/__init__.py     # реестр источников
   sources/local.py        # LocalFolderSource (перенос текущей логики из sync.py)
   sources/drive.py        # DriveSource
@@ -156,7 +156,7 @@ class Source(Protocol):
 
 ### Результат
 
-`python3 tools/crawler/test_drive_source.py` → 18/18, сетевых вызовов ноль. Событие из
+`python3 tests/test_crawler_drive.py` → 18/18, сетевых вызовов ноль. Событие из
 Drive по набору полей совпадает с событием из папки — проверено тестом, а не на слово.
 Осталось: живой smoke-тест (два запроса) и импорт событий в бэкенд.
 
