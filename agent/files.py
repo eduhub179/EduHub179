@@ -4,8 +4,8 @@
 PDF читается библиотекой pypdf (один раз: .venv/bin/pip install pypdf) или, если её нет, программой pdftotext
 (brew install poppler). DOCX и PPTX читаются без библиотек.
 Фото распознаёт Tesseract (brew install tesseract; русский язык берётся из папки tessdata рядом со скриптом
-или из brew install tesseract-lang). Он хорошо читает распечатанные листки и скриншоты, а рукописную доску плохо:
-если распознался мусор, текст фото модели не показывается.
+или из brew install tesseract-lang) через ocr_triage: текст берётся, только если Tesseract уверен в прочитанном.
+Рукописную доску он читает с уверенностью ~40 и текст не отдаёт — такое фото уходит в board.py.
 Скачанные файлы лежат в chats/files/<чат>/ на этом компьютере и никуда не отправляются.
 """
 import json
@@ -61,55 +61,17 @@ IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
 def _image(path):
-    """Текст с фото через Tesseract (русский + английский). Мелкие фото увеличиваем: так он ошибается реже."""
-    exe = shutil.which("tesseract")
-    if not exe:
-        _warn_once("ocr", "Фото не распознаются: нужен Tesseract (brew install tesseract)")
-        return None
-    src, tmp = str(path), None
+    """Текст с фото через ocr_triage (Tesseract + порог уверенности). None — если текста на фото нет."""
     try:
-        from PIL import Image, ImageOps
-        img = ImageOps.exif_transpose(Image.open(path)).convert("L")  # повёрнутые фото с телефона
-        if max(img.size) < 1600:
-            k = 1600 / max(img.size)
-            img = img.resize((int(img.width * k), int(img.height * k)))
-        tmp = str(Path(path).with_suffix(".ocr.png").name)
-        tmp = os.path.join(os.environ.get("TMPDIR", "/tmp"), tmp)
-        img.save(tmp)
-        src = tmp
-    except Exception:
-        pass  # без Pillow отдаём файл как есть
-    env = dict(os.environ)
-    if (TESSDATA / "rus.traineddata").exists():
-        env["TESSDATA_PREFIX"] = str(TESSDATA)
-    try:
-        r = subprocess.run([exe, src, "-", "-l", "rus+eng", "--psm", "3"], capture_output=True, timeout=120, env=env)
-    finally:
-        if tmp and os.path.exists(tmp):
-            os.remove(tmp)
-    if r.returncode:
-        _warn_once("ocr-lang", "Tesseract не запустился (нет русского языка? brew install tesseract-lang): "
-                   + r.stderr.decode("utf-8", "replace")[:200])
+        import ocr_triage
+    except ImportError as e:  # ocr_triage.py лежит рядом
+        _warn_once("ocr-triage", f"Фото не распознаются: не найден ocr_triage.py ({e})")
         return None
-    text = r.stdout.decode("utf-8", "replace")
-    return text if looks_like_text(text) or looks_like_table(text) else None
-
-
-def looks_like_text(text):
-    """Отсекаем мусор распознавания: нужно хотя бы 4 настоящих слова, и они должны быть основой текста."""
-    words = re.findall(r"[А-Яа-яЁёA-Za-z]{3,}", text)
-    letters = sum(len(w) for w in words)
-    junk = len(re.sub(r"\s", "", text))
-    return len(words) >= 4 and letters >= 0.5 * junk
-
-
-def looks_like_table(text):
-    """Распечатанная таблица ответов или данных: слов мало, зато много чисел («625 Дж», «1:3:5»). Без этого правила
-    такие фото считались «без текста» и уходили в проверку доски, а модель для картинок принимала их за доску."""
-    nums = len(re.findall(r"\d+(?:[.,:]\d+)*", text))
-    words = len(re.findall(r"[А-Яа-яЁёA-Za-z]{3,}", text))
-    meaningful = len(re.findall(r"[\dА-Яа-яЁёA-Za-z]", text))
-    return nums >= 10 and nums > words and meaningful >= 0.6 * len(re.sub(r"\s", "", text))
+    try:
+        return ocr_triage.image_text(path)
+    except Exception as e:
+        print(f"   не смог распознать фото {Path(path).name}: {e}")
+        return None
 
 
 def _xml_text(xml, para_tag):
