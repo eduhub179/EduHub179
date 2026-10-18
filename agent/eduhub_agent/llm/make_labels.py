@@ -1,10 +1,12 @@
 """Ручная разметка posts.json: какие посты анонсируют мероприятия и что в них.
-Запуск: python3 make_labels.py  ->  labels.json
+Запуск: python3 -m eduhub_agent.llm.make_labels  ->  labels.json в корне agent/
 Категории поста: event (разовое событие с датой), series (кружок/секция, регулярно),
 schedule (режим школы: 1 сентября, каникулы), olympiad (график олимпиад),
 admissions (набор в классы, для поступающих), news (итоги, поздравления, отчёты и прочее).
 """
 import json
+
+from eduhub_agent.paths import data
 
 def E(title, date, time=None, place=None, audience=None, end=None, deadline=None, online=False, note=None):
     return {k: v for k, v in dict(title=title, date=date, end_date=end, time=time, place=place,
@@ -96,7 +98,7 @@ L = {
  2069: ("news", [], "повтор 2046 (итоги)", 2046),
 }
 
-posts = json.load(open("posts.json", encoding="utf-8"))
+posts = json.load(open(data("posts.json"), encoding="utf-8"))
 out = []
 for p in posts:
     cat, events, note, dup, upd = (list(L[p["id"]]) + [None] * 5)[:5] if p["id"] in L else ("news", [], None, None, None)
@@ -107,7 +109,7 @@ for p in posts:
     if dup: row["duplicate_of"] = dup
     if upd: row["update_of"] = upd
     out.append(row)
-json.dump(out, open("labels.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+json.dump(out, open(data("labels.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 from collections import Counter
 print(Counter(r["category"] for r in out))

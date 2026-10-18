@@ -78,11 +78,13 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     os.environ.update(API_URL=f"http://127.0.0.1:{server.server_port}", AGENT_KEY=KEY, LOGIN_BOT="@EduHub179Bot")
     os.environ.pop("AGENT_USER_ID", None)
-    here = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(tempfile.mkdtemp())  # черновики и очередь — во временной папке
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # корень agent/
+    home = tempfile.mkdtemp()
+    os.chdir(home)  # рабочие файлы — во временной папке
+    os.environ["EDUHUB_AGENT_HOME"] = home  # черновики и очередь — во временной папке
     sys.path.insert(0, here)
-    import chat_agent
-    import dm
+    from eduhub_agent.telegram import chat_agent
+    from eduhub_agent.telegram import dm
 
     sent = []  # что бот отправил в Telegram
 

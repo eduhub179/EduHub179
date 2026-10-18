@@ -4,41 +4,68 @@
 
 Подтверждённые ДЗ и контрольные из чатов уходят в бэкенд через HTTP API (`backend_api.py`, см. ниже). Мероприятия и остальные находки пока сохраняются только локально: для них в API ещё нет адресов.
 
+## Структура
+
+```
+agent/
+├── chat_agent.py, watch_channel.py, backend_api.py, moderator.py   # запуск: те же команды, что раньше
+├── eduhub_agent/              # сам сервис
+│   ├── paths.py               # где лежат chats/, tessdata, .env, timetable.json
+│   ├── config.py              # env(): переменные окружения и .env
+│   ├── telegram/              # всё, что говорит с Telegram
+│   ├── media/                 # вложения: PDF/DOCX, фото, распознавание
+│   ├── llm/                   # модель, правила, датасет, обучение фильтра
+│   └── server/                # бэкенд EduHub и расписание
+├── tests/                     # test_*.py и test_*.tsv
+├── data/                      # timetable.example.json
+├── docs/                      # фото-разбор.md, models_results.md
+├── chats/                     # личные данные и кеши (в git не попадают)
+├── requirements.txt
+└── .env.example
+```
+
+Корень `agent/` — по-прежнему рабочая папка: `chats/`, `tessdata/`, `.env`, `timetable.json`
+лежат там, а не рядом с модулями (`eduhub_agent/paths.py` — единственное место, где это записано).
+Четыре ежедневные команды запускаются короткими обёртками из корня; остальные утилиты — через `-m`.
+
 ## Что где
 
 | файл | что делает |
 |---|---|
-| `chat_agent.py` | агент чатов: экспорт чата (`python3 chat_agent.py chats/<экспорт>`) или живой режим через бота (`python3 chat_agent.py live`) |
-| `timetable.py` | расписание для агента: к какому уроку относится ДЗ и к какому сдавать. Источник — `timetable.json` или бэкенд (`TIMETABLE_URL`) |
-| `files.py`, `board.py` | вложения: текст из PDF/DOCX/PPTX, распознавание фото доски (`PHOTO_MODE=board`) |
-| `ocr_triage.py`, `ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 test_ocr_triage.py` |
-| `watch_channel.py` | агент канала школы и канала «Кружочек», опрос раз в 15–30 минут (`python3 watch_channel.py loop`) |
-| `moderator.py` | бот-модератор: каждая находка (события каналов и находки из чатов) приходит карточкой с кнопками «Опубликовать» / «Отклонить», на сервер уходит только подтверждённое |
-| `backend_api.py` | подтверждённые ДЗ и контрольные -> `POST /api/homework` / `PATCH /api/homework/{id}/text`; проверка на поддельном сервере: `python3 test_backend_api.py` |
-| `dm.py` | ДЗ, присланное боту в личку: кто прислал — по входу в основном боте, урок — по расписанию, запись от имени этого человека; проверка: `python3 test_dm.py` |
-| `chat_moderation.py` | очередь находок из чатов для того же бота-модератора (`chats/moderation_*.json`, не коммитится) |
-| `fetch_channel.py`, `kruzhochek.py` | скачивание публичной страницы канала, разбор анонсов «Кружочка» |
-| `llm_extract.py`, `baseline_rules.py` | мероприятия из постов: модель + правила |
-| `train_classifier.py`, `build_dataset.py` | фильтр болтовни (нужны экспорты чатов, в репозиторий не входят) |
-| `test_agent.py` + `test_*.tsv` | проверка на придуманных сообщениях: `python3 test_agent.py test_final.tsv` (последний, ни под что не подгонялся) |
-| `test_timetable.py` | проверка привязки ДЗ к урокам, без модели |
-| `make_labels.py` | ручная разметка постов канала для проверки (`labels.json`); сами посты скачиваются `fetch_channel.py` и в репозиторий не входят, там имена учеников |
-| `models_results.md` | сравнение локальных моделей |
+| `chat_agent.py` → `telegram/chat_agent.py` | агент чатов: экспорт чата (`python3 chat_agent.py chats/<экспорт>`) или живой режим через бота (`python3 chat_agent.py live`) |
+| `telegram/watch_channel.py` | агент канала школы и канала «Кружочек», опрос раз в 15–30 минут (`python3 watch_channel.py loop`) |
+| `telegram/moderator.py` | бот-модератор: каждая находка приходит карточкой с кнопками «Опубликовать» / «Отклонить», на сервер уходит только подтверждённое |
+| `telegram/dm.py` | ДЗ, присланное боту в личку: кто прислал — по входу в основном боте, урок — по расписанию, запись от имени этого человека; проверка: `python3 tests/test_dm.py` |
+| `telegram/chat_moderation.py` | очередь находок из чатов для того же бота-модератора (`chats/moderation_*.json`, не коммитится) |
+| `telegram/fetch_channel.py`, `telegram/kruzhochek.py` | скачивание публичной страницы канала, разбор анонсов «Кружочка» |
+| `server/backend_api.py` | подтверждённые ДЗ и контрольные -> `POST /api/homework` / `PATCH /api/homework/{id}/text`; проверка на поддельном сервере: `python3 tests/test_backend_api.py` |
+| `server/timetable.py` | расписание для агента: к какому уроку относится ДЗ и к какому сдавать. Источник — `timetable.json` или бэкенд (`TIMETABLE_URL`) |
+| `media/files.py`, `media/board.py` | вложения: текст из PDF/DOCX/PPTX, распознавание фото доски (`PHOTO_MODE=board`) |
+| `media/ocr_triage.py`, `media/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
+| `llm/llm_extract.py`, `llm/baseline_rules.py` | мероприятия из постов: модель + правила |
+| `llm/train_classifier.py`, `llm/build_dataset.py` | фильтр болтовни (нужны экспорты чатов, в репозиторий не входят) |
+| `llm/make_labels.py`, `llm/show_labels.py` | ручная разметка постов канала (`labels.json`); сами посты в репозиторий не входят, там имена учеников |
+| `tests/test_agent.py` + `tests/test_*.tsv` | проверка на придуманных сообщениях: `python3 tests/test_agent.py tests/test_final.tsv` |
+| `tests/test_timetable.py` | проверка привязки ДЗ к урокам, без модели |
+| `docs/models_results.md` | сравнение локальных моделей |
+| `docs/фото-разбор.md` | что сделано с фото 16.10 и как к этому вернуться |
 
 ## Запуск
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ollama pull qwen2.5:7b
-cp timetable.example.json timetable.json   # и заполнить своим расписанием
-.venv/bin/python test_timetable.py
-.venv/bin/python test_ocr_triage.py   # чтение фото, без модели
-.venv/bin/python test_agent.py test_holdout2.tsv
-BOT_TOKEN=... .venv/bin/python chat_agent.py live --channel  # основной запуск: чаты + каналы + бот-модератор в одном процессе
-.venv/bin/python watch_channel.py loop                     # только каналы, если чаты не нужны
+cp data/timetable.example.json timetable.json   # и заполнить своим расписанием
+.venv/bin/python tests/test_timetable.py
+.venv/bin/python tests/test_ocr_triage.py        # чтение фото, без модели
+.venv/bin/python tests/test_agent.py tests/test_holdout2.tsv
+BOT_TOKEN=*** .venv/bin/python chat_agent.py live --channel  # основной запуск: чаты + каналы + бот-модератор
+.venv/bin/python watch_channel.py loop                      # только каналы, если чаты не нужны
 ```
 
-Переменные окружения перечислены в `.env.example`; скрипты читают их и из файла `.env` рядом с собой (он не коммитится). `BOT_TOKEN` (бот, который сидит в чатах) и `MODERATOR_BOT_TOKEN` должны быть токенами двух разных ботов, иначе Telegram вернёт ошибку 409. Бот-модератор один на оба агента (`MODERATOR_BOT_TOKEN`), а Telegram отдаёт обновления одного бота только одному процессу. Поэтому `watch_channel.py loop` вместе с `chat_agent.py live --channel` не запускают.
+Утилиты без обёртки запускаются как модули из корня `agent/`, например
+`python3 -m eduhub_agent.server.backend_api retry`, `python3 -m eduhub_agent.media.board_check 60`,
+`python3 -m eduhub_agent.llm.make_labels`.
 
 ## Команды бота-модератора
 

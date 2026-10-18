@@ -71,11 +71,13 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     os.environ.update(API_URL=f"http://127.0.0.1:{server.server_port}", AGENT_USER_ID=TEACHER,
                       AGENT_USER_ROLE="teacher")
-    here = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(tempfile.mkdtemp())  # api_sent.json и api_queue.json — во временной папке
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # корень agent/
+    home = tempfile.mkdtemp()
+    os.chdir(home)  # рабочие файлы — во временной папке
+    os.environ["EDUHUB_AGENT_HOME"] = home  # api_sent.json и api_queue.json — во временной папке
     import sys
     sys.path.insert(0, here)
-    import backend_api as b
+    from eduhub_agent.server import backend_api as b
 
     ok = 0
     phys1, phys2 = LESSONS["2099-10-22"][1]["id"], LESSONS["2099-10-23"][0]["id"]

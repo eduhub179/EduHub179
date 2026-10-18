@@ -11,9 +11,11 @@ import sys
 import time
 import urllib.request
 
+from eduhub_agent.paths import data
+
 CHANNEL = sys.argv[1] if len(sys.argv) > 1 else "school179moscow"
 LIMIT = int(sys.argv[2]) if len(sys.argv) > 2 else 200
-OUT = sys.argv[3] if len(sys.argv) > 3 else "posts.json"
+OUT = sys.argv[3] if len(sys.argv) > 3 else str(data("posts.json"))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 

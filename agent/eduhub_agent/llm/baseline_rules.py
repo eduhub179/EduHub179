@@ -1,10 +1,12 @@
 """Извлечение мероприятий без модели: регулярки + ключевые слова.
-Запуск: python3 baseline_rules.py  (рядом posts.json и labels.json)
+Запуск: python3 -m eduhub_agent.llm.baseline_rules  (posts.json и labels.json — в корне agent/)
 Печатает, насколько правила совпадают с ручной разметкой.
 """
 import json
 import re
 from datetime import date, timedelta
+
+from eduhub_agent.paths import data
 
 MONTHS = {"январ": 1, "феврал": 2, "март": 3, "апрел": 4, "ма": 5, "июн": 6, "июл": 7,
           "август": 8, "сентябр": 9, "октябр": 10, "ноябр": 11, "декабр": 12}
@@ -78,8 +80,8 @@ def norm_time(t):
 
 
 def main():
-    posts = {p["id"]: p for p in json.load(open("posts.json", encoding="utf-8"))}
-    labels = [r for r in json.load(open("labels.json", encoding="utf-8")) if not r.get("duplicate_of")]
+    posts = {p["id"]: p for p in json.load(open(data("posts.json"), encoding="utf-8"))}
+    labels = [r for r in json.load(open(data("labels.json"), encoding="utf-8")) if not r.get("duplicate_of")]
     tp = fp = fn = 0
     d_hit = d_all = t_hit = t_all = p_hit = p_all = 0
     misses, false_alarms = [], []

@@ -1,6 +1,6 @@
 """Собирает сообщения из всех экспортов чатов в один файл для разметки и обучения классификатора.
 
-Запуск:  python3 build_dataset.py            # все папки и result.json в chats/
+Запуск:  python3 -m eduhub_agent.llm.build_dataset   # все папки и result.json в chats/
 Результат: chats/dataset.jsonl, по строке на сообщение (подряд идущие сообщения одного автора склеены).
 Разметка chat_labels.txt ссылается на номера строк, поэтому старые строки остаются на своих местах,
 а сообщения из новых чатов дописываются в конец.
@@ -11,7 +11,7 @@ import json
 import re
 from pathlib import Path
 
-import chat_agent as ca
+from eduhub_agent.telegram import chat_agent as ca
 
 PHONE = re.compile(r"\+?\d[\d\s()-]{9,}\d")
 EMAIL = re.compile(r"\S+@\S+\.\w+")

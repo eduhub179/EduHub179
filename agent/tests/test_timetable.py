@@ -3,11 +3,14 @@
 «Общий чат 11Б» нет в timetable.json: класс берётся из названия.
 Даты: 2026-10-12 пн ... 2026-10-17 сб, следующая неделя 19–24.10."""
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
 
-import timetable as T
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from eduhub_agent.server import timetable as T
 
 SUBS = [
     {"date": "2026-10-20", "class": "11Б", "lesson": 5, "subject": None},  # физика во вторник отменена
