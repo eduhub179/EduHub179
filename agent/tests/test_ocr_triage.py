@@ -41,12 +41,19 @@ axis = Reading(text="0 5 10 15 20 25 30", words=0, numbers=12, mean_conf=95.0, p
 
 check("печатный текст принимается", T.accept(print_text)[0])
 check("рукописное отклоняется", not T.accept(handwritten)[0], T.accept(handwritten)[1])
-check("таблица чисел принимается", T.accept(table)[0], T.accept(table)[1])
+# правило таблиц/осей выключено (TABLE_RULE = False): различать график и таблицу пока не нужно
+check("правило таблиц выключено", T.TABLE_RULE is False)
+check("числовая таблица пока не принимается", not T.accept(table)[0], T.accept(table)[1])
+T.TABLE_RULE = True   # проверяем, что выключенный код рабочий — понадобится, когда включим
+check("при включении правила таблица принимается", T.accept(table)[0], T.accept(table)[1])
+T.TABLE_RULE = False
 check("неразборчивое фото с цифрами отклоняется", not T.accept(garbage_nums)[0], T.accept(garbage_nums)[1])
+T.TABLE_RULE = True
 check("таблица с одним заголовком принимается", T.accept(table_one_word)[0], T.accept(table_one_word)[1])
+T.TABLE_RULE = False
 check("числа без единого слова — не таблица",
       not T.accept(Reading(text="625 12 407", words=0, numbers=12, mean_conf=90.0, psm=3, ms=1, engine="t"))[0])
-check("подписи оси графика отклоняются", not T.accept(axis)[0], T.accept(axis)[1])
+check("картинка с одними числами не принимается", not T.accept(axis)[0], T.accept(axis)[1])
 check("пустое не принимается", not T.accept(Reading("", 0, 0, 0.0, 3, 10, "t"))[0])
 check("граница порога: 70 берём, 69 нет",
       T.accept(Reading("текст", 10, 0, 70.0, 3, 1, "t"))[0] and not T.accept(Reading("текст", 10, 0, 69.9, 3, 1, "t"))[0])
