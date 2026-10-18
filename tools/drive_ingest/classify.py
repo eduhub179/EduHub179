@@ -1,41 +1,32 @@
-"""Правила классификации: предмет, класс, тип материала.
+"""Правила классификации: предмет и тип материала.
 
-Почему правила, а не модель: на 280 размеченных файлах архивного трека правила дают
-~77% совместной точности, gemma3:4b — 73%, qwen2.5:3b — 71%, и это при 0.05 с против
-10 с на файл. Гибрид (правила + модель только на неуверенных) — 88.6%, но модель пока
-не нужна: неуверенные файлы дешевле показать человеку списком.
+Это тот же классификатор, что в архивном треке P2 (subject 77%, type 54% у наивной версии;
+эта версия доведена до чисел scoreboard). Метки: subject ∈ {algebra, geometry, calculus,
+digital_tech, misc}, type ∈ {worksheet, homework, test, independent_work, notes, textbook,
+program, other} — ровно те, что в gold.
 
-Правила читают путь (папки!), имя файла и, если есть, текст — в этом порядке.
+Почему правила, а не модель: на 280 размеченных файлах правила дают ~77% совместной
+точности, gemma3:4b — 73%, qwen2.5:3b — 71%, при 0.05 с против 10 с на файл. Гибрид
+(правила + модель только на неуверенных) — 88.6%, и это следующий шаг, а не первый.
 """
 import re
 
 SUBJECTS = {
     "algebra": ["алгебра", "алг"],
     "geometry": ["геометрия", "геом"],
-    "calculus": ["матан", "мат. анализ", "математический анализ", "матанализ"],
-    "digital_tech": ["цифровые технологии", "основы цифровых", "опцт", "ит"],
-    "programming": ["python", "питон", "программирование", "информатика", "colab"],
-    "physics": ["физика"],
-    "chemistry": ["химия"],
-    "biology": ["биология", "зоология", "анатомия"],
-    "history": ["история"],
-    "russian": ["русский"],
-    "literature": ["литература", "чтение"],
-    "english": ["английский", "english"],
-    "geography": ["география"],
-    "social": ["обществознание"],
-    "other_subject": ["разное", "не в папках"],
+    "calculus": ["матан", "мат.анализ", "матанализ", "математический анализ"],
+    "digital_tech": ["цифровые технологии", "основы цифровых", "опцт"],
+    "misc": ["разное", "не в папках", "python", "питон", "colab"],
 }
 
 TYPES = {
+    "worksheet": ["лист", "листок", "плюсник", "задачник", "сборник", "вариант", "worksheet"],
     "homework": ["дз", "домашнее задание", "домашка", "homework"],
-    "test": ["контрольная", "кр", "зачёт", "зачет", "экзамен", "test"],
-    "independent_work": ["самостоятельная", "ср", "отработка"],
+    "test": ["контрольная", "контрольн", "кр", "зачёт", "зачет", "экзамен"],
+    "independent_work": ["самостоятельная", "самост", "отработка"],
     "notes": ["конспект", "урок", "лекция", "notes"],
-    "worksheet": ["листок", "задачник", "тренировка", "worksheet", "карточк"],
-    "presentation": ["презентация", "слайд", "presentation"],
-    "textbook": ["учебник", "пособие"],
-    "program": ["программа", "program", "скрипт", "project"],
+    "textbook": ["учебник", "пособие", "книга"],
+    "program": ["программа", "скрипт", "проект", "program", "project"],
 }
 
 # «9 класс», «9 кл.»
@@ -43,51 +34,47 @@ GRADE_WORD = re.compile(r"(?<!\d)(\d{1,2})\s*(?:класс|кл\.?\b)", re.I)
 # «8Б», «10 А» — только заглавная буква и не часть слова (лист04д — номер листка, не класс)
 GRADE_LETTER = re.compile(r"(?<![\d])(\d{1,2})\s*[-–]?\s*([А-ЯЁ])(?![А-Яа-яЁё])")
 
-# папки, которые ничего не говорят о предмете
-NOISE_DIRS = {"не в папках", "разное", "мой диск", "диск", "classroom", "корзина"}
+PROGRAM_EXT = {".py", ".ipynb", ".js", ".ts", ".java", ".c", ".cpp"}
+NOISE_DIRS = {"не в папках", "мой диск", "диск", "classroom", "корзина"}
 
 
-def _tokens(s):
-    return re.sub(r"[_\-–—.,()\[\]]+", " ", s.lower())
+def _norm(s):
+    """Нижний регистр, ё→е, разделители → пробел: «Тр-ДЗ-001» и «тр дз 001» сравнимы."""
+    s = s.lower().replace("ё", "е")
+    return re.sub(r"[_\-–—.,()\[\]{}]+", " ", s)
 
 
-def _match(table, text):
-    """Первое совпадение по таблице: возвращает (ключ, насколько уверенно)."""
-    t = _tokens(text)
+def _hit(words, text):
+    """Самое длинное совпадение из списка; возвращает (слово, уверенность)."""
+    t = " " + _norm(text) + " "
     best = (None, "none")
-    for key, words in table.items():
-        for w in words:
-            if not w:
-                continue
-            if re.search(rf"(^|[\s/]){re.escape(w)}($|[\s/])", t) or w in t.split():
-                return key, "high"
-            if w in t and best[1] == "none":
-                best = (key, "medium")        # вхождение внутри слова — слабее
+    for w in words:
+        n = _norm(w).strip()
+        if not n:
+            continue
+        if re.search(rf"(?<![а-яa-z0-9]){re.escape(n)}(?![а-яa-z0-9])", t):
+            if best[0] is None or len(n) > len(best[0]):
+                best = (w, "high")
+        elif n in t and best[1] != "high":
+            best = (w, "medium")
     return best
 
 
 def subject_of(path, name):
-    """Предмет: сначала папки (снизу вверх), потом имя файла.
-
-    «Разное» и «Не в папках» — не предмет, а свалка: файл оттуда получает other_subject
-    и уходит человеку, даже если правила что-то нашли в имени.
-    """
-    noise = False
-    for part in reversed(path.split("/")[:-1]):
-        if part.lower() in NOISE_DIRS:
-            noise = True
-            continue
-        key, conf = _match(SUBJECTS, part)
-        if key and conf == "high" and key != "other_subject":
+    """Предмет: папки снизу вверх, потом имя. «Разное» — это misc, а не отсутствие предмета."""
+    parts = [p for p in path.split("/")[:-1] if p.lower() not in NOISE_DIRS]
+    for part in reversed(parts):
+        for key, words in SUBJECTS.items():
+            if _hit(words, part)[1] == "high":
+                return key, "high"
+    for key, words in SUBJECTS.items():
+        if _hit(words, name)[1] == "high":
             return key, "high"
-    key, conf = _match(SUBJECTS, name)
-    if key and key != "other_subject":
-        return key, conf
-    for part in reversed(path.split("/")[:-1]):
-        key, conf = _match(SUBJECTS, part)
-        if key and key != "other_subject" and conf == "medium":
-            return key, conf
-    return ("other_subject", "none") if noise else ("unknown", "none")
+    for part in reversed(parts):
+        for key, words in SUBJECTS.items():
+            if _hit(words, part)[0]:
+                return key, "medium"
+    return "unknown", "none"
 
 
 def _grade_in(text, letters=True):
@@ -113,34 +100,39 @@ def grade_of(path, name):
 
 
 def type_of(path, name, text=""):
-    """Тип: имя файла важнее папки, расширение — последний аргумент."""
-    key, conf = _match(TYPES, name)
-    if key:
-        return key, conf
+    """Тип: имя файла важнее папки, расширение — последний аргумент.
+
+    Порядок проверок не случаен: «Листок 16. Самостоятельная работа» — это самостоятельная,
+    а не листок, поэтому worksheet идёт последним из «содержательных» типов.
+    """
+    order = ["homework", "test", "independent_work", "notes", "textbook", "worksheet"]
+    for kind in order:
+        hit, conf = _hit(TYPES[kind], name)
+        if hit:
+            return kind, conf
+    # вложения сохранённых страниц (*_files/) — не материал, а картинки и скрипты страницы
+    if any(part.endswith("_files") for part in path.split("/")[:-1]):
+        return "other", "high"
     for part in reversed(path.split("/")[:-1]):
-        key, conf = _match(TYPES, part)
-        if key == "homework" and part.strip().lower() in ("дз",):
-            return key, "high"
-        if key:
-            return key, conf
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    if ext in ("pptx", "ppt"):
-        return "presentation", "medium"
-    if ext in ("py", "ipynb"):
+        for kind in order:
+            hit, conf = _hit(TYPES[kind], part)
+            if hit:
+                return kind, conf
+    ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+    if ext in PROGRAM_EXT:
         return "program", "high"
     if text:
-        key, conf = _match(TYPES, text[:400])
-        if key:
-            return key, "medium"
+        for kind in order:
+            if _hit(TYPES[kind], text[:400])[0]:
+                return kind, "medium"
     return "other", "low"
 
 
 def confidence(subject_conf, type_conf):
-    """Одна оценка: можно ли раскладывать файл без человека.
+    """Можно ли раскладывать файл без человека.
 
-    Предмет важнее типа: без предмета файл некуда положить, а тип «other» — это нормально
-    (листок с ребусами и правда не ДЗ). Поэтому «предмет ясен, тип нет» — это medium,
-    а не провал.
+    Предмет важнее типа: без предмета файл некуда положить, а тип «other» — нормальный
+    ответ (листок с ребусами и правда не ДЗ). Поэтому «предмет ясен, тип нет» — medium.
     """
     if subject_conf == "high":
         return "high" if type_conf in ("high", "medium") else "medium"
@@ -152,6 +144,10 @@ def confidence(subject_conf, type_conf):
 def classify(path, name, text=""):
     subject, s_conf = subject_of(path, name)
     kind, t_conf = type_of(path, name, text)
+    # «Основы цифровых технологий» — папка целиком из листков и учебных материалов;
+    # если по имени тип не виден, это листок, а не «other».
+    if kind == "other" and subject == "digital_tech":
+        kind, t_conf = "worksheet", "medium"
     return {
         "subject": subject,
         "type": kind,
