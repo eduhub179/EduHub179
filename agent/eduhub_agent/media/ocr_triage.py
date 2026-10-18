@@ -13,7 +13,7 @@
 графики и скриншоты установщика. Порог поэтому стоит в пустоте, а не на глаз.
 
 Распознанное не отправляется никуда: фото и текст остаются на этом компьютере.
-Всё, что прочитать не удалось, но текстом быть может, пишется в `chats/ocr_queue.jsonl` —
+Всё, что прочитать не удалось, но текстом быть может, пишется в `state/ocr_queue.jsonl` —
 это очередь для будущего движка (облачный OCR или модель), см. ocr_providers.py.
 """
 import hashlib
@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from eduhub_agent.paths import CHATS as PATHS_CHATS
+from eduhub_agent.paths import STATE as PATHS_STATE
 from eduhub_agent.media import ocr_providers as providers
 
 # Порог: 70. Проверено на архиве (402 документа): в полосе 60-79 нет ни одного домашнего
@@ -37,9 +37,9 @@ CONF_TABLE = 60.0       # печатная таблица читается ув�
 MAX_SIDE = 2600         # больше не нужно: телефонное фото 4000 px читается дольше и не точнее
 UPSCALE_TO = 1600       # мелкие фото увеличиваем, так Tesseract ошибается реже
 
-CHATS = PATHS_CHATS
-QUEUE = CHATS / "ocr_queue.jsonl"
-CACHE = CHATS / "ocr_cache.json"
+STATE = PATHS_STATE
+QUEUE = STATE / "ocr_queue.jsonl"
+CACHE = STATE / "ocr_cache.json"
 _cache = None
 
 
@@ -78,7 +78,7 @@ def _save_cache(key, row):
     cache = _load_cache()
     cache[key] = row
     try:
-        CHATS.mkdir(exist_ok=True)
+        STATE.mkdir(exist_ok=True)
         json.dump(cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)
     except OSError:
         pass
@@ -89,7 +89,7 @@ def _queue(path, reading, reason):
     if not reading:
         return
     try:
-        CHATS.mkdir(exist_ok=True)
+        STATE.mkdir(exist_ok=True)
         row = {"sha256": _sha256(path), "name": Path(path).name, "reason": reason,
                "conf": reading.mean_conf, "words": reading.words, "numbers": reading.numbers,
                "shape": "handwriting" if reading.words >= MIN_WORDS else "no_text",

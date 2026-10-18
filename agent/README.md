@@ -19,7 +19,8 @@ agent/
 ├── tests/                     # test_*.py и test_*.tsv
 ├── data/                      # timetable.example.json
 ├── docs/                      # фото-разбор.md, models_results.md
-├── chats/                     # личные данные и кеши (в git не попадают)
+├── chats/                     # переписки и выгрузки: личные данные (в git не попадают)
+├── state/                     # кеши и очереди, которые сервис пишет сам (можно удалить)
 ├── requirements.txt
 └── .env.example
 ```
