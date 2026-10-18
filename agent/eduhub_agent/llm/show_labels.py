@@ -2,13 +2,15 @@
 import html
 import json
 
+from eduhub_agent.paths import CHATS, data
+
 NAMES = {"h": "домашка", "t": "контрольная", "l": "изменение урока", "m": "материал",
          "i": "инфо", "p": "уточнение", "n": "болтовня"}
 COLORS = {"h": "#2b7", "t": "#d63", "l": "#c90", "m": "#37c", "i": "#86c", "p": "#999", "n": "#ccc"}
 
-rows = [json.loads(l) for l in open("chats/dataset.jsonl", encoding="utf-8")]
+rows = [json.loads(l) for l in open(CHATS / "dataset.jsonl", encoding="utf-8")]
 codes = {}
-for line in open("chat_labels.txt", encoding="utf-8"):
+for line in open(data("chat_labels.txt"), encoding="utf-8"):
     if not line.startswith("#"):
         for tok in line.split():
             codes[int(tok.rstrip("htlmip"))] = tok.lstrip("0123456789")
@@ -29,5 +31,5 @@ body{{font:14px system-ui;max-width:900px;margin:auto;padding:12px}} .m{{border-
 i{{color:#d33;font-size:12px}} button{{margin:2px}}</style>
 <p>{buttons}<button onclick="f('')">все</button></p>{''.join(out)}
 <script>function f(k){{document.querySelectorAll('.m').forEach(e=>e.style.display=!k||e.classList.contains('c-'+k)?'':'none')}}f('h')</script>"""
-open("chats/разметка.html", "w", encoding="utf-8").write(page)
+open(CHATS / "разметка.html", "w", encoding="utf-8").write(page)
 print(f"готово: chats/разметка.html ({len(rows)} сообщений)")

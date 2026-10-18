@@ -1,9 +1,9 @@
 """Прогоняет посты канала через локальную модель Ollama и сравнивает с ручной разметкой.
 
 Запуск (Ollama должна быть запущена):
-    python3 llm_extract.py                 # модель qwen2.5:7b
-    python3 llm_extract.py qwen2.5:3b      # другая модель
-    python3 llm_extract.py qwen2.5:7b 20   # только первые 20 постов, для пробы
+    python3 -m eduhub_agent.llm.llm_extract                 # модель qwen2.5:7b
+    python3 -m eduhub_agent.llm.llm_extract qwen2.5:3b      # другая модель
+    python3 -m eduhub_agent.llm.llm_extract qwen2.5:7b 20   # только первые 20 постов, для пробы
 Ответы сохраняются в llm_<модель>.json; при повторном запуске уже готовые посты пропускаются.
 """
 import json
@@ -14,7 +14,8 @@ import time
 import urllib.request
 from datetime import date
 
-from baseline_rules import extract as rules_extract
+from eduhub_agent.llm.baseline_rules import extract as rules_extract
+from eduhub_agent.paths import data
 
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "qwen2.5:7b"
 LIMIT = int(sys.argv[2]) if len(sys.argv) > 2 else None
@@ -163,8 +164,8 @@ def evaluate(results, labels):
 
 
 def main():
-    posts = json.load(open("posts.json", encoding="utf-8"))
-    labels = json.load(open("labels.json", encoding="utf-8"))
+    posts = json.load(open(data("posts.json"), encoding="utf-8"))
+    labels = json.load(open(data("labels.json"), encoding="utf-8"))
     dup = {r["id"] for r in labels if r.get("duplicate_of")}
     todo = [p for p in posts if p["id"] not in dup][:LIMIT]
     try:

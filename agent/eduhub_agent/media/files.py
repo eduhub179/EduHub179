@@ -3,7 +3,7 @@
 Текст файла показывается модели вместе с сообщением, поэтому «ДЗ.pdf» без подписи теперь понятно по содержимому.
 PDF читается библиотекой pypdf (один раз: .venv/bin/pip install pypdf) или, если её нет, программой pdftotext
 (brew install poppler). DOCX и PPTX читаются без библиотек.
-Фото распознаёт Tesseract (brew install tesseract; русский язык берётся из папки tessdata рядом со скриптом
+Фото распознаёт Tesseract (brew install tesseract; русский язык берётся из папки tessdata в корне agent/
 или из brew install tesseract-lang) через ocr_triage: текст берётся, только если Tesseract уверен в прочитанном.
 Рукописную доску он читает с уверенностью ~40 и текст не отдаёт — такое фото уходит в board.py.
 Скачанные файлы лежат в chats/files/<чат>/ на этом компьютере и никуда не отправляются.
@@ -17,6 +17,8 @@ import urllib.request
 import zipfile
 from html import unescape
 from pathlib import Path
+
+from eduhub_agent.paths import TESSDATA as PATHS_TESSDATA
 
 MAX_CHARS = 2000  # столько текста файла видит модель (начало файла: там обычно номер листка, задания и срок)
 MAX_PAGES = 5
@@ -56,14 +58,14 @@ def _pdf(path):
     return None
 
 
-TESSDATA = Path(__file__).parent / "tessdata"
+TESSDATA = PATHS_TESSDATA
 IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
 def _image(path):
     """Текст с фото через ocr_triage (Tesseract + порог уверенности). None — если текста на фото нет."""
     try:
-        import ocr_triage
+        from eduhub_agent.media import ocr_triage
     except ImportError as e:  # ocr_triage.py лежит рядом
         _warn_once("ocr-triage", f"Фото не распознаются: не найден ocr_triage.py ({e})")
         return None

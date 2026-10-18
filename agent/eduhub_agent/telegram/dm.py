@@ -26,10 +26,10 @@ import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import backend_api
-import chat_moderation
-import timetable
-from moderator import env
+from eduhub_agent.server import backend_api
+from eduhub_agent.telegram import chat_moderation
+from eduhub_agent.server import timetable
+from eduhub_agent.config import env
 
 DRAFTS = "chats/dm_drafts.json"
 HORIZON = 14  # на сколько дней вперёд ищем уроки предмета

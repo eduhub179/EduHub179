@@ -9,13 +9,16 @@ python3 test_ocr_triage.py
   * облачный OCR и модель для картинок объявлены, но выключены (ключей и сети нет).
 """
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
 
-import ocr_triage as T
-import ocr_providers as P
-from ocr_providers import Reading
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from eduhub_agent.media import ocr_triage as T
+from eduhub_agent.media import ocr_providers as P
+from eduhub_agent.media.ocr_providers import Reading
 
 fails = 0
 
