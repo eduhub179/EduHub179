@@ -5,7 +5,7 @@
 но намеренно не подключены: `available()` возвращает False, ключей и сети нет.
 
 Зачем так: всё, что движки должны были бы прочитать, попадает в очередь
-`chats/ocr_queue.jsonl`. Подключить новый движок потом — это один класс, а не переделка
+`state/ocr_queue.jsonl`. Подключить новый движок потом — это один класс, а не переделка
 чтения вложений: `ocr_triage.read_image()` спрашивает провайдеров по очереди.
 
     class Provider:
@@ -146,25 +146,52 @@ def get(name):
 NUM = re.compile(r"^[-−]?\d+(?:[.,]\d+)?$")
 
 
-def _is_axis(tokens):
-    """Подписи оси графика: пять и больше чисел подряд, по возрастанию или убыванию."""
-    nums = []
-    for t in tokens:
-        if NUM.match(t):
-            try:
-                nums.append(float(t.replace(",", ".").replace("−", "-")))
-            except ValueError:
-                pass
+def _axis_from_numbers(nums, page_w):
+    """Подписи оси графика, а не строка таблицы.
+
+    nums — [(x, y, высота слова)] центры чисел. Ось узнаём по геометрии, а не по тексту:
+    пять и больше чисел на одной высоте, расставленных по x с ровными промежутками
+    (тики), и под ними нет колонок — у таблицы числа выстроены в столбцы, у оси под
+    каждым тиком пусто. Без этой проверки ряд «1 2 3 4 5 6» в таблице выглядел как ось.
+    """
     if len(nums) < 5:
         return False
-    return nums == sorted(nums) or nums == sorted(nums, reverse=True)
+    # строки: соседние числа с почти одинаковой высотой — одна строка
+    ordered = sorted(nums, key=lambda n: n[1])
+    rows, cur = [], []
+    for n in ordered:
+        if cur and abs(n[1] - cur[-1][1]) > max(n[2], cur[-1][2]) * 0.5:
+            rows.append(cur)
+            cur = []
+        cur.append(n)
+    if cur:
+        rows.append(cur)
+
+    tol = max(page_w * 0.02, 1.0)
+    for row in rows:
+        if len(row) < 5:
+            continue
+        xs = sorted(x for x, _, _ in row)
+        gaps = [b - a for a, b in zip(xs, xs[1:])]
+        if min(gaps) <= 0 or max(gaps) > 3 * min(gaps):
+            continue                      # тики стоят ровно, у текста промежутки разные
+        columns = 0
+        for other in rows:
+            if other is row:
+                continue
+            hits = sum(1 for ox, _, _ in other if any(abs(ox - tx) <= tol for tx in xs))
+            if hits >= 2:
+                columns += 1
+        if columns == 0:
+            return True
+    return False
 
 
 def _parse_tsv(tsv):
     """Текст, число слов, число чисел, средняя уверенность и признак оси графика."""
     lines, confs = {}, []
     words = numbers = 0
-    axis = False
+    nums, page_w = [], 1
     for raw in tsv.splitlines()[1:]:
         c = raw.split("\t")
         if len(c) < 12 or c[0] != "5":
@@ -181,10 +208,15 @@ def _parse_tsv(tsv):
             words += 1
         if any(ch.isdigit() for ch in w):
             numbers += 1
+        if NUM.match(w):
+            try:
+                left, top, width, height = int(c[6]), int(c[7]), int(c[8]), int(c[9])
+                nums.append((left + width / 2, top + height / 2, height))
+                page_w = max(page_w, left + width)
+            except ValueError:
+                pass
         lines.setdefault((c[2], c[3], c[4]), []).append(w)
-    for key in sorted(lines):
-        if _is_axis(lines[key]):
-            axis = True
+    axis = _axis_from_numbers(nums, page_w)
     text = "\n".join(" ".join(v) for _, v in sorted(lines.items()))
     mean = sum(confs) / len(confs) if confs else 0.0
     return text, words, numbers, round(mean, 1), axis

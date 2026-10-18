@@ -5,7 +5,7 @@
 Модель: BOARD_MODEL, по умолчанию qwen2.5vl:3b (3.2 ГБ, один раз: ollama pull qwen2.5vl:3b), ~11 с на фото.
 moondream (1.7 ГБ) проверили 2026-10-16 на 25 фото: ни одной доски не нашла, не годится. С qwen2.5:7b в 8 ГБ вместе
 qwen2.5vl:3b не помещается, Ollama грузит их по очереди; фото без подписи приходят редко, так что это терпимо.
-Ответы запоминаются в chats/board_cache.json, чтобы одно фото не проверять дважды.
+Ответы запоминаются в state/board_cache.json, чтобы одно фото не проверять дважды, чтобы одно фото не проверять дважды.
 """
 import base64
 import hashlib
@@ -14,11 +14,11 @@ import os
 import urllib.request
 from pathlib import Path
 
-from eduhub_agent.paths import CHATS
+from eduhub_agent.paths import STATE
 
 BOARD_MODEL = os.environ.get("BOARD_MODEL", "qwen2.5vl:3b")
 URL = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/generate"
-CACHE = CHATS / "board_cache.json"
+CACHE = STATE / "board_cache.json"
 PROMPT = ("Is this a photo of a classroom board (usually a white marker whiteboard, sometimes a chalkboard) "
           "with handwritten notes, formulas, tasks or a homework assignment written on it? Answer only yes or no.")
 _cache = None
@@ -53,7 +53,7 @@ def is_board(path):
     verdict = answer.startswith(("yes", "да"))
     cache[key] = verdict
     try:
-        CACHE.parent.mkdir(exist_ok=True)
+        STATE.mkdir(exist_ok=True)
         json.dump(cache, open(CACHE, "w", encoding="utf-8"))
     except OSError:
         pass
