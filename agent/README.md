@@ -48,7 +48,7 @@ agent/
 | `files/read.py` | **один читатель для всех источников**: PDF (с OCR для сканов), DOCX, PPTX, XLSX, TXT, фото |
 | `files/decide.py` | один решатель: `accepted` / `queued` / `review` / `skip` — общий для папки, Drive и Telegram |
 | `files/attachments.py`, `files/board.py` | Telegram-специфика: скачивание вложения, вопрос «это доска?» (`PHOTO_MODE=board`) |
-| `media/ocr_triage.py`, `media/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
+| `files/ocr_triage.py`, `files/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
 | `llm/llm_extract.py`, `llm/baseline_rules.py` | мероприятия из постов: модель + правила |
 | `llm/train_classifier.py`, `llm/build_dataset.py` | фильтр болтовни (нужны экспорты чатов, в репозиторий не входят) |
 | `llm/make_labels.py`, `llm/show_labels.py` | ручная разметка постов канала (`labels.json`); сами посты в репозиторий не входят, там имена учеников |
