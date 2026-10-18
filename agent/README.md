@@ -15,7 +15,10 @@ agent/
 │   ├── telegram/              # всё, что говорит с Telegram
 │   ├── media/                 # вложения: PDF/DOCX, фото, распознавание
 │   ├── llm/                   # модель, правила, датасет, обучение фильтра
-│   └── server/                # бэкенд EduHub и расписание
+│   ├── server/                # бэкенд EduHub и расписание
+│   ├── classify/              # классификатор материалов из трека P2 (промпт + модель)
+│   ├── ingest/                # разовый разбор папки: что за файлы (бэкфилл)
+│   └── crawler/               # синхронизация источника: что изменилось (Drive/папка)
 ├── tests/                     # test_*.py и test_*.tsv
 ├── data/                      # timetable.example.json
 ├── docs/                      # фото-разбор.md, models_results.md
@@ -49,6 +52,9 @@ agent/
 | `llm/make_labels.py`, `llm/show_labels.py` | ручная разметка постов канала (`labels.json`); сами посты в репозиторий не входят, там имена учеников |
 | `tests/test_agent.py` + `tests/test_*.tsv` | проверка на придуманных сообщениях: `python3 tests/test_agent.py tests/test_final.tsv` |
 | `tests/test_timetable.py` | проверка привязки ДЗ к урокам, без модели |
+| `classify/` | предмет и тип материала: промпт P2 + JSON-схема, модель из Ollama. Подменяется в тестах параметром `classifier` |
+| `ingest/` | разовый проход по папке: `python3 -m eduhub_agent.ingest scan "<папка>" --out out/math` |
+| `crawler/` | синхронизация: `python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json`; `--fixture` — без ключей |
 | `docs/models_results.md` | сравнение локальных моделей |
 | `docs/фото-разбор.md` | что сделано с фото 16.10 и как к этому вернуться |
 

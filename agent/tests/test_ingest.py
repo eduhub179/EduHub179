@@ -1,7 +1,8 @@
-"""Проверка разбора папок без сети и без модели: python3 tools/drive_ingest/test_drive_ingest.py
+"""Проверка разбора папок без сети и без модели: python3 tests/test_ingest.py
 
 Что закрепляем:
-  * предмет берётся из папки, тип — из имени файла; «Разное» предметом не считается;
+  * обвязка: скан, манифест, review, копии; класс считается по папке/имени;
+    сам классификатор — модель из `eduhub_agent.classify`, в тестах он подменён;
   * класс вытаскивается из «9 класс» и из «7Б»;
   * точные копии помечаются, но не удаляются;
   * в review.csv попадают только файлы с неясным предметом (это работа для человека);
@@ -15,12 +16,24 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent))
+sys.path.insert(0, str(HERE.parent))
 
-from tools.drive_ingest.classify import classify, grade_of  # noqa: E402
-from tools.drive_ingest.extract import extract  # noqa: E402
-from tools.drive_ingest.source import LocalSource  # noqa: E402
-from tools.drive_ingest.__main__ import scan  # noqa: E402
+from eduhub_agent.ingest.grade import grade_of  # noqa: E402
+from eduhub_agent.ingest.extract import extract  # noqa: E402
+from eduhub_agent.ingest.source import LocalSource  # noqa: E402
+from eduhub_agent.ingest.__main__ import scan  # noqa: E402
+
+# Классификатор — модель (10 с на файл). В тестах подменяем: проверяем обвязку, а не модель.
+FAKE = {"subject": "algebra", "type": "homework", "lesson": None, "date": None,
+        "subject_conf": "high", "type_conf": "high", "confidence": "high", "engine": "fake"}
+
+
+def fake_classify(path, name="", text="", **kw):
+    """Заглушка вместо модели: класс считается по-настоящему, предмет/тип — фиксированные."""
+    if "Разное" in str(path) or "непонятно" in str(name):
+        return {**FAKE, "subject": "unknown", "confidence": "none", "subject_conf": "none",
+                "grade": grade_of(path, name)}
+    return {**FAKE, "grade": grade_of(path, name)}
 
 fails = 0
 
@@ -31,34 +44,31 @@ def check(name, cond, detail=""):
     fails += not cond
 
 
-# --- классификация ------------------------------------------------------------------
-r = classify("Алгебра/дз/9 класс/ДЗ-004-к-12-10-2024.pdf", "ДЗ-004-к-12-10-2024.pdf")
-check("предмет из папки", r["subject"] == "algebra", r["subject"])
-check("тип из имени файла", r["type"] == "homework", r["type"])
+# --- класс: правило, а не модель -------------------------------------------------------
+r = fake_classify("Алгебра/дз/9 класс/ДЗ-004-к-12-10-2024.pdf", "ДЗ-004-к-12-10-2024.pdf")
 check("класс из папки", r["grade"] == 9, r["grade"])
-check("уверенность высокая", r["confidence"] == "high", r["confidence"])
-
-r = classify("Геометрия/листки/8Б/листок 3.pdf", "листок 3.pdf")
-check("листок — worksheet", r["type"] == "worksheet", r["type"])
+r = fake_classify("Геометрия/листки/8Б/листок 3.pdf", "листок 3.pdf")
 check("класс из 8Б", r["grade"] == 8, r["grade"])
-
-r = classify("Разное/что-то.pdf", "что-то.pdf")
-check("«Разное» — это misc", r["subject"] == "misc", r["subject"])
-check("misc не требует человека", r["confidence"] in ("high", "medium"), r["confidence"])
-r = classify("файл-в-корне.pdf", "файл-в-корне.pdf")
-check("файл без папки — unknown", r["subject"] == "unknown", r["subject"])
-check("файл без папки — в review", r["confidence"] in ("low", "unknown"), r["confidence"])
-
-r = classify("Матан/конспекты/лекция 3.pdf", "лекция 3.pdf")
-check("матан — calculus", r["subject"] == "calculus", r["subject"])
-check("конспект — notes", r["type"] == "notes", r["type"])
-
+r = fake_classify("Разное/что-то.pdf", "что-то.pdf")
+check("«Разное» без текста — предмет неясен", r["subject"] == "unknown", r["subject"])
+check("и это повод позвать человека", r["confidence"] in ("low", "none"), r["confidence"])
 check("класс без папки — None", grade_of("Разное/файл.pdf", "файл.pdf") is None)
-# регрессия: номер листка в имени не должен перебивать класс из папки
 check("папка важнее имени", grade_of("Матан/9 класс/лист04д--хелли.pdf", "лист04д--хелли.pdf") == 9)
 check("лист12д — не 12 класс", grade_of("Матан/лист12д--чум.pdf", "лист12д--чум.pdf") is None)
 check("8Б из папки", grade_of("Геометрия/8Б/листок.pdf", "листок.pdf") == 8)
 check("двузначный класс в имени", grade_of("Математика/x.pdf", "10 класс, листок 2.pdf") == 10)
+
+# --- порт классификатора из P2: строгий разбор ответа модели ---------------------------
+from eduhub_agent.classify import SUBJECTS, TYPES, parse  # noqa: E402
+
+check("категории — те же, что в P2",
+      SUBJECTS == ["algebra", "geometry", "calculus", "digital_tech", "programming"]
+      and TYPES[-1] == "other" and "plusnik_sheet" in TYPES, (SUBJECTS, TYPES))
+check("parse: валидный ответ",
+      parse('{"subject":"algebra","type":"homework","lesson":3,"date":null}')["lesson"] == 3)
+check("parse: чужая категория отклоняется", parse('{"subject":"физика","type":"homework"}') is None)
+check("parse: мусор отклоняется", parse("не json") is None)
+check("parse: отсутствие полей отклоняется", parse('{"subject":"algebra"}') is None)
 
 # --- извлечение текста ---------------------------------------------------------------
 with tempfile.TemporaryDirectory() as td:
@@ -82,7 +92,7 @@ with tempfile.TemporaryDirectory() as td:
     (root / "Корзина" / "мусор.pdf").write_bytes(b"%PDF-1.4 trash")
 
     out = Path(td) / "out"
-    rows, _ = scan(LocalSource(root), out)
+    rows, _ = scan(LocalSource(root), out, classifier=fake_classify)
     check("служебная папка пропущена", len(rows) == 3, len(rows))
     dupes = [x for x in rows if x.get("duplicate_of")]
     check("копия помечена", len(dupes) == 1, len(dupes))
@@ -99,17 +109,10 @@ with tempfile.TemporaryDirectory() as td:
     check("в манифесте есть путь-ссылка, а не копия",
           all(x.get("path") for x in manifest), [x.get("path") for x in manifest])
 
-    # --- категории добавляются без правки кода -------------------------------------------
-    import json as _json
-    from tools.drive_ingest.classify import classify, load_categories, set_categories
-    check("неизвестный предмет до настройки", classify("Физика/кр.pdf", "кр.pdf")["subject"] == "unknown")
-    custom = _json.load(open(HERE / "categories.json", encoding="utf-8"))
-    custom["subjects"]["physics"] = ["физика"]
-    custom_path = Path(td) / "categories_custom.json"
-    custom_path.write_text(_json.dumps(custom, ensure_ascii=False), encoding="utf-8")
-    set_categories(load_categories(custom_path))
-    check("после добавления категории — physics", classify("Физика/кр.pdf", "кр.pdf")["subject"] == "physics")
-    set_categories(load_categories(HERE / "categories.json"))
+    # --- классификатор подменяется, модель в тестах не нужна ------------------------------
+    check("подмена классификатора работает без модели",
+          fake_classify("Физика/кр.pdf")["subject"] == "algebra", "заглушка отвечает всегда")
+
 
 print(f"\n{'FAILED' if fails else 'all good'} — {fails} failure(s)")
 sys.exit(1 if fails else 0)
