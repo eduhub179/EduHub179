@@ -13,10 +13,11 @@
 графики и скриншоты установщика. Порог поэтому стоит в пустоте, а не на глаз.
 
 Распознанное не отправляется никуда: фото и текст остаются на этом компьютере.
+Кеша распознанного нет: одинаковые байты ещё не значат одинаковое задание, а порог
+уверенности меняется — старые ответы пришлось бы сбрасывать вручную.
 Всё, что прочитать не удалось, но текстом быть может, пишется в `state/ocr_queue.jsonl` —
 это очередь для будущего движка (облачный OCR или модель), см. ocr_providers.py.
 """
-import hashlib
 import json
 import os
 import tempfile
@@ -39,8 +40,6 @@ UPSCALE_TO = 1600       # мелкие фото увеличиваем, так T
 
 STATE = PATHS_STATE
 QUEUE = STATE / "ocr_queue.jsonl"
-CACHE = STATE / "ocr_cache.json"
-_cache = None
 
 
 @dataclass
@@ -56,54 +55,23 @@ class Triage:
     engine: str
 
 
-def _sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _load_cache():
-    global _cache
-    if _cache is None:
-        try:
-            _cache = json.load(open(CACHE, encoding="utf-8"))
-        except (OSError, ValueError):
-            _cache = {}
-    return _cache
-
-
-def _save_cache(key, row):
-    cache = _load_cache()
-    cache[key] = row
-    try:
-        STATE.mkdir(exist_ok=True)
-        json.dump(cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)
-    except OSError:
-        pass
-
-
 def _queue(path, reading, reason):
-    """Записать фото в очередь для будущего движка. Повторы (то же фото переслали ещё раз) не дублируем."""
+    """Записать фото в очередь для будущего движка: что не прочитали, но прочитать можно.
+
+    Дедупликации нет намеренно: одинаковые байты ещё не значат одинаковое задание, а
+    разные фото одной доски — тем более. Пять снимков одной страницы останутся пятью
+    строками; разбирать их будет движок, который знает больше, чем хеш.
+    """
     if not reading:
         return
     try:
         STATE.mkdir(exist_ok=True)
-        row = {"sha256": _sha256(path), "name": Path(path).name, "reason": reason,
-               "conf": reading.mean_conf, "words": reading.words, "numbers": reading.numbers,
+        row = {"name": Path(path).name, "reason": reason, "conf": reading.mean_conf,
+               "words": reading.words, "numbers": reading.numbers,
                "shape": "handwriting" if reading.words >= MIN_WORDS else "no_text",
                "ts": int(time.time())}
-        seen = set()
-        if QUEUE.exists():
-            for line in open(QUEUE, encoding="utf-8"):
-                try:
-                    seen.add(json.loads(line)["sha256"])
-                except (ValueError, KeyError):
-                    continue
-        if row["sha256"] not in seen:
-            with open(QUEUE, "a", encoding="utf-8") as f:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        with open(QUEUE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
         pass
 
@@ -164,12 +132,6 @@ def _prepare(path):
 def read_image(path):
     """Разобрать одно фото. Возвращает Triage; текст в `.text` (или None)."""
     path = Path(path)
-    key = _sha256(path)
-    cached = _load_cache().get(key)
-    if cached:
-        return Triage(text=cached.get("text"), route=cached["route"], reason=cached.get("reason", "кеш"),
-                      conf=cached.get("conf", 0.0), words=cached.get("words", 0), numbers=cached.get("numbers", 0),
-                      psm=cached.get("psm", 0), ms=0, engine="cache:" + str(cached.get("engine", "?")))
 
     src, tmp = _prepare(path)
     try:
@@ -208,9 +170,6 @@ def read_image(path):
                     engine=best.engine if best else "none")
     if route == "queued":
         _queue(path, best, reason)
-    _save_cache(key, {"text": text, "route": route, "reason": reason, "conf": result.conf,
-                      "words": result.words, "numbers": result.numbers, "psm": result.psm,
-                      "engine": result.engine})
     return result
 
 
