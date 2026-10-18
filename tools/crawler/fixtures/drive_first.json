@@ -1,0 +1,49 @@
+{
+  "start": {
+    "startPageToken": "T0"
+  },
+  "files:": {
+    "files": [
+      {
+        "id": "F1",
+        "name": "ДЗ-15.pdf",
+        "mimeType": "application/pdf",
+        "size": "12345",
+        "modifiedTime": "2026-10-18T19:40:00Z",
+        "md5Checksum": "aaa",
+        "parents": [
+          "P9"
+        ]
+      },
+      {
+        "id": "F2",
+        "name": "конспект.docx",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "size": "8000",
+        "modifiedTime": "2026-10-18T18:00:00Z",
+        "md5Checksum": "bbb",
+        "parents": [
+          "P9"
+        ]
+      }
+    ]
+  },
+  "file:P9": {
+    "id": "P9",
+    "name": "9 класс",
+    "parents": [
+      "PALG"
+    ]
+  },
+  "file:PALG": {
+    "id": "PALG",
+    "name": "Алгебра",
+    "parents": [
+      "PROOT"
+    ]
+  },
+  "changes:T0": {
+    "changes": [],
+    "newStartPageToken": "T0b"
+  }
+}
