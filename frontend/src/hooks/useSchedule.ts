@@ -32,6 +32,8 @@ const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>
                 endTime: lesson.end_time,
                 lessonNumber: index + 1,
                 title: lesson.subject_name,
+                teachers: lesson.teachers.map((teacher) => teacher.trim().split(/\s+/)[0]).filter(Boolean),
+                cabinet: lesson.cabinet,
                 homework: lesson.homework
                     ? {description: lesson.homework.text, files: []}
                     : undefined,
@@ -39,9 +41,9 @@ const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>
         };
     });
 
-export const useSchedule = (): ScheduleState => {
+export const useSchedule = (selectedClassOverride?: string): ScheduleState => {
     const {user} = useAuth();
-    const schoolClass = user?.schoolClass?.trim() ?? '';
+    const schoolClass = (selectedClassOverride ?? user?.schoolClass ?? '').trim();
     const [state, setState] = useState<ScheduleState>({
         days: [],
         isLoading: false,

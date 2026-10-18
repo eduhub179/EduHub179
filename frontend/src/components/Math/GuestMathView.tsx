@@ -1,14 +1,16 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import type {ClassOption} from '../ClassTable';
 import ClassParallelPicker from './ClassParallelPicker';
 import MathClassSelector from './MathClassSelector';
 
 interface GuestMathViewProps {
     schoolClass: string | undefined;
     onSelectClass: (schoolClass: string) => void;
+    classOptions: ClassOption[];
 }
 
-const GuestMathView: React.FC<GuestMathViewProps> = ({ schoolClass, onSelectClass }) => (
+const GuestMathView: React.FC<GuestMathViewProps> = ({schoolClass, onSelectClass, classOptions}) => (
         <section className="math-content" aria-labelledby="math-title">
             <div className="math-content__top">
                 <div>
@@ -18,7 +20,7 @@ const GuestMathView: React.FC<GuestMathViewProps> = ({ schoolClass, onSelectClas
                     </h1>
                 </div>
                 {schoolClass && (
-                    <MathClassSelector schoolClass={schoolClass} onChange={onSelectClass} />
+                    <MathClassSelector classOptions={classOptions} schoolClass={schoolClass} onChange={onSelectClass} />
                 )}
             </div>
             <p className="math-content__description">
@@ -32,7 +34,7 @@ const GuestMathView: React.FC<GuestMathViewProps> = ({ schoolClass, onSelectClas
                 </Link>
             </div>
 
-            {!schoolClass && <ClassParallelPicker onSelectClass={onSelectClass} />}
+            {!schoolClass && <ClassParallelPicker classOptions={classOptions} onSelectClass={onSelectClass} />}
         </section>
 );
 

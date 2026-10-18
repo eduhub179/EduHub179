@@ -101,10 +101,24 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                         <div className="schedule__title">
                                             {item.title || '—'}
                                         </div>
+                                        {(item.cabinet?.trim() || item.teachers?.some((teacher) => teacher.trim())) && (
+                                            <div className="schedule__lesson-meta">
+                                                {[
+                                                    item.cabinet?.trim(),
+                                                    item.teachers?.some((teacher) => teacher.trim()) &&
+                                                        item.teachers.filter((teacher) => teacher.trim()).join(', '),
+                                                ].filter(Boolean).join(' · ')}
+                                            </div>
+                                        )}
                                     </div>
                                     {item.homework && (
                                         <span className="schedule__homework-button">
                                             {item.homework.description}
+                                        </span>
+                                    )}
+                                    {item.homework && (
+                                        <span className="schedule__homework-badge" aria-label="Есть домашнее задание">
+                                            ДЗ
                                         </span>
                                     )}
                                 </div>
