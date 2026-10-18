@@ -53,7 +53,7 @@ agent/
 | `tests/test_timetable.py` | проверка привязки ДЗ к урокам, без модели |
 | `classify/` | предмет и тип материала: промпт P2 + JSON-схема, модель из Ollama. Подменяется в тестах параметром `classifier` |
 | `ingest/` | разовый проход по папке: `python3 -m eduhub_agent.ingest scan "<папка>" --out out/math` |
-| `crawler/` | синхронизация: `python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json`; `--fixture` — без ключей |
+| `crawler/` | синхронизация: из папки `agent/` — `python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json`; `--fixture` — без ключей |
 | `docs/models_results.md` | сравнение локальных моделей |
 | `docs/фото-разбор.md` | что сделано с фото 16.10 и как к этому вернуться |
 
@@ -70,7 +70,7 @@ BOT_TOKEN=*** .venv/bin/python chat_agent.py live --channel  # основной 
 .venv/bin/python watch_channel.py loop                      # только каналы, если чаты не нужны
 ```
 
-Утилиты без обёртки запускаются как модули из корня `agent/`, например
+Утилиты без обёртки запускаются как модули из корня `agent/` (там лежит пакет `eduhub_agent`), например
 `python3 -m eduhub_agent.server.backend_api retry`, `python3 -m eduhub_agent.media.board_check 60`,
 `python3 -m eduhub_agent.llm.make_labels`.
 
