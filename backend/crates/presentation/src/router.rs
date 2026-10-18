@@ -262,7 +262,9 @@ pub struct TelegramLookup {
 fn cors_layer() -> CorsLayer {
     let allow_origin = [
         "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+        "http://localhost:5174".parse::<HeaderValue>().unwrap(),
         "http://127.0.0.1:5173".parse::<HeaderValue>().unwrap(),
+        "http://127.0.0.1:5174".parse::<HeaderValue>().unwrap(),
     ];
 
     CorsLayer::new()
@@ -271,6 +273,7 @@ fn cors_layer() -> CorsLayer {
         .allow_headers([
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
+            axum::http::header::HeaderName::from_static("x-internal-secret"),
         ])
         .allow_credentials(true)
 }
