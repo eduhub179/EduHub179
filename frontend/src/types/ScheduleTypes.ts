@@ -4,7 +4,7 @@ export interface Homework {
 }
 
 export interface ScheduleItem {
-    id: number;
+    id: string | number;
     startTime: string;
     endTime: string;
     lessonNumber: number;
