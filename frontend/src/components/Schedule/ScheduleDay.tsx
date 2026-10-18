@@ -15,10 +15,6 @@ const ScheduleDay: React.FC<ScheduleDayProps> = ({day}) => {
     return (
         <section className="schedule-day">
             <header className="schedule-day__header">
-                <span className="schedule-day__short-name">
-                    {day.shortName}
-                </span>
-
                 <span className="schedule-day__name">
                     {day.name}
                 </span>
