@@ -1,6 +1,6 @@
 """Проверка Drive-источника на записанных ответах — без сети.
 
-python3 tools/crawler/test_drive_source.py
+python3 tests/test_crawler_drive.py
 
 Что закрепляем (это и есть критерий готовности шага):
   1. первый запуск: startPageToken + обход → события created, курсор сохранён;
@@ -21,13 +21,21 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent.parent))
+sys.path.insert(0, str(HERE.parent))
 
-from tools.crawler.sources.drive import DriveSource  # noqa: E402
-from tools.crawler.sources.local import LocalFolderSource  # noqa: E402
-from tools.crawler.state import SyncState  # noqa: E402
-from tools.crawler.sync import event_row, run  # noqa: E402
-from tools.crawler.transport import FixtureTransport  # noqa: E402
+from eduhub_agent.crawler.sources.drive import DriveSource  # noqa: E402
+from eduhub_agent.crawler.sources.local import LocalFolderSource  # noqa: E402
+from eduhub_agent.crawler.state import SyncState  # noqa: E402
+from eduhub_agent.crawler.sync import event_row, run  # noqa: E402
+from eduhub_agent.crawler.transport import FixtureTransport  # noqa: E402
+
+# модель не зовём: тест про токены, пути и события, а не про качество классификации
+FAKE = {"subject": "algebra", "type": "homework", "type_conf": "high",
+        "confidence": "high", "lesson": None, "date": None, "engine": "fake"}
+
+
+def fake_classify(*a, **k):
+    return dict(FAKE)
 
 fails = 0
 
@@ -38,7 +46,7 @@ def check(name, cond, detail=""):
     fails += not cond
 
 
-FIX = HERE / "fixtures"
+FIX = HERE.parent / "eduhub_agent" / "crawler" / "fixtures"
 
 
 def fixture(name):
@@ -53,7 +61,7 @@ with tempfile.TemporaryDirectory() as td:
     # --- 1. первый запуск ------------------------------------------------------------
     t = FixtureTransport(fixture("drive_first.json"))
     src = DriveSource(t, folder_ids=["PROOT"])
-    rows, _ = run(src, state_path, out)
+    rows, _ = run(src, state_path, out, classifier=fake_classify)
     kinds = [r["kind"] for r in rows]
     check("первый запуск: два created", kinds == ["created", "created"], kinds)
     check("курсор сохранён из startPageToken", SyncState(state_path).cursor == "T0",
@@ -75,7 +83,7 @@ with tempfile.TemporaryDirectory() as td:
 
     # --- 2. повтор без изменений -----------------------------------------------------
     t2 = FixtureTransport({"changes:T0": {"changes": [], "newStartPageToken": "T1"}})
-    rows2, _ = run(DriveSource(t2, folder_ids=["PROOT"]), state_path, out)
+    rows2, _ = run(DriveSource(t2, folder_ids=["PROOT"]), state_path, out, classifier=fake_classify)
     check("повтор: ноль событий", rows2 == [], len(rows2))
     check("курсор сдвинулся на newStartPageToken", SyncState(state_path).cursor == "T1",
           SyncState(state_path).cursor)
@@ -85,7 +93,7 @@ with tempfile.TemporaryDirectory() as td:
     state = SyncState(state_path)
     state.cursor = "T0"
     state.save()
-    rows3, _ = run(DriveSource(t3, folder_ids=["PROOT"]), state_path, out)
+    rows3, _ = run(DriveSource(t3, folder_ids=["PROOT"]), state_path, out, classifier=fake_classify)
     got = sorted((r["kind"], r["name"]) for r in rows3)
     check("новый файл + изменённый + удалённый",
           got == [("created", "ДЗ-16.pdf"), ("deleted", "конспект.docx"), ("updated", "ДЗ-15.pdf")], got)
@@ -96,7 +104,7 @@ with tempfile.TemporaryDirectory() as td:
     state = SyncState(state_path)
     state.cursor = "T1"
     state.save()
-    rows5, _ = run(DriveSource(t5, folder_ids=["PROOT"]), state_path, out)
+    rows5, _ = run(DriveSource(t5, folder_ids=["PROOT"]), state_path, out, classifier=fake_classify)
     check("две страницы: два файла", len(rows5) == 2, len(rows5))
     check("ровно два запроса changes", t5.hits == ["changes:T1", "changes:PAGE2"], t5.hits)
     check("курсор — новый стартовый токен", SyncState(state_path).cursor == "T2",
@@ -157,7 +165,8 @@ with tempfile.TemporaryDirectory() as td:
     # --- 8. схема события одинаковая ---------------------------------------------------
     drive_row = rows[0]
     local_row = event_row("created", "local", {"id": "x/ДЗ.pdf", "name": "ДЗ.pdf", "path": "x/ДЗ.pdf",
-                                               "size": 1, "mtime": 1, "hash": "h"})
+                                               "size": 1, "mtime": 1, "hash": "h"},
+                          classifier=fake_classify)
     check("схема Drive и папки совпадает", set(drive_row) == set(local_row),
           sorted(set(drive_row) ^ set(local_row)))
 
@@ -165,7 +174,7 @@ with tempfile.TemporaryDirectory() as td:
     root = td / "drive"
     (root / "Алгебра" / "9 класс").mkdir(parents=True)
     (root / "Алгебра" / "9 класс" / "ДЗ-1.pdf").write_bytes(b"%PDF-1.4 x")
-    rows_local, _ = run(LocalFolderSource(root), td / "st2.json", td / "out2")
+    rows_local, _ = run(LocalFolderSource(root), td / "st2.json", td / "out2", classifier=fake_classify)
     check("локальный источник всё ещё работает",
           [r["kind"] for r in rows_local] == ["created"] and rows_local[0]["subject"] == "algebra",
           rows_local[0].get("subject"))

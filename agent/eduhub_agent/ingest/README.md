@@ -10,10 +10,10 @@
 
 ```bash
 # 1. посмотреть, что внутри (5 секунд на 700 файлов, 0.4 с на 47)
-python3 -m tools.drive_ingest scan "/путь/к/диску" --out out/math
+python3 -m eduhub_agent.ingest scan "/путь/к/диску" --out out/math
 
 # 2. когда появится доступ к дискам классов — та же команда, другой источник
-python3 -m tools.drive_ingest scan --drive "<folder_id>" --out out/class-9b
+python3 -m eduhub_agent.ingest scan --drive "<folder_id>" --out out/class-9b
 ```
 
 `scan` пишет три файла:
@@ -60,7 +60,7 @@ python3 -m tools.drive_ingest scan --drive "<folder_id>" --out out/class-9b
 в треке P2; личные файлы из Takeout, которые ни к какому предмету не относятся, честно
 уходят в `review.csv` (28 из 47).
 
-Проверка: `python3 tools/drive_ingest/test_drive_ingest.py` — 21 проверка, без сети и без модели.
+Проверка: `python3 tests/test_ingest.py` — 21 проверка, без сети и без модели.
 
 ## Чего пока нет
 
@@ -75,5 +75,5 @@ python3 -m tools.drive_ingest scan --drive "<folder_id>" --out out/class-9b
 ## Синхронизация, а не разовый проход
 
 Этот инструмент — разовый разбор («что лежит в папке»). Постоянное наблюдение за диском
-делает `tools/crawler`: он хранит состояние, второй прогон даёт ноль событий и отдаёт
+делает `eduhub_agent.crawler`: он хранит состояние, второй прогон даёт ноль событий и отдаёт
 только новое/изменённое/удалённое. Планы по Drive/Classroom/Gmail — в `docs/CRAWLER.md`.

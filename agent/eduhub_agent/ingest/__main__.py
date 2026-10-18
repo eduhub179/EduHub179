@@ -1,7 +1,7 @@
 """Разбор папки с материалами: что это за файлы и куда их потом класть.
 
-  python3 -m tools.drive_ingest scan "data/takeout/3/Диск" --out out/takeout3
-  python3 -m tools.drive_ingest scan data/math-b2027 --out out/math
+  python3 -m eduhub_agent.ingest scan "data/takeout/3/Диск" --out out/takeout3
+  python3 -m eduhub_agent.ingest scan data/math-b2027 --out out/math
 
 scan пишет в --out:
   manifest.jsonl  по строке на файл: путь, размер, хеш, mime, тип текста, предмет, класс, тип, уверенность
@@ -21,8 +21,9 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from .classify import classify
-from .extract import extract
+from eduhub_agent.classify import classify
+from eduhub_agent.ingest.extract import extract
+from eduhub_agent.ingest.grade import grade_of
 from .source import open_source
 
 HEAD = 200  # сколько текста храним в манифесте для быстрого просмотра
@@ -56,7 +57,7 @@ def sha256(path):
     return h.hexdigest()
 
 
-def scan(source, out_dir):
+def scan(source, out_dir, classifier=None):
     ok, why = source.available()
     if not ok:
         raise SystemExit(f"[!] источник недоступен: {why}")
@@ -81,7 +82,8 @@ def scan(source, out_dir):
                     "sha256": digest, "mime": mime_of(full, head),
                     "text_status": text_status, "text_chars": len(text),
                 }
-                row.update(classify(rel, full.name, text))
+                row.update((classifier or classify)(rel, full.name, text))
+                row["grade"] = grade_of(rel, full.name)
                 if digest in seen:
                     row["duplicate_of"] = seen[digest]
                 else:
