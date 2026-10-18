@@ -3,17 +3,17 @@ import type { FormEvent } from 'react';
 import type { Credentials } from '../../auth/authService';
 
 interface LoginFormProps {
-    onLogin: (credentials: Credentials) => void;
+    onLogin: (credentials: Credentials) => Promise<void>;
     onError: (message: string) => void;
 }
 
 const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onError }) => {
-    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
 
         try {
-            onLogin({
+            await onLogin({
                 email: String(formData.get('email')),
                 password: String(formData.get('password')),
             });

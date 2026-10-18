@@ -6,7 +6,7 @@ import type { Credentials, RegistrationData, User } from './authService';
 interface AuthContextValue {
     user: User | null;
     register: (data: RegistrationData) => void;
-    login: (credentials: Credentials) => void;
+    login: (credentials: Credentials) => Promise<void>;
     updateSchoolClass: (schoolClass: string) => void;
     logout: () => void;
 }
@@ -21,7 +21,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
 
     const register = (data: RegistrationData) => setUser(authService.register(data));
-    const login = (credentials: Credentials) => setUser(authService.login(credentials));
+    const login = async (credentials: Credentials) => setUser(await authService.login(credentials));
     const updateSchoolClass = (schoolClass: string) =>
         setUser(authService.updateSchoolClass(schoolClass));
     const logout = () => {

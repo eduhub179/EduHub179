@@ -14,9 +14,9 @@ const LoginPage: React.FC = () => {
     const navigate = useNavigate();
     const [error, setError] = useState('');
 
-    const handleLogin = (credentials: Credentials) => {
+    const handleLogin = async (credentials: Credentials) => {
         setError('');
-        login(credentials);
+        await login(credentials);
         navigate('/main');
     };
 

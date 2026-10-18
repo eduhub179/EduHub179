@@ -9,6 +9,8 @@ export interface ScheduleItem {
     endTime: string;
     lessonNumber: number;
     title: string;
+    teachers?: string[];
+    cabinet?: string | null;
     homework?: Homework;
 }
 

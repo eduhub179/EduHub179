@@ -1,3 +1,5 @@
+import { login as loginWithApi } from '../api/authApi';
+
 export interface User {
     name: string;
     email: string;
@@ -16,15 +18,13 @@ export interface Credentials {
 export interface AuthService {
     getCurrentUser(): User | null;
     register(data: RegistrationData): User;
-    login(credentials: Credentials): User;
+    login(credentials: Credentials): Promise<User>;
     updateSchoolClass(schoolClass: string): User;
     logout(): void;
 }
 
-type StoredAccount = RegistrationData & { schoolClass?: string | null };
-
-const ACCOUNTS_KEY = 'eduhub.demo.accounts';
 const CURRENT_USER_KEY = 'eduhub.demo.currentUser';
+const AUTH_TOKEN_KEY = 'eduhub.auth.token';
 
 class LocalStorageAuthService implements AuthService {
     getCurrentUser(): User | null {
@@ -33,30 +33,25 @@ class LocalStorageAuthService implements AuthService {
     }
 
     register(data: RegistrationData): User {
-        const accounts = this.getAccounts();
         const user: User = { name: data.name, email: data.email, schoolClass: null };
-        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify([...accounts, { ...data, schoolClass: null }]));
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
     }
 
-    login(credentials: Credentials): User {
-        const normalizedEmail = credentials.email.toLowerCase();
-        const account = this.getAccounts().find(
-            (storedAccount) =>
-                storedAccount.email.toLowerCase() === normalizedEmail &&
-                storedAccount.password === credentials.password,
-        );
-
-        if (!account) {
-            throw new Error('Неверная почта или пароль.');
-        }
-
+    async login(credentials: Credentials): Promise<User> {
+        const session = await loginWithApi({
+            login: credentials.email.trim(),
+            password: credentials.password,
+        });
         const user: User = {
-            name: account.name,
-            email: account.email,
-            schoolClass: account.schoolClass ?? null,
+            name: [session.user.first_name, session.user.middle_name, session.user.last_name]
+                .filter(Boolean)
+                .join(' '),
+            email: credentials.email.trim(),
+            schoolClass: session.user.class_id ?? null,
         };
+
+        localStorage.setItem(AUTH_TOKEN_KEY, session.token);
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
     }
@@ -67,52 +62,14 @@ class LocalStorageAuthService implements AuthService {
             throw new Error('Войдите в аккаунт, чтобы изменить профиль.');
         }
 
-        const accounts = this.getAccounts();
-        const accountIndex = accounts.findIndex(
-            (account) => account.email.toLowerCase() === currentUser.email.toLowerCase(),
-        );
-        if (accountIndex < 0) {
-            throw new Error('Не удалось найти аккаунт для обновления.');
-        }
-
-        accounts[accountIndex] = { ...accounts[accountIndex], schoolClass };
         const updatedUser: User = { ...currentUser, schoolClass };
-        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
         return updatedUser;
     }
 
     logout(): void {
         localStorage.removeItem(CURRENT_USER_KEY);
-    }
-
-    private getAccounts(): StoredAccount[] {
-        const storedAccounts = localStorage.getItem(ACCOUNTS_KEY);
-        if (!storedAccounts) {
-            return [];
-        }
-
-        const accounts: unknown = JSON.parse(storedAccounts);
-        if (!Array.isArray(accounts) || !accounts.every(this.isStoredAccount)) {
-            throw new Error('Не удалось прочитать данные аккаунтов.');
-        }
-        return accounts;
-    }
-
-    private isStoredAccount(value: unknown): value is StoredAccount {
-        return (
-            typeof value === 'object' &&
-            value !== null &&
-            'name' in value &&
-            typeof value.name === 'string' &&
-            'email' in value &&
-            typeof value.email === 'string' &&
-            'password' in value &&
-            typeof value.password === 'string' &&
-            (!('schoolClass' in value) ||
-                value.schoolClass === null ||
-                typeof value.schoolClass === 'string')
-        );
+        localStorage.removeItem(AUTH_TOKEN_KEY);
     }
 
     private parseUser(value: string): User {

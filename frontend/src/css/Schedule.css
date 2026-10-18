@@ -99,6 +99,13 @@
     color: var(--color-text);
 }
 
+.schedule__lesson-meta {
+    margin-top: 3px;
+    color: var(--color-text-muted);
+    font-size: 0.7rem;
+    line-height: 1.2;
+}
+
 .schedule__homework-button {
     flex: 0 1 55%;
     max-width: 55%;
@@ -112,6 +119,10 @@
     text-align: right;
     overflow-wrap: anywhere;
     cursor: inherit;
+}
+
+.schedule__homework-badge {
+    margin-left: auto;
 }
 
 .schedule__date {
