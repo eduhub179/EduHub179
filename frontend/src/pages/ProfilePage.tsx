@@ -1,17 +1,58 @@
-import React, { useState } from 'react';
-import type { FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth/AuthProvider';
+import React, {useState} from 'react';
+import type {FormEvent} from 'react';
+import {useEffect} from 'react';
+import {useNavigate} from 'react-router-dom';
+import {fetchSchoolClasses} from '../api';
+import type {SchoolClassDto} from '../api';
+import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
 import '../css/index.css';
 import '../css/RegisterPage.css';
 
 const ProfilePage: React.FC = () => {
-    const { user, logout, updateSchoolClass } = useAuth();
+    const {user, logout, updateSchoolClass} = useAuth();
     const navigate = useNavigate();
-    const [schoolClass, setSchoolClass] = useState(user?.schoolClass ?? '');
+    const [classes, setClasses] = useState<SchoolClassDto[]>([]);
+    const [schoolClassId, setSchoolClassId] = useState(user?.schoolClass ?? '');
+    const [classesLoading, setClassesLoading] = useState(true);
+    const [classesError, setClassesError] = useState('');
     const [error, setError] = useState('');
     const [saved, setSaved] = useState(false);
+
+    useEffect(() => {
+        let isCurrent = true;
+
+        if (!user) {
+            setClassesLoading(false);
+            return () => {
+                isCurrent = false;
+            };
+        }
+
+        fetchSchoolClasses()
+            .then(({classes: availableClasses}) => {
+                if (isCurrent) {
+                    setClasses(availableClasses);
+                    const currentClass = availableClasses.find((schoolClass) =>
+                        schoolClass.id === user?.schoolClass ||
+                        schoolClass.name.trim().toLocaleLowerCase('ru-RU') ===
+                        user?.schoolClass?.trim().toLocaleLowerCase('ru-RU'),
+                    );
+                    setSchoolClassId(currentClass?.id ?? '');
+                    setClassesLoading(false);
+                }
+            })
+            .catch((loadError: unknown) => {
+                if (isCurrent) {
+                    setClassesError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить список классов.');
+                    setClassesLoading(false);
+                }
+            });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [user?.schoolClass]);
 
     const handleLogout = () => {
         logout();
@@ -20,16 +61,15 @@ const ProfilePage: React.FC = () => {
 
     const handleSave = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        const value = schoolClass.trim();
+        const value = schoolClassId.trim();
         if (!value) {
-            setError('Укажите свой класс.');
+            setError('Выберите свой класс.');
             setSaved(false);
             return;
         }
 
         try {
             updateSchoolClass(value);
-            setSchoolClass(value);
             setError('');
             setSaved(true);
         } catch (saveError) {
@@ -40,29 +80,37 @@ const ProfilePage: React.FC = () => {
 
     return (
         <>
-            <Header />
+            <Header/>
             <main className="register-page">
                 <section className="register-card" aria-labelledby="profile-title">
                     <h1 id="profile-title">Профиль</h1>
                     {user ? (
                         <>
                             <p className="register-card__description">
-                                {user.name}<br />{user.email}
+                                {user.name}<br/>{user.email}
                             </p>
                             <form className="register-form profile-form" onSubmit={handleSave}>
                                 <label className="register-form__field">
                                     <span>Класс</span>
-                                    <input
-                                        autoComplete="off"
+                                    <select
                                         name="schoolClass"
                                         onChange={(event) => {
-                                            setSchoolClass(event.target.value);
+                                            setSchoolClassId(event.target.value);
                                             setSaved(false);
                                         }}
-                                        placeholder="Например, 9А"
-                                        value={schoolClass}
-                                    />
+                                        value={schoolClassId}
+                                        disabled={classesLoading || classes.length === 0}
+                                    >
+                                        <option value="">Выберите класс</option>
+                                        {classes.map((schoolClass) => (
+                                            <option key={schoolClass.id} value={schoolClass.id}>
+                                                {schoolClass.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </label>
+                                {classesLoading && <p>Загрузка списка классов...</p>}
+                                {classesError && <p className="register-card__error" role="alert">{classesError}</p>}
                                 {error && <p className="register-card__error" role="alert">{error}</p>}
                                 {saved && <p className="profile-form__success" role="status">Класс сохранён.</p>}
                                 <button className="register-form__submit" type="submit">
