@@ -10,7 +10,9 @@ python3 tools/crawler/test_drive_source.py
   5. две страницы changes → один курсор, ровно два запроса;
   6. падение на второй странице → курсор не сдвинулся;
   7. путь собирается из parents: Алгебра/9 класс/ДЗ-15.pdf → algebra, 9 класс;
-  8. событие из Drive по схеме совпадает с событием из папки.
+  8. событие из Drive по схеме совпадает с событием из папки;
+  9. Google Doc без md5: изменилась version → updated;
+ 10. файл перенесли в другую папку (содержимое и имя те же) → updated с новым путём.
 """
 import json
 import sys
@@ -108,6 +110,43 @@ with tempfile.TemporaryDirectory() as td:
     check("падение на второй странице замечено", crashed)
     check("курсор не сдвинулся после падения", SyncState(state_path).cursor == "T1",
           SyncState(state_path).cursor)
+
+    # --- 9. Google Doc без md5: изменилась только version ------------------------------
+    folders = {"file:P9": {"id": "P9", "name": "9 класс", "parents": ["PALG"]},
+               "file:P8": {"id": "P8", "name": "8 класс", "parents": ["PALG"]},
+               "file:PALG": {"id": "PALG", "name": "Алгебра", "parents": ["PROOT"]}}
+    doc_state = td / "doc_state.json"
+    st = SyncState(doc_state)
+    st.put("F6", {"hash": "v1", "size": 100, "mtime": "2026-10-18T10:00:00Z",
+                  "name": "конспект", "path": "Алгебра/9 класс/конспект"})
+    st.cursor = "T0"
+    st.save()
+    doc_routes = {"changes:T0": {"changes": [{"changeType": "file", "fileId": "F6", "file": {
+        "id": "F6", "name": "конспект", "mimeType": "application/vnd.google-apps.document",
+        "modifiedTime": "2026-10-19T10:00:00Z", "version": "2", "parents": ["P9"]}}],
+        "newStartPageToken": "T1"}}
+    doc_rows, _ = run(DriveSource(FixtureTransport({**doc_routes, **folders}), ["PROOT"]),
+                      doc_state, td / "out_doc")
+    check("Google Doc: version изменилась → updated",
+          [(r["kind"], r["name"]) for r in doc_rows] == [("updated", "конспект")],
+          [(r["kind"], r["name"]) for r in doc_rows])
+
+    # --- 10. файл перенесли в другую папку --------------------------------------------
+    move_state = td / "move_state.json"
+    st = SyncState(move_state)
+    st.put("F1", {"hash": "aaa", "size": 10, "mtime": "2026-10-18T10:00:00Z",
+                  "name": "ДЗ-15.pdf", "path": "Алгебра/9 класс/ДЗ-15.pdf"})
+    st.cursor = "T0"
+    st.save()
+    move_routes = {"changes:T0": {"changes": [{"changeType": "file", "fileId": "F1", "file": {
+        "id": "F1", "name": "ДЗ-15.pdf", "mimeType": "application/pdf", "size": "10",
+        "modifiedTime": "2026-10-18T10:00:00Z", "md5Checksum": "aaa", "parents": ["P8"]}}],
+        "newStartPageToken": "T1"}}
+    move_rows, _ = run(DriveSource(FixtureTransport({**move_routes, **folders}), ["PROOT"]),
+                       move_state, td / "out_move")
+    check("перенос в другую папку → updated с новым путём",
+          [(r["kind"], r["path"]) for r in move_rows] == [("updated", "Алгебра/8 класс/ДЗ-15.pdf")],
+          [(r["kind"], r["path"]) for r in move_rows])
 
     # --- 8. схема события одинаковая ---------------------------------------------------
     drive_row = rows[0]
