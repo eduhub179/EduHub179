@@ -28,8 +28,10 @@ import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-FILE = Path(__file__).parent / "timetable.json"
-SUBS_FILE = Path(__file__).parent / "substitutions.json"  # замены меняются каждый день, поэтому отдельным файлом
+from eduhub_agent.paths import data
+
+FILE = data("timetable.json")
+SUBS_FILE = data("substitutions.json")  # замены меняются каждый день, поэтому отдельным файлом
 WINDOW_MIN = 7  # сообщение в течение 7 минут после конца урока считаем написанным «на этом уроке»
 DAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 

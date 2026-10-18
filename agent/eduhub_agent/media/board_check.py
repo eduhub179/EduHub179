@@ -1,4 +1,4 @@
-"""Проверка распознавания доски на фото из экспортов: python3 board_check.py [сколько фото, по умолчанию 60]
+"""Проверка распознавания доски на фото из экспортов: python3 -m eduhub_agent.media.board_check [сколько фото, по умолчанию 60]
 Берёт фото без подписи и без печатного текста (те, к которым применяется правило «доска → ДЗ»), спрашивает
 модель (board.py) и делает страницу chats/доски-проверка.html: слева «доска», справа «не доска».
 Открой её в браузере и посчитай ошибки. Страница и фото остаются на этом компьютере.
@@ -9,9 +9,9 @@ import sys
 import time
 from pathlib import Path
 
-import board
-import chat_agent as ca
-import files
+from eduhub_agent.media import board
+from eduhub_agent.telegram import chat_agent as ca
+from eduhub_agent.media import files
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 60
 photos = []

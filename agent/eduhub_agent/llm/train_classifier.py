@@ -1,7 +1,7 @@
 """Обучает дешёвый фильтр перед LLM: «есть в сообщении что-то полезное или это болтовня».
 
 Запуск:  pip3 install scikit-learn   (один раз)
-         python3 train_classifier.py
+         python3 -m eduhub_agent.llm.train_classifier
 Берёт chats/dataset.jsonl (build_dataset.py) и разметку chat_labels.txt,
 печатает сравнение с ключевыми словами и сохраняет chats/filter_model.pkl.
 Сообщения с файлами в агенте всё равно идут в модель по правилу.
@@ -15,13 +15,15 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import make_pipeline, make_union
 
+from eduhub_agent.paths import CHATS, data
+
 TARGET_RECALL = 0.95  # какую долю полезных сообщений фильтр обязан пропустить
 
 
 def load():
-    rows = [json.loads(l) for l in open("chats/dataset.jsonl", encoding="utf-8")]
+    rows = [json.loads(l) for l in open(CHATS / "dataset.jsonl", encoding="utf-8")]
     codes = {}
-    for line in open("chat_labels.txt", encoding="utf-8"):
+    for line in open(data("chat_labels.txt"), encoding="utf-8"):
         if line.startswith("#"):
             continue
         for tok in line.split():
@@ -56,7 +58,7 @@ def main():
     print(f"сообщений {len(rows)}, полезных {y.mean():.0%}")
     print(f"ключевые слова: ловят {kw[y].mean():.0%} полезных, в модель идёт {kw.mean():.0%}")
     print(f"классификатор:  ловит {send[y].mean():.0%} полезных, в модель идёт {send.mean():.0%} (порог {t:.2f})")
-    with open("chats/filter_model.pkl", "wb") as f:
+    with open(CHATS / "filter_model.pkl", "wb") as f:
         pickle.dump({"model": model().fit(X, y), "threshold": float(t)}, f)
     print("сохранил chats/filter_model.pkl")
 

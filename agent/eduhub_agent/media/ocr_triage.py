@@ -24,7 +24,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import ocr_providers as providers
+from eduhub_agent.paths import CHATS as PATHS_CHATS
+from eduhub_agent.media import ocr_providers as providers
 
 # Порог: 70. Проверено на архиве (402 документа): в полосе 60-79 нет ни одного домашнего
 # задания — только графики и скриншоты установщика. Печатный листок даёт 85-95.
@@ -36,7 +37,7 @@ CONF_TABLE = 60.0       # печатная таблица читается ув�
 MAX_SIDE = 2600         # больше не нужно: телефонное фото 4000 px читается дольше и не точнее
 UPSCALE_TO = 1600       # мелкие фото увеличиваем, так Tesseract ошибается реже
 
-CHATS = Path(__file__).parent / "chats"
+CHATS = PATHS_CHATS
 QUEUE = CHATS / "ocr_queue.jsonl"
 CACHE = CHATS / "ocr_cache.json"
 _cache = None

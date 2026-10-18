@@ -14,9 +14,11 @@ import os
 import urllib.request
 from pathlib import Path
 
+from eduhub_agent.paths import CHATS
+
 BOARD_MODEL = os.environ.get("BOARD_MODEL", "qwen2.5vl:3b")
 URL = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/generate"
-CACHE = Path(__file__).parent / "chats" / "board_cache.json"
+CACHE = CHATS / "board_cache.json"
 PROMPT = ("Is this a photo of a classroom board (usually a white marker whiteboard, sometimes a chalkboard) "
           "with handwritten notes, formulas, tasks or a homework assignment written on it? Answer only yes or no.")
 _cache = None
