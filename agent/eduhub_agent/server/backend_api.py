@@ -20,6 +20,7 @@ GET /api/classes/schedule/day?date=...&class_id=... Из уроков на да�
 в находке есть author_user_id и author_role, тогда AGENT_USER_ID не нужен.
 """
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -159,9 +160,14 @@ def pair_of(day, lesson):
     return day[lo:hi + 1]
 
 
+TEST_HEAD = re.compile(r"(контрольн|самостоятельн|проверочн|кр\b|к/р|ср\b|с/р|зач[её]т|диктант|тест)", re.I)
+
+
 def text_of(it):
     """Текст для ученика: что задано, слова учителя и откуда это."""
-    head = ("Контрольная: " if it["type"] == "test" else "") + (it.get("summary") or it.get("quote") or "").strip()
+    head = (it.get("summary") or it.get("quote") or "").strip()
+    if it["type"] == "test":  # «контрольная» уже в тексте — второй раз не пишем
+        head = head[:1].upper() + head[1:] if TEST_HEAD.match(head) else "Контрольная: " + head
     quote = (it.get("quote") or "").strip()
     lines = [head]
     if quote and quote != head:
