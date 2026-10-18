@@ -37,6 +37,13 @@ pub struct Config {
     pub agent_url: Option<String>,
     /// Shared secret sent to the agent in `X-Agent-Key` (optional).
     pub agent_key: Option<String>,
+
+    /// SMTP service
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_user: String,
+    pub smtp_password: String,
+    pub smtp_from_email: String,
 }
 
 impl Config {
@@ -64,6 +71,14 @@ impl Config {
         let agent_url = env::var("AGENT_URL").ok().filter(|v| !v.is_empty());
         let agent_key = env::var("AGENT_KEY").ok().filter(|v| !v.is_empty());
 
+        let smtp_host = env::var("SMTP_HOST").unwrap_or_else(|_| "smtp.gmail.com".to_string());
+        let smtp_port = env::var("SMTP_PORT")
+            .unwrap_or_else(|_| "587".to_string())
+            .parse::<u16>()
+            .expect("SMTP_PORT must be a valid u16");
+        let smtp_user = env::var("SMTP_USER").expect("SMTP_USER must be set in .env");
+        let smtp_password = env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set in .env");
+        let smtp_from_email = env::var("SMTP_FROM_EMAIL").unwrap_or_else(|_| smtp_user.clone());
         Self {
             database_url,
             jwt_secret,
@@ -75,6 +90,11 @@ impl Config {
             telegram_bot_token,
             agent_url,
             agent_key,
+            smtp_host,
+            smtp_port,
+            smtp_user,
+            smtp_password,
+            smtp_from_email,
         }
     }
 
@@ -90,6 +110,11 @@ impl Config {
             telegram_bot_token: "mock_telegram_bot_token".to_string(),
             agent_url: None,
             agent_key: None,
+            smtp_host: "smtp.example.com".to_string(),
+            smtp_port: 587,
+            smtp_user: "noreply@179.ru".to_string(),
+            smtp_password: "smtp_password".to_string(),
+            smtp_from_email: "noreply@179.ru".to_string(),
         }
     }
 }
