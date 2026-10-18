@@ -1,3 +1,4 @@
 # Без этих библиотек агент тоже работает: фильтр сообщений переходит на ключевые слова, PDF читается через pdftotext.
 scikit-learn  # фильтр болтовни (train_classifier.py, chats/filter_model.pkl)
 pypdf         # текст из PDF во вложениях (files.py)
+Pillow        # поворот по EXIF и масштаб фото перед Tesseract (без неё фото читаются хуже)
