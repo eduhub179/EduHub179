@@ -43,8 +43,11 @@ check("листок — worksheet", r["type"] == "worksheet", r["type"])
 check("класс из 8Б", r["grade"] == 8, r["grade"])
 
 r = classify("Разное/что-то.pdf", "что-то.pdf")
-check("«Разное» — не предмет", r["subject"] == "other_subject", r["subject"])
-check("«Разное» требует человека", r["confidence"] in ("low", "unknown"), r["confidence"])
+check("«Разное» — это misc", r["subject"] == "misc", r["subject"])
+check("misc не требует человека", r["confidence"] in ("high", "medium"), r["confidence"])
+r = classify("файл-в-корне.pdf", "файл-в-корне.pdf")
+check("файл без папки — unknown", r["subject"] == "unknown", r["subject"])
+check("файл без папки — в review", r["confidence"] in ("low", "unknown"), r["confidence"])
 
 r = classify("Матан/конспекты/лекция 3.pdf", "лекция 3.pdf")
 check("матан — calculus", r["subject"] == "calculus", r["subject"])
@@ -74,8 +77,7 @@ with tempfile.TemporaryDirectory() as td:
     (root / "Алгебра" / "дз" / "9 класс").mkdir(parents=True)
     (root / "Алгебра" / "дз" / "9 класс" / "ДЗ-001.pdf").write_bytes(b"%PDF-1.4 fake")
     (root / "Алгебра" / "дз" / "9 класс" / "ДЗ-001 (1).pdf").write_bytes(b"%PDF-1.4 fake")
-    (root / "Разное").mkdir()
-    (root / "Разное" / "непонятно.pdf").write_bytes(b"%PDF-1.4 other")
+    (root / "непонятно.pdf").write_bytes(b"%PDF-1.4 other")   # в корне: предмет неизвестен
     (root / "Корзина").mkdir()
     (root / "Корзина" / "мусор.pdf").write_bytes(b"%PDF-1.4 trash")
 
@@ -87,7 +89,7 @@ with tempfile.TemporaryDirectory() as td:
     check("mime по сигнатуре", rows[0]["mime"] == "application/pdf", rows[0]["mime"])
 
     review = list(csv.DictReader(open(out / "review.csv", encoding="utf-8")))
-    check("в review только неясный предмет", [x["path"] for x in review] == ["Разное/непонятно.pdf"],
+    check("в review только неясный предмет", [x["path"] for x in review] == ["непонятно.pdf"],
           [x["path"] for x in review])
 
     manifest = [json.loads(l) for l in open(out / "manifest.jsonl", encoding="utf-8")]
