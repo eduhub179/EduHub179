@@ -55,11 +55,32 @@ text, words, numbers, conf, _axis = P._parse_tsv(TSV)
 check("TSV: слова и строки", words == 2 and text.count("\n") == 1, repr(text))
 check("TSV: уверенность", abs(conf - ((96 + 88 + 0) / 3)) < 0.1, str(conf))
 check("TSV: числа считаются", P._parse_tsv(TSV.replace("задание", "625"))[2] == 1)
-axis_tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\tw\th\tconf\ttext\n" + \
-           "".join(f"5\t1\t1\t1\t1\t{i}\t0\t0\t1\t1\t95.0\t{n}\n" for i, n in enumerate(
-               ["0", "5", "10", "15", "20", "25"], 1))
-check("TSV: ось графика распознаётся", P._parse_tsv(axis_tsv)[4] is True)
-check("TSV: не ось", P._parse_tsv(TSV)[4] is False)
+def tsv_numbers(rows, conf="95.0"):
+    """TSV из чисел: rows — список списков (text, left, top). Размер слова 20x30, уверенность conf."""
+    head = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\tw\th\tconf\ttext\n"
+    out, i = [], 1
+    for r, row in enumerate(rows, 1):
+        for n, (txt, left, top) in enumerate(row, 1):
+            out.append(f"5\t1\t{r}\t1\t1\t{n}\t{left}\t{top}\t20\t30\t{conf}\t{txt}\n")
+            i += 1
+    return head + "".join(out)
+
+
+# ось X: ровные тики на одной высоте, под ними пусто
+x_axis = [[("0", 100, 700), ("5", 270, 700), ("10", 440, 700), ("15", 610, 700),
+           ("20", 780, 700), ("25", 950, 700)]]
+check("TSV: ось X распознаётся", P._parse_tsv(tsv_numbers(x_axis))[4] is True)
+
+# таблица: та же возрастающая строка, но во второй строке числа стоят в тех же колонках
+x_label = [[(t, x, 700) for t, x in zip(["1", "2", "3", "4", "5", "6"], [100, 270, 440, 610, 780, 950])]]
+x_values = [[(t, x, 800) for t, x in zip(["7", "14", "21", "28", "35", "42"], [100, 270, 440, 610, 780, 950])]]
+check("TSV: таблица с возрастающей строкой — не ось", P._parse_tsv(tsv_numbers(x_label + x_values))[4] is False)
+
+# не ось: промежутки неровные
+uneven = [[("0", 100, 700), ("5", 180, 700), ("10", 500, 700), ("15", 540, 700),
+           ("20", 900, 700), ("25", 940, 700)]]
+check("TSV: неровные промежутки — не ось", P._parse_tsv(tsv_numbers(uneven))[4] is False)
+check("TSV: обычный текст — не ось", P._parse_tsv(TSV)[4] is False)
 
 # --- провайдеры ----------------------------------------------------------------------
 ok, why = P.get("local_tesseract").available()
@@ -74,7 +95,7 @@ else:
     from PIL import Image, ImageDraw, ImageFont
 
     tmpdir = Path(tempfile.mkdtemp())
-    T.CHATS = tmpdir
+    T.STATE = tmpdir
     T.QUEUE = tmpdir / "ocr_queue.jsonl"
     T.CACHE = tmpdir / "ocr_cache.json"
     T._cache = None
