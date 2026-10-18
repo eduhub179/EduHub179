@@ -19,7 +19,7 @@ from .state import SyncState
 
 def fingerprint(item):
     return {"hash": item["hash"], "size": item.get("size", 0), "mtime": item.get("mtime"),
-            "name": item.get("name", "")}
+            "name": item.get("name", ""), "path": item.get("path", "")}
 
 
 def diff_snapshot(items, state):
@@ -57,7 +57,8 @@ def apply_changes(changes, state):
             continue
         item = ch["item"]
         old = state.get(item["id"])
-        if old and old.get("hash") == item["hash"] and old.get("name") == item.get("name"):
+        if (old and old.get("hash") == item["hash"] and old.get("name") == item.get("name")
+                and old.get("path") in (None, item.get("path"))):   # None — состояние старого формата
             continue                                # изменилось что-то третье: не событие
         events.append({"kind": "updated" if old else "created", "item": item})
         state.put(item["id"], fingerprint(item))
