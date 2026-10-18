@@ -289,6 +289,18 @@ def worth_asking(m):
     return bool(ok)
 
 
+
+def dm_worth(text, factor=0.5):
+    """Личка боту: похоже ли сообщение на ДЗ. Тот же фильтр болтовни, что для чатов, но порог ниже (factor):
+    в личку пишут боту, а не друг другу, и лучше лишний черновик, чем потерянное ДЗ."""
+    f = load_filter()
+    if f:
+        p = f["model"].predict_proba([text.lower()])[0, 1]
+        say(f"   ЛС, фильтр: вероятность ДЗ {p:.2f} (порог {f['threshold'] * factor:.2f})")
+        return p >= f["threshold"] * factor or safety_net(text)
+    return bool(USEFUL.search(text)) or safety_net(text)
+
+
 # ---------- модель + правила ----------
 
 AFTER = 3  # сколько следующих сообщений и ответов на сообщение показывать модели
@@ -1078,7 +1090,7 @@ def run_live():
     listen_at = chat_moderation.moderator.env("AGENT_LISTEN")  # 127.0.0.1:8091 — обновления шлёт основной бот
     inbox = listen(listen_at) if listen_at else None
     # личка боту: человек сам присылает ДЗ, оно записывается от его имени (dm.py)
-    dm.setup(api, lambda m, chat: refine(m, ask(m, [], chat)), MODERATE)
+    dm.setup(api, lambda m, chat: refine(m, ask(m, [], chat)), MODERATE, worth=dm_worth, refine=refine)
     items_path = Path("chats/live_items.json")
     items_path.parent.mkdir(exist_ok=True)
     found = json.load(open(items_path, encoding="utf-8")) if items_path.exists() else []

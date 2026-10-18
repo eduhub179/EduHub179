@@ -36,6 +36,7 @@ agent/
 | `telegram/watch_channel.py` | агент канала школы и канала «Кружочек», опрос раз в 15–30 минут (`python3 watch_channel.py loop`) |
 | `telegram/moderator.py` | бот-модератор: каждая находка приходит карточкой с кнопками «Опубликовать» / «Отклонить», на сервер уходит только подтверждённое |
 | `telegram/dm.py` | ДЗ, присланное боту в личку: кто прислал — по входу в основном боте, урок — по расписанию, запись от имени этого человека; проверка: `python3 tests/test_dm.py` |
+| `telegram/questions.py` | что спросили в личке: ДЗ, расписание, кабинет или новое ДЗ (правила, потом модель); проверка на модели: `python3 -m eduhub_agent.telegram.questions "что у нас в пятницу?"` |
 | `telegram/chat_moderation.py` | очередь находок из чатов для того же бота-модератора (`chats/moderation_*.json`, не коммитится) |
 | `telegram/fetch_channel.py`, `telegram/kruzhochek.py` | скачивание публичной страницы канала, разбор анонсов «Кружочка» |
 | `server/backend_api.py` | подтверждённые ДЗ и контрольные -> `POST /api/homework` / `PATCH /api/homework/{id}/text`; проверка на поддельном сервере: `python3 tests/test_backend_api.py` |

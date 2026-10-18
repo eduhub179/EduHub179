@@ -12,6 +12,10 @@
 4. «Записать». Учитель: сразу в бэкенд от своего имени (created_by = он, created_by_role = teacher).
    Ученик: в бота-модератора, как находки из чатов; после подтверждения ДЗ записывается от имени ученика
    (роль student), а ученику приходит «записал». Без бота-модератора (--no-moderator) — сразу.
+5. Кнопки внизу (для учеников): «ДЗ на завтра» (ближайший учебный день), «Расписание на сегодня»,
+   «Где следующий урок» (предмет, время, кабинет), «Добавить ДЗ» (подсказка). Всё из расписания бэкенда.
+6. Вопросы своими словами («что задали по химии?», «расписание на среду», «где алгебра?»): questions.py понимает,
+   о чём спросили (правила, потом модель), а ответ собирается из расписания бэкенда, как у кнопок.
 Черновики лежат в chats/dm_drafts.json (там тексты учеников, папка chats/ не коммитится).
 
 Запускается из chat_agent.py live сам; в .env нужны API_URL и AGENT_KEY (тот же, что в backend/.env),
@@ -27,7 +31,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from eduhub_agent.server import backend_api
-from eduhub_agent.telegram import chat_moderation
+from eduhub_agent.telegram import chat_moderation, questions
 from eduhub_agent.server import timetable
 from eduhub_agent.config import env
 
@@ -40,13 +44,21 @@ KINDS = {"homework": "ДЗ", "test": "Контрольная"}
 API = None  # https://api.telegram.org/bot<BOT_TOKEN>/
 PARSE = None  # (m, chat) -> находки модели после refine; ставит chat_agent.run_live
 MODERATE = False  # работает бот-модератор: ДЗ учеников идёт через него
+REFINE = None  # (m, находки) -> находки с датой по правилам (chat_agent.refine): быстрый путь без модели
+WORTH = None  # text -> похоже ли на ДЗ (фильтр болтовни chat_agent.dm_worth); None — не проверяем
 _users = {}  # telegram id -> (пользователь или None, когда спросили)
 _days = {}  # (class_id, дата) -> (уроки, когда спросили)
+_menu_shown = set()  # кому уже показали кнопки внизу
+
+B_HW, B_TODAY, B_NEXT, B_ADD = "📚 ДЗ на завтра", "📅 Расписание на сегодня", "🚪 Где следующий урок", "➕ Добавить ДЗ"
+MENU = {"keyboard": [[{"text": B_HW}, {"text": B_TODAY}], [{"text": B_NEXT}, {"text": B_ADD}]],
+        "resize_keyboard": True, "is_persistent": True}
+NOW = datetime.now  # подменяется в тесте
 
 
-def setup(api, parse, moderate):
-    global API, PARSE, MODERATE
-    API, PARSE, MODERATE = api, parse, moderate
+def setup(api, parse, moderate, worth=None, refine=None):
+    global API, PARSE, MODERATE, WORTH, REFINE
+    API, PARSE, MODERATE, WORTH, REFINE = api, parse, moderate, worth, refine
     backend_api.ON_SENT = on_sent
 
 
@@ -147,6 +159,17 @@ def subjects_in(text, names):
     return hit
 
 
+def subjects_typo(text, names):
+    """Опечатки в предмете: «алгерба», «химмия», «физке». Сравниваем слово с началом названия той же длины."""
+    hit = []
+    for w in re.findall(r"[а-яё]{5,}", text.lower()):
+        for n in names:
+            first = n.lower().split()[0]
+            if n not in hit and questions.close(w[:len(first) + 1], first, 0.75):
+                hit.append(n)
+    return hit
+
+
 def resolve(d, it):
     """Урок для находки: предмет и дата есть — ищем урок; даты нет — ближайший урок предмета.
     Ставит it["lesson"] или it["problem"] (что спросить кнопками)."""
@@ -172,6 +195,111 @@ def resolve(d, it):
         return
     it["date"], it["date_source"] = nxt[0][0].isoformat(), "ближайший урок"
     it["lesson"] = {"start": nxt[0][1]["start_time"], "subject": nxt[0][1]["subject_name"]}
+
+
+# ---------- кнопки внизу: ДЗ, расписание, кабинет ----------
+
+def lessons_now(cid, day):
+    """Уроки дня без кэша: домашка могла появиться минуту назад."""
+    _days.pop((cid, day.isoformat()), None)
+    return sorted(lessons_on(cid, day), key=lambda l: l["start_time"])
+
+
+def next_school_day(cid, day):
+    """Ближайший день после day, когда у класса есть уроки: (дата, уроки) или (None, [])."""
+    for k in range(1, 8):
+        d = day + timedelta(days=k)
+        les = lessons_now(cid, d)
+        if les:
+            return d, les
+    return None, []
+
+
+def lesson_line(l):
+    room = f", каб. {l['cabinet']}" if l.get("cabinet") else ""
+    return f"{l['start_time'][:5]} {l['subject_name']}{room}"
+
+
+def when(day, today):
+    return "сегодня" if day == today else "завтра" if day == today + timedelta(days=1) else day_label(day.isoformat())
+
+
+def upcoming(cid, subject, now):
+    """Ближайший ещё не начавшийся урок (предмета subject или любой): (дата, урок) или (None, None)."""
+    today, hm = now.date(), now.strftime("%H:%M")
+    for k in range(HORIZON + 1):
+        d = today + timedelta(days=k)
+        for l in sorted(lessons_on(cid, d), key=lambda l: l["start_time"]):
+            if k == 0 and l["start_time"][:5] <= hm:
+                continue
+            if subject is None or timetable.same_subject(l["subject_name"], subject):
+                fresh = next((x for x in lessons_now(cid, d) if x["id"] == l["id"]), l)  # свежая домашка
+                return d, fresh
+    return None, None
+
+
+def hw_text(l):
+    return ((l.get("homework") or {}).get("text") or "").strip()
+
+
+def answer_question(intent, cid, day=None, subject=None):
+    """Ответ из расписания бэкенда. intent: homework / schedule / next; day — date или None; subject — название
+    предмета класса или None."""
+    now = NOW()
+    today = now.date()
+    if intent == "schedule":
+        d = day or today
+        les = lessons_now(cid, d)
+        if not les:
+            return f"{when(d, today).capitalize()} ({day_label(d.isoformat())}) уроков нет." if d in (
+                today, today + timedelta(days=1)) else f"В {day_label(d.isoformat())} уроков нет."
+        return f"{when(d, today).capitalize()}, {day_label(d.isoformat())}:\n" + "\n".join(lesson_line(l) for l in les)
+    if intent == "next":
+        if day:
+            l = next((x for x in lessons_now(cid, day) if subject is None or timetable.same_subject(x["subject_name"], subject)), None)
+            d = day
+        else:
+            d, l = upcoming(cid, subject, now)
+        if not l:
+            return f"Не нашёл урок «{subject}»." if subject else "Ближайших уроков не нашёл."
+        room = f"Кабинет {l['cabinet']}." if l.get("cabinet") else "Кабинет в расписании не указан."
+        head = "Следующий урок: " if subject is None and not day else ""
+        return f"{head}{l['subject_name']}, {when(d, today)} в {l['start_time'][:5]}. {room}"
+    # homework
+    if subject:
+        if day:
+            l = next((x for x in lessons_now(cid, day) if timetable.same_subject(x["subject_name"], subject)), None)
+            d = day
+            if not l:
+                return f"{when(d, today).capitalize()} нет урока «{subject}»."
+        else:
+            d, l = upcoming(cid, subject, now)
+            if not l:
+                return f"Не нашёл ближайший урок «{subject}»."
+        t = hw_text(l)
+        return (f"{l['subject_name']} ({when(d, today)}): {t}" if t
+                else f"{l['subject_name']} ({when(d, today)}): домашки пока нет.")
+    if day:
+        d, les = day, lessons_now(cid, day)
+        if not les:
+            return (f"{when(d, today).capitalize()}" if d <= today + timedelta(days=1)
+                    else f"В {day_label(d.isoformat())}") + " уроков нет."
+    else:
+        d, les = next_school_day(cid, today)
+        if not d:
+            return "В ближайшую неделю уроков не нашёл."
+    hw = [l for l in les if hw_text(l)]
+    if not hw:
+        return f"На {when(d, today)} домашки пока нет."
+    return f"ДЗ на {when(d, today)}:\n\n" + "\n\n".join(f"{l['subject_name']}: {hw_text(l)}" for l in hw)
+
+
+def answer_menu(button, cid):
+    return answer_question({B_HW: "homework", B_TODAY: "schedule", B_NEXT: "next"}[button], cid)
+
+
+CAN = ("Я умею:\n• записать ДЗ: «физика к пятнице §12, № 5–7»\n• сказать, что задали: «что по химии?», «дз на среду»\n"
+       "• расписание: «какие уроки завтра?»\n• где и когда урок: «где алгебра?»\nИли нажми кнопку внизу.")
 
 
 # ---------- сообщение ----------
@@ -216,11 +344,25 @@ def preview(d):
     return "\n".join(lines), {"inline_keyboard": rows}
 
 
+TEST_WORDS = re.compile(r"контрольн|самостоятельн|проверочн|\bкр\b|\bср\b|зач[её]т|диктант|\bтест", re.I)
+
+
+def quick(m, subjects):
+    """Короткое сообщение про один предмет («физика к пятнице §12, № 5–7») — одно задание: модель не нужна,
+    дату находят правила (refine). Модель (~20 с на Mac) — только для длинных и про несколько предметов."""
+    text = m["text"].strip()
+    if not REFINE or len(subjects) > 1 or len(text) > 200 or "\n" in text:
+        return []
+    kind = "test" if TEST_WORDS.search(text) else "homework"
+    return [x for x in REFINE(m, [{"quote": text, "type": kind, "summary": text}]) if x.get("type") in KINDS]
+
+
 def understand(m, cls, subjects):
     """Находки ДЗ/контрольных из текста. Модель недоступна или ничего не нашла — всё сообщение одно ДЗ."""
     chat = f"Личные сообщения боту, {cls}" + (f" {subjects[0]}" if len(subjects) == 1 else "")
+    items = quick(m, subjects)
     try:
-        items = [x for x in PARSE(m, chat) if x.get("type") in KINDS]
+        items = items or [x for x in PARSE(m, chat) if x.get("type") in KINDS]
     except Exception as e:  # Ollama не отвечает и т.п.
         print("ЛС: модель не ответила:", repr(e))
         items = []
@@ -247,16 +389,28 @@ def on_message(msg):
 
 def _on_message(msg):
     chat_id, text = msg["chat"]["id"], (msg.get("text") or msg.get("caption") or "").strip()
-    if not text or text.startswith("/"):
-        tg("sendMessage", chat_id=chat_id, text=(
+    if not text or text.startswith("/") or text == B_ADD:
+        _menu_shown.add(chat_id)
+        tg("sendMessage", chat_id=chat_id, reply_markup=MENU, text=(
             "Пришли сюда домашку текстом, например: «физика к пятнице §12, № 5–7». Я найду урок в расписании и запишу"
             " задание от твоего имени. Учителю нужно написать и класс: «11Б физика к пятнице …»."
-            + ("\nФайлы и фото пока не принимаю, только текст." if not text and (msg.get("document") or msg.get("photo")) else "")))
+            + ("\nФайлы и фото пока не принимаю, только текст." if not text and (msg.get("document") or msg.get("photo")) else "")
+            + "\nКнопки внизу: домашка на завтра, расписание на сегодня и где следующий урок."))
         return
     user = user_of(msg["from"]["id"])
     if not user:
         print(f"ЛС: Telegram id {msg['from']['id']} не привязан к пользователю (нет входа в основном боте)")
         tg("sendMessage", chat_id=chat_id, text=login_hint())
+        return
+    if text in (B_HW, B_TODAY, B_NEXT):
+        _menu_shown.add(chat_id)
+        if user["role"] != "student" or not user.get("class_id"):
+            reply = "Эти кнопки пока работают только для учеников: расписание учителя бэкенд ещё не отдаёт."
+        else:
+            reply = answer_menu(text, user["class_id"])
+        tg("sendMessage", chat_id=chat_id, text=reply, reply_markup=MENU)
+        return
+    if user["role"] == "student" and user.get("class_id") and _question(msg, chat_id, text, user["class_id"]):
         return
     if user["role"] == "student":
         cid = user.get("class_id")
@@ -275,6 +429,40 @@ def _on_message(msg):
         _draft(msg, chat_id, text, user, cls, cid)
     finally:
         done()
+
+
+def _question(msg, chat_id, text, cid):
+    """Вопрос, а не новое ДЗ: ответить и вернуть True. Новое ДЗ — False (дальше обычный черновик)."""
+    q = questions.classify(text, llm=None if questions.rule_intent(text) else _llm_with_typing(chat_id))
+    names = class_subjects(cid, NOW().date())
+    if q["intent"] == "add":
+        if subjects_in(text, names) or subjects_typo(text, names) or questions.HOMEWORK_TEXT.search(text) or not WORTH or WORTH(text):
+            return False  # похоже на ДЗ: черновик, как раньше
+        print("ЛС: похоже на болтовню, не разбираю как ДЗ")
+        q["intent"] = "other"
+    _menu_shown.add(chat_id)
+    if q["intent"] == "other":
+        tg("sendMessage", chat_id=chat_id, text=CAN, reply_markup=MENU)
+        return True
+    found = subjects_in(text, names) or (q.get("subject") and subjects_in(q["subject"], names)) or \
+        subjects_typo(text, names)
+    if not found and q.get("subject"):
+        found = [n for n in names if timetable.same_subject(n, q["subject"])]
+    day = questions.parse_day(text, NOW().date()) or (q.get("day") and questions.parse_day(q["day"], NOW().date()))
+    print(f"ЛС: вопрос {q['intent']} ({q['by']}), день {day}, предмет {found[:1]}")
+    tg("sendMessage", chat_id=chat_id, text=answer_question(q["intent"], cid, day, found[0] if found else None),
+       reply_markup=MENU)
+    return True
+
+
+def _llm_with_typing(chat_id):
+    def ask(text):
+        done = typing(chat_id)
+        try:
+            return questions.llm_intent(text)
+        finally:
+            done()
+    return ask
 
 
 def typing(chat_id):
@@ -299,7 +487,7 @@ def _draft(msg, chat_id, text, user, cls, cid):
          "links": [], "files": [], "reply_to": None, "forwarded": False, "message_ids": [msg["message_id"]]}
     d = {"id": secrets.token_hex(4), "tg": chat_id, "msg_id": msg["message_id"], "posted": posted,
          "user": user, "cls": cls, "cid": cid, "subjects": names, "status": "draft",
-         "items": understand(m, cls, subjects_in(text, names))}
+         "items": understand(m, cls, subjects_in(text, names) or subjects_typo(text, names))}
     for it in d["items"]:
         resolve(d, it)
     body, kb = preview(d)
@@ -307,6 +495,10 @@ def _draft(msg, chat_id, text, user, cls, cid):
     drafts = load()
     drafts[d["id"]] = d
     save(drafts)
+    if chat_id not in _menu_shown:  # человек сразу прислал ДЗ и ещё не видел кнопок внизу
+        _menu_shown.add(chat_id)
+        tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
+           text="Внизу кнопки: домашка на завтра, расписание на сегодня и где следующий урок.")
 
 
 def on_button(cb):

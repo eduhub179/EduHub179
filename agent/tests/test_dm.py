@@ -17,7 +17,8 @@ KEY = "test-agent-key"
 USERS = {111: {"user_id": STUDENT, "login": "student.test", "role": "student", "class_id": CLASS},
          222: {"user_id": TEACHER, "login": "teacher.test", "role": "teacher", "class_id": None}}
 LESSONS = {  # дата -> уроки 11Б; сообщения пишут в пн 2099-10-19
-    "2099-10-20": [{"id": str(uuid.uuid4()), "start_time": "09:00", "end_time": "09:45", "subject_name": "Физика"},
+    "2099-10-20": [{"id": str(uuid.uuid4()), "start_time": "09:00", "end_time": "09:45", "subject_name": "Физика",
+                    "cabinet": "305"},
                    {"id": str(uuid.uuid4()), "start_time": "09:55", "end_time": "10:40", "subject_name": "Алгебра"}],
     "2099-10-22": [{"id": str(uuid.uuid4()), "start_time": "11:00", "end_time": "11:45", "subject_name": "Физика"}],
     "2099-10-23": [{"id": str(uuid.uuid4()), "start_time": "10:00", "end_time": "10:45", "subject_name": "Алгебра"}],
@@ -55,7 +56,7 @@ class Api(BaseHTTPRequestHandler):
         out = []
         for l in LESSONS.get(day, []):
             hw = HOMEWORK.get(l["id"])
-            out.append({**l, "teachers": [], "cabinet": None, "homework": hw and {"id": hw["id"], "text": hw["text"]}})
+            out.append({"cabinet": None, **l, "teachers": [], "homework": hw and {"id": hw["id"], "text": hw["text"]}})
         self.answer(200, {"date": day, "lessons": out})
 
     def do_POST(self):
@@ -131,7 +132,8 @@ def main():
         return "\n".join(p.get("text", "") for _, p in sent if "text" in p)
 
     def buttons():
-        kb = next((p["reply_markup"] for _, p in reversed(sent) if p.get("reply_markup")), {"inline_keyboard": []})
+        kb = next((p["reply_markup"] for _, p in reversed(sent) if "inline_keyboard" in p.get("reply_markup", {})),
+                  {"inline_keyboard": []})
         return [b["text"] for row in kb["inline_keyboard"] for b in row]
 
     phys20, alg20 = (l["id"] for l in LESSONS["2099-10-20"])
@@ -204,6 +206,110 @@ def main():
     dm.backend_api.send("mod:1", it)  # модератор подтвердил (moderator.send_to_server)
     check("после подтверждения записано от имени ученика", "формулы" in HOMEWORK[phys22]["text"])
     check("... и ученику пришло «✅ Записал»", any(p.get("chat_id") == 111 and "✅ Записал" in p["text"] for _, p in sent))
+
+    # кнопки внизу: ДЗ на завтра, расписание на сегодня, где следующий урок
+    menu = lambda: any(p.get("reply_markup") == dm.MENU for _, p in sent)
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)  # пн, уроков нет; завтра физика (каб. 305) и алгебра
+    out = write(111, "/start")
+    check("подсказка показывает кнопки внизу", menu() and "расписание" in out)
+    out = write(111, dm.B_TODAY)
+    check("расписание на сегодня: уроков нет", "уроков нет" in out and menu())
+    HOMEWORK[alg20] = {"id": str(uuid.uuid4()), "text": "№ 101–104", "created_by": TEACHER, "created_by_role": "teacher"}
+    out = write(111, dm.B_HW)
+    check("ДЗ на завтра: алгебра с текстом", out.startswith("ДЗ на завтра") and "Алгебра: № 101–104" in out)
+    out = write(111, dm.B_NEXT)
+    check("следующий урок завтра: физика, кабинет 305", "Физика" in out and "09:00" in out and "305" in out)
+    dm.NOW = lambda: datetime(2099, 10, 20, 9, 30)  # вт, идёт физика
+    out = write(111, dm.B_TODAY)
+    check("расписание на сегодня: оба урока с кабинетом", "09:00 Физика, каб. 305" in out and "09:55 Алгебра" in out)
+    out = write(111, dm.B_NEXT)
+    check("следующий урок сегодня: алгебра, кабинет не указан", "Алгебра, сегодня в 09:55" in out and "не указан" in out)
+    out = write(111, dm.B_HW)
+    check("ДЗ на ближайший учебный день (чт), если завтра уроков нет", out.startswith("ДЗ на чт 22.10") and "Физика:" in out)
+    out = write(222, dm.B_HW)
+    check("учителю кнопки пока не работают, так и говорим", "только для учеников" in out)
+    out = write(111, dm.B_ADD)
+    check("«Добавить ДЗ» — подсказка, черновик не создаётся", "Пришли сюда домашку" in out and "Записать" not in out)
+
+    # вопросы своими словами: правила, а если не уверены — модель (подменена); ответ — из расписания
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)  # пн
+    asked = []
+
+    def llm(text):
+        asked.append(text)
+        a = llm_answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    dm.questions.llm_intent = llm
+    llm_answers = []
+    out = write(111, "что задали по алгебре?")
+    check("«что задали по алгебре?» — ДЗ ближайшей алгебры, без модели",
+          out.startswith("Алгебра (завтра): № 101–104") and not asked)
+    out = write(111, "расписание на четверг")
+    check("«расписание на четверг» — уроки чт", "чт 22.10" in out and "11:00 Физика" in out)
+    out = write(111, "где физика?")
+    check("«где физика?» — когда и кабинет", out.startswith("Физика, завтра в 09:00. Кабинет 305."))
+    out = write(111, "дз на субботу")
+    check("«дз на субботу» — уроков нет", "уроков нет" in out)
+    out = write(111, "привет")
+    check("«привет» — что умею, без черновика", out.startswith("Я умею") and "Записать" not in out)
+    llm_answers.append({"intent": "schedule", "day": "пятница", "subject": None})
+    out = write(111, "что у нас в пятницу?")
+    check("непонятное правилам спрашиваем у модели: расписание пт", asked and "10:00 Алгебра" in out)
+    llm_answers.append(ConnectionError("Ollama"))
+    out = write(111, "а что у нас завтра?")
+    check("модель не ответила — подсказка, не падаем", out.strip().startswith("Я умею"))
+    answers.append([{"quote": "алгебра к пятнице № 7", "type": "homework", "summary": "№ 7", "date": "2099-10-23"}])
+    out = write(111, "алгебра к пятнице № 7")
+    check("задание без вопроса — по-прежнему черновик ДЗ", "✅ Записать" in buttons() and "алгебра к пятнице № 7" not in asked)
+    out = write(111, "а по алгебре?")
+    check("«а по алгебре?» — домашка по алгебре, без модели", out.strip().startswith("Алгебра (завтра)"))
+    press(111, "no")
+
+    # болтовня в личке: фильтр (подменён) — без модели, сразу подсказка; похожее на ДЗ — черновик
+    dm.WORTH = lambda text: "главу" in text
+    out = write(111, "ну и погодка сегодня жесть")
+    check("болтовня без предмета и дня — подсказка, модель не вызывается", out.strip().startswith("Я умею") and not answers)
+    answers.append([])
+    out = write(111, "прочитай главу пять")
+    check("фильтр счёл похожим на ДЗ — черновик с выбором предмета", "Не понял предмет" in out)
+    press(111, "no")
+    dm.WORTH = None
+    answers.append([{"quote": "дз по алгебре номер 7", "type": "homework", "summary": "№ 7", "date": None}])
+    out = write(111, "дз по алгебре номер 7")
+    check("«дз по алгебре номер 7» — это новое ДЗ, а не вопрос", "✅ Записать" in buttons() and "Алгебра" in out)
+    press(111, "no")
+
+    # быстрый путь: короткое сообщение про один предмет — без модели, дату ставят правила
+    dm.REFINE = chat_agent.refine
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)
+    out = write(111, "физика к четвергу выучить формулы 3-5")
+    d = list(dm.load().values())[-1]
+    check("быстрый путь: физика к чт без модели", not answers and d["items"][0]["subject"] == "Физика"
+          and d["items"][0]["date"] == "2099-10-22" and "✅ Записать" in buttons())
+    press(111, "no")
+    out = write(111, "алгебра в пятницу контрольная")
+    d = list(dm.load().values())[-1]
+    check("быстрый путь: контрольная по алгебре в пт", d["items"][0]["type"] == "test" and d["items"][0]["date"] == "2099-10-23")
+    press(111, "no")
+    answers.append([{"quote": "физика §3", "type": "homework", "summary": "§3"},
+                    {"quote": "алгебра №7", "type": "homework", "summary": "№7"}])
+    out = write(111, "физика §3, алгебра №7")
+    check("два предмета — всё-таки модель", not answers and len(list(dm.load().values())[-1]["items"]) == 2)
+    press(111, "no")
+    dm.REFINE = None
+
+    # опечатки в дне и предмете
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)
+    dm.NOW = lambda: datetime(2099, 10, 21, 15, 0)  # ср: «завтра» был бы четверг
+    out = write(111, "дз на вторний")
+    check("«дз на вторний» — вторник 27.10, а не «завтра»", "В вт 27.10 уроков нет" in out)
+    dm.NOW = lambda: datetime(2099, 10, 19, 15, 0)
+    out = write(111, "что по алгерба?")
+    check("«что по алгерба?» — алгебра", out.strip().startswith("Алгебра (завтра)"))
+    out = write(111, "расписание на четвег")
+    check("«расписание на четвег» — четверг", "чт 22.10" in out)
 
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket
