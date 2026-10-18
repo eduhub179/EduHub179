@@ -26,3 +26,10 @@ backend/target/
 # Dumps
 project_dump*.txt
 dump*.txt
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/

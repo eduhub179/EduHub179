@@ -2,14 +2,14 @@
 
   python3 -m tools.drive_ingest scan "data/takeout/3/Диск" --out out/takeout3
   python3 -m tools.drive_ingest scan data/math-b2027 --out out/math
-  python3 -m tools.drive_ingest copy "data/takeout/3/Диск" --to staging   # разложить по полкам
 
 scan пишет в --out:
   manifest.jsonl  по строке на файл: путь, размер, хеш, mime, тип текста, предмет, класс, тип, уверенность
   review.csv      только неуверенные — то, что человек должен посмотреть глазами
   report.md       сводка: сколько чего нашлось и что осталось непонятным
 
-Ничего не удаляет и не переименовывает: единственное, что меняется на диске, — папка --out.
+Ничего не удаляет, не переименовывает и не копирует: единственное, что меняется на диске —
+папка --out. Файлы пока остаются там, где лежат; в манифесте хранится путь (ссылка).
 """
 import argparse
 import csv
@@ -150,25 +150,6 @@ def write_report(path, rows, source):
     Path(path).write_text("\n".join(md), encoding="utf-8")
 
 
-def copy_tree(source, dest, rows, dry_run=False):
-    """Разложить файлы по полкам: <класс>/<предмет>/<тип>/<имя>. Копии не копируем."""
-    dest = Path(dest)
-    copied = skipped = 0
-    for r in rows:
-        if r.get("duplicate_of"):
-            skipped += 1
-            continue
-        grade = f"{r['grade']} класс" if r["grade"] else "без класса"
-        target = dest / grade / r["subject"] / r["type"] / r["name"]
-        if dry_run:
-            print(f"   {r['path']} -> {target}")
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(source.fetch(r["path"]))
-        copied += 1
-    return copied, skipped
-
-
 def main():
     ap = argparse.ArgumentParser(prog="drive_ingest", description="Разбор папки с материалами")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -178,26 +159,11 @@ def main():
     s.add_argument("--drive", help="id папки Google Drive (когда появится доступ)")
     s.add_argument("--out", default="out/ingest", help="куда писать manifest/review/report")
 
-    c = sub.add_parser("copy", help="разложить файлы по классам/предметам/типам")
-    c.add_argument("path", nargs="?")
-    c.add_argument("--drive")
-    c.add_argument("--to", required=True, help="куда раскладывать")
-    c.add_argument("--from-manifest", help="использовать готовый manifest.jsonl вместо повторного прохода")
-    c.add_argument("--dry-run", action="store_true")
-
     a = ap.parse_args()
     source = open_source(getattr(a, "path", None), getattr(a, "drive", None))
 
-    if a.cmd == "scan":
-        rows, dur = scan(source, a.out)
-        print(f"\n[готово] {len(rows)} файлов за {dur:.1f} с -> {a.out}/report.md")
-    else:
-        if a.from_manifest:
-            rows = [json.loads(l) for l in open(a.from_manifest, encoding="utf-8")]
-        else:
-            rows, _ = scan(source, Path(a.to) / "_manifest")
-        copied, skipped = copy_tree(source, a.to, rows, a.dry_run)
-        print(f"\n[готово] скопировано {copied}, пропущено копий {skipped} -> {a.to}")
+    rows, dur = scan(source, a.out)
+    print(f"\n[готово] {len(rows)} файлов за {dur:.1f} с -> {a.out}/report.md")
 
 
 if __name__ == "__main__":

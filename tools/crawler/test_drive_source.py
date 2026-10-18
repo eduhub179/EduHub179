@@ -11,6 +11,7 @@ python3 tools/crawler/test_drive_source.py
   6. падение на второй странице → курсор не сдвинулся;
   7. путь собирается из parents: Алгебра/9 класс/ДЗ-15.pdf → algebra, 9 класс;
   8. событие из Drive по схеме совпадает с событием из папки;
+     ссылка на файл сохраняется (файлы не копируются);
   9. Google Doc без md5: изменилась version → updated;
  10. файл перенесли в другую папку (содержимое и имя те же) → updated с новым путём.
 """
@@ -66,6 +67,11 @@ with tempfile.TemporaryDirectory() as td:
     check("классификатор: algebra", dz["subject"] == "algebra", dz["subject"])
     check("классификатор: 9 класс", dz["grade"] == 9, dz["grade"])
     check("классификатор: homework", dz["type"] == "homework", dz["type"])
+    check("ссылка из webViewLink", dz["link"] == "https://drive.google.com/file/d/F1/view?usp=drivesdk",
+          dz["link"])
+    kn = [r for r in rows if r["name"] == "конспект.docx"][0]
+    check("ссылка строится, если Drive её не дал",
+          kn["link"].startswith("https://drive.google.com/file/d/F2/"), kn["link"])
 
     # --- 2. повтор без изменений -----------------------------------------------------
     t2 = FixtureTransport({"changes:T0": {"changes": [], "newStartPageToken": "T1"}})

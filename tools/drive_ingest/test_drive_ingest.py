@@ -20,7 +20,7 @@ sys.path.insert(0, str(HERE.parent.parent))
 from tools.drive_ingest.classify import classify, grade_of  # noqa: E402
 from tools.drive_ingest.extract import extract  # noqa: E402
 from tools.drive_ingest.source import LocalSource  # noqa: E402
-from tools.drive_ingest.__main__ import copy_tree, scan  # noqa: E402
+from tools.drive_ingest.__main__ import scan  # noqa: E402
 
 fails = 0
 
@@ -95,12 +95,21 @@ with tempfile.TemporaryDirectory() as td:
     manifest = [json.loads(l) for l in open(out / "manifest.jsonl", encoding="utf-8")]
     check("манифест на каждый файл", len(manifest) == 3, len(manifest))
 
-    # --- раскладка -------------------------------------------------------------------
-    staging = Path(td) / "staging"
-    copied, skipped = copy_tree(LocalSource(root), staging, rows)
-    check("копии не копируются", copied == 2 and skipped == 1, f"{copied}/{skipped}")
-    target = staging / "9 класс" / "algebra" / "homework" / "ДЗ-001.pdf"
-    check("путь полки <класс>/<предмет>/<тип>", target.exists(), str(target))
+    # --- ссылка вместо копирования ------------------------------------------------------
+    check("в манифесте есть путь-ссылка, а не копия",
+          all(x.get("path") for x in manifest), [x.get("path") for x in manifest])
+
+    # --- категории добавляются без правки кода -------------------------------------------
+    import json as _json
+    from tools.drive_ingest.classify import classify, load_categories, set_categories
+    check("неизвестный предмет до настройки", classify("Физика/кр.pdf", "кр.pdf")["subject"] == "unknown")
+    custom = _json.load(open(HERE / "categories.json", encoding="utf-8"))
+    custom["subjects"]["physics"] = ["физика"]
+    custom_path = Path(td) / "categories_custom.json"
+    custom_path.write_text(_json.dumps(custom, ensure_ascii=False), encoding="utf-8")
+    set_categories(load_categories(custom_path))
+    check("после добавления категории — physics", classify("Физика/кр.pdf", "кр.pdf")["subject"] == "physics")
+    set_categories(load_categories(HERE / "categories.json"))
 
 print(f"\n{'FAILED' if fails else 'all good'} — {fails} failure(s)")
 sys.exit(1 if fails else 0)
