@@ -151,6 +151,11 @@ def main():
     check("записано на урок физики в четверг", "№ 5–7" in hw.get("text", ""))
     check("автор — ученик, роль student", hw.get("created_by") == STUDENT and hw.get("created_by_role") == "student")
     check("в тексте нет «Из чата»", "Из чата" not in hw.get("text", ""))
+    check("в тексте только задание, без предмета и дня", hw.get("text", "").strip() == "№ 5–7 из задачника")
+    check("task_only: «геометрия в чт 12 номер» -> «12 номер»",
+          dm.task_only("геометрия в чт 12 номер", ["Геометрия"]) == "12 номер")
+    check("task_only: «химические реакции» не трогаем",
+          dm.task_only("химические реакции выучить", ["Химия"]) == "химические реакции выучить")
     check("в черновике «Записал»", "Записал" in out)
     check("отдельного «✅ Записал» не пришло (уже видно в черновике)", not any(p.get("chat_id") == 111 and
           m == "sendMessage" for m, p in sent))

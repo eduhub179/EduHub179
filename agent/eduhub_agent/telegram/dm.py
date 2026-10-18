@@ -376,6 +376,61 @@ def quick(m, subjects):
     return [x for x in REFINE(m, [{"quote": text, "type": kind, "summary": text}]) if x.get("type") in KINDS]
 
 
+PREP = {"в", "во", "к", "ко", "на", "до", "по"}
+FILLER = re.compile(r"^(дз|домашк\w*|домашнее|задани[ея]|задали|задано|задал[аи]?)$")
+
+
+def subject_word(words, i, subjects):
+    """Сколько слов с позиции i — название предмета: «алгебре» 1, «английский язык» 2, «химические» 0.
+    Строже, чем subjects_in: формы слова и опечатки, но не однокоренные («геометрическая»)."""
+    w = words[i]
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    for s in subjects:
+        parts = s.lower().split()
+        if timetable.ALIASES.get(w) and timetable.same_subject(s, timetable.ALIASES[w]):
+            return 2 if len(parts) > 1 and nxt[:4] == parts[1][:4] else 1
+        if any(len(a) >= 5 and len(w) == len(a) and sum(x != y for x, y in zip(w, a)) == 1  # «физрв»
+               and f.split()[0] != a and timetable.same_subject(s, f) for a, f in timetable.ALIASES.items()):
+            return 1
+        first = parts[0]
+        form = w.startswith(first[:-1]) and len(w) <= len(first) + 1 or len(w) >= 5 and abs(len(w) - len(first)) <= 1 \
+            and questions.close(w, first, 0.8)
+        if form and len(parts) == 1:
+            return 1
+        if form and nxt[:4] == parts[1][:4]:
+            return 2
+    return 0
+
+
+def task_only(text, subjects):
+    """Само задание без предмета и дня: «геометрия в чт 12 номер» -> «12 номер». Предмет и дата и так
+    есть у урока, в тексте ДЗ они лишние. Предмет режем только в начале или после «по», чтобы не трогать
+    «химические реакции». Если вырезать нечего или ничего не осталось — текст как был."""
+    today = NOW().date()
+    raw = text.split()
+    cores = [re.sub(r"[^а-яё0-9.]", "", w.lower()).strip(".") for w in raw]
+    keep, dropped, skip = [], False, 0
+    for i, (w, core) in enumerate(zip(raw, cores)):
+        if skip:
+            skip -= 1
+            continue
+        word = bool(re.fullmatch(r"[а-яё]+", core))
+        n = word and (not keep or keep[-1].lower() == "по") and subject_word(cores, i, subjects)
+        drop = bool(core) and bool(n or FILLER.match(core) or word and questions.parse_day(core, today)
+                                   or re.fullmatch(r"\d{1,2}\.\d{1,2}", core)
+                                   or not keep and re.fullmatch(r"(?:8|9|10|11|2\d|20\d\d)[а-яё]", core))
+        if drop:
+            dropped, skip = True, max(n - 1, 0)
+            while keep and keep[-1].lower().strip(",:") in PREP:
+                keep.pop()
+        else:
+            keep.append(w)
+    while keep and keep[-1].lower() in PREP:
+        keep.pop()
+    out = " ".join(keep).strip(" ,.:;—-")
+    return out if dropped and len(out) >= 2 else text
+
+
 def understand(m, cls, subjects):
     """Находки ДЗ/контрольных из текста. Модель недоступна или ничего не нашла — всё сообщение одно ДЗ."""
     chat = f"Личные сообщения боту, {cls}" + (f" {subjects[0]}" if len(subjects) == 1 else "")
@@ -392,7 +447,7 @@ def understand(m, cls, subjects):
         quote = (it.get("quote") or "").strip()
         text = quote if len(quote) >= len(it.get("summary") or "") / 2 else it.get("summary") or quote
         cand = subjects_in(quote, subjects) or subjects  # в одном сообщении могут быть два предмета
-        out.append({"type": it["type"], "summary": (text or m["text"])[:500], "quote": quote,
+        out.append({"type": it["type"], "summary": task_only(text or m["text"], subjects)[:500], "quote": quote,
                     "date": it.get("date"), "subject": cand[0] if len(cand) == 1 else None})
     return out
 
