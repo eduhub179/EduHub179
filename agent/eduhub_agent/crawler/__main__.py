@@ -1,7 +1,7 @@
 """Краулер: собирает материалы из внешних источников в платформу.
 
-  python3 -m tools.crawler sync "<папка>" --state state/drive.json --out out/sync
-  python3 -m tools.crawler sync --fixture tools/crawler/fixtures/drive_first.json \\
+  python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json --out out/sync
+  python3 -m eduhub_agent.crawler sync --fixture agent/eduhub_agent/crawler/fixtures/drive_first.json \\
       --folder-id PROOT --state state/fake.json --out out/fake     # Drive без ключей
 
 Первый запуск = снимок источника, дальше — только изменения. Второй прогон по тем же

@@ -4,8 +4,8 @@
 Google Takeout (или просто папка с материалами). Когда появится доступ к дискам классов,
 добавляется DriveSource, а scan/classify/copy остаются те же.
 
-    python3 -m tools.drive_ingest scan /path/to/takeout/Диск --out manifest.jsonl
-    python3 -m tools.drive_ingest scan --drive "1AbC...folderId" --out manifest.jsonl
+    python3 -m eduhub_agent.ingest scan /path/to/takeout/Диск --out manifest.jsonl
+    python3 -m eduhub_agent.ingest scan --drive "1AbC...folderId" --out manifest.jsonl
 """
 import os
 from pathlib import Path
