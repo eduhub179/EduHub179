@@ -247,7 +247,8 @@ def main():
     check("«что задали по алгебре?» — ДЗ ближайшей алгебры, без модели",
           out.startswith("Алгебра (завтра): № 101–104") and not asked)
     out = write(111, "расписание на четверг")
-    check("«расписание на четверг» — уроки чт", "чт 22.10" in out and "11:00 Физика" in out)
+    check("«расписание на четверг» — уроки чт, дата один раз", out.strip().startswith("Чт 22.10:") and "11:00 Физика" in out
+          and out.lower().count("22.10") == 1)
     out = write(111, "где физика?")
     check("«где физика?» — когда и кабинет", out.startswith("Физика, завтра в 09:00. Кабинет 305."))
     out = write(111, "дз на субботу")
@@ -309,7 +310,15 @@ def main():
     out = write(111, "что по алгерба?")
     check("«что по алгерба?» — алгебра", out.strip().startswith("Алгебра (завтра)"))
     out = write(111, "расписание на четвег")
-    check("«расписание на четвег» — четверг", "чт 22.10" in out)
+    check("«расписание на четвег» — четверг", "чт 22.10" in out.lower())
+
+    # сдвоенный урок: одно ДЗ на двух уроках показываем один раз
+    real = dm.lessons_now
+    dm.lessons_now = lambda cid, d: [{"id": "a", "start_time": "09:00", "subject_name": "Химия", "homework": {"text": "§5"}},
+                                     {"id": "b", "start_time": "09:55", "subject_name": "Химия", "homework": {"text": "§5"}}]
+    out = dm.answer_question("homework", CLASS, date(2099, 10, 20))
+    check("сдвоенная химия — ДЗ один раз", out.count("Химия: §5") == 1)
+    dm.lessons_now = real
 
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket
