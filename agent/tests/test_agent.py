@@ -7,7 +7,12 @@ import json
 import sys
 from pathlib import Path
 
-import chat_agent as ca
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from eduhub_agent.telegram import chat_agent as ca
 
 NAMES = {"h": "homework", "t": "test", "l": "lesson_change", "m": "material", "i": "info"}
 POSTED = "2026-10-15T12:00:00"

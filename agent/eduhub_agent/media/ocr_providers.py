@@ -22,7 +22,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-TESSDATA = Path(__file__).parent / "tessdata"
+from eduhub_agent.paths import TESSDATA as PATHS_TESSDATA
+
+TESSDATA = PATHS_TESSDATA
 
 
 @dataclass

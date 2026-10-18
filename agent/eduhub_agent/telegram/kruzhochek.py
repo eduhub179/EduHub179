@@ -15,6 +15,8 @@ import urllib.parse
 import urllib.request
 from datetime import date, timedelta
 
+from eduhub_agent.paths import data
+
 MONTHS = {"янв": 1, "фев": 2, "мар": 3, "апр": 4, "май": 5, "мая": 5, "июн": 6, "июл": 7,
           "авг": 8, "сен": 9, "окт": 10, "ноя": 11, "дек": 12}
 HEADER = re.compile(
@@ -127,7 +129,7 @@ def process(posts, lectures=None):
 
 
 if __name__ == "__main__":
-    posts = json.load(open(sys.argv[1] if len(sys.argv) > 1 else "kruzhochek.json", encoding="utf-8"))
+    posts = json.load(open(sys.argv[1] if len(sys.argv) > 1 else str(data("kruzhochek.json")), encoding="utf-8"))
     lectures, loose = process(posts)
     kinds = [classify(p)[0] for p in posts]
     print(f"постов {len(posts)}: анонсов {kinds.count('lecture')}, с записями {kinds.count('recording')}, прочих {kinds.count('other')}")

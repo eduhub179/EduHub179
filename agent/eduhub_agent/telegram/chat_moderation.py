@@ -21,8 +21,8 @@ import threading
 import time
 from pathlib import Path
 
-import backend_api
-import moderator
+from eduhub_agent.server import backend_api
+from eduhub_agent.telegram import moderator
 
 TYPES = ("homework", "test", "lesson_change", "material", "info")
 RETRY_EVERY = 600  # раз в столько секунд повторяем то, что не ушло в бэкенд
