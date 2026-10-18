@@ -49,10 +49,10 @@ from pathlib import Path
 
 from eduhub_agent.paths import CHATS, data
 
-from eduhub_agent.files import board
 from eduhub_agent.telegram import chat_moderation
 from eduhub_agent.telegram import dm
 from eduhub_agent.files import attachments
+from eduhub_agent.files import queue as file_queue
 from eduhub_agent.server import timetable
 from eduhub_agent.llm.baseline_rules import WEEKDAYS, extract as rules_extract
 
@@ -60,9 +60,7 @@ MODEL = os.environ.get("MODEL", "qwen2.5:7b")  # другую модель: MODE
 URL = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/chat"
 CONTEXT = 4  # сколько предыдущих сообщений показывать модели
 # Фото: "stub" (по умолчанию, для беты) — фото без подписи сразу считается ДЗ и привязывается к уроку по расписанию,
-# без распознавания; "board" — распознавание текста на фото (Tesseract) и проверка «доска или нет» (board.py),
-# как было 16.10. Включить: PHOTO_MODE=board python3 chat_agent.py ... Разбор этого варианта: фото-разбор.md
-PHOTO_MODE = os.environ.get("PHOTO_MODE", "stub")
+# читаются всегда (Tesseract + общий read.py), отдельного режима «проверить доску» больше нет,
 
 # Что-то из этого почти всегда есть в полезном сообщении; остальное (мемы, «ок», «спасибо») модель не видит.
 USEFUL = re.compile(
@@ -745,22 +743,24 @@ def is_photo(name):
     return name == "фото" or Path(name).suffix.lower() in attachments.IMAGES or Path(name).name.startswith("photo_")
 
 
-def photo_rule(m):
-    """Фото без подписи. PHOTO_MODE=stub: всегда ДЗ (срок и урок — по расписанию, как у любой домашки).
-    PHOTO_MODE=board: фото без печатного текста — ДЗ, только если это доска с записями, иначе ничего.
-    None — правило не подходит (подпись, распознанный текст, не фото), решает модель как обычно."""
+def photo_verdict(m):
+    """Фото без подписи и без текста: кандидат в ДЗ или мусор.
+
+    Раньше здесь стояла модель «это доска?» (board.py). Теперь то же решение даёт статус
+    чтения, бесплатно: tesseract нашёл слова, но не уверен → скан записи (кандидат в ДЗ);
+    слов нет вовсе → мусор (мем, фото класса). None — правило не подходит, пусть решает модель.
+    """
     names = m.get("file_paths") or m.get("files") or []
     if not names or not all(is_photo(p) for p in names):
         return None
     if len(re.sub(r"[^а-яёa-z0-9]", "", m["text"].lower())) > 3 or m.get("file_texts"):
         return None  # есть подпись или распознанный текст — пусть разбирается модель
-    if PHOTO_MODE != "board":
-        return True
-    paths = m.get("file_paths") or []
-    verdicts = [board.is_board(p) for p in paths if Path(p).exists()]
-    if not verdicts or None in verdicts:
-        return None  # модели для фото нет — по-старому
-    return any(verdicts)
+    statuses = [r.status for _, r in (m.get("file_readings") or [])]
+    if not statuses:
+        return None
+    if any(s == "ocr" for s in statuses):
+        return None  # текст прочитан уверенно — обычный путь
+    return "scanned" in statuses
 
 
 def process_message(m, history, chat, found, cache=None, after=()):
@@ -768,15 +768,15 @@ def process_message(m, history, chat, found, cache=None, after=()):
     after: следующие сообщения и ответы — по ним модель уточняет дату и детали."""
     key = str(m["id"]) + ("|после:" + ",".join(str(a["id"]) for a in after) if after else "") + \
         ("|текст файла" if m.get("file_texts") else "")  # старые ответы модели видели только имя файла
-    verdict = photo_rule(m)
+    verdict = photo_verdict(m)
     if verdict is not None:
-        if PHOTO_MODE == "board":
-            say(f"   фото без подписи: {'похоже на доску → ДЗ' if verdict else 'не доска → пропускаю'}")
-            raw = [{"quote": m["text"].strip() or "фото доски", "type": "homework", "summary": "фото доски с записями",
-                    "date": None}] if verdict else []
+        if verdict:
+            say("   фото без подписи: слова есть, OCR не уверен → кандидат в ДЗ")
+            raw = [{"quote": m["text"].strip() or "фото", "type": "homework",
+                    "summary": "фото с записями (OCR не уверен)", "date": None}]
         else:
-            say("   фото без подписи → ДЗ (заглушка для беты, PHOTO_MODE=stub)")
-            raw = [{"quote": m["text"].strip() or "фото", "type": "homework", "summary": "фото с заданием", "date": None}]
+            say("   фото без подписи: текста не нашлось → пропускаю")
+            raw = []
     elif cache is not None and key in cache:
         raw = cache[key]
         say("   модель (из кеша):", json.dumps(raw, ensure_ascii=False))
@@ -985,7 +985,11 @@ def run_export(path, use_all, limit):
     for m in todo:  # пути в экспорте — относительно папки экспорта
         if m.get("file_paths"):
             m["file_paths"] = [str(out_dir / p) for p in m["file_paths"]]
-            m["file_texts"] = attachments.texts_for(m["file_paths"], ocr=PHOTO_MODE == "board")
+            m["file_readings"] = attachments.read_many(m["file_paths"])
+            m["file_texts"] = attachments.texts_from(m["file_readings"], m.get("files"))
+            for p, _r in m["file_readings"]:
+                file_queue.enqueue(str(p), Path(p).name, source="telegram", path=str(p),
+                                   caption=m.get("text"), chat=m.get("chat"))
     with_text = sum(1 for m in todo if m.get("file_texts"))
     if with_text:
         print(f"Текст достали из вложений {with_text} сообщений")
@@ -1145,7 +1149,11 @@ def run_live():
                 if p:
                     paths.append(str(p))
             m["file_paths"] = paths
-            m["file_texts"] = attachments.texts_for(paths, ocr=PHOTO_MODE == "board")
+            m["file_readings"] = attachments.read_many(paths)
+            m["file_texts"] = attachments.texts_from(m["file_readings"], names)
+            for p, _r in m["file_readings"]:
+                file_queue.enqueue(str(p), Path(p).name, source="telegram", path=str(p),
+                                   caption=m.get("text"), chat=m.get("chat"))
             say(f"   скачано файлов: {len(paths)} из {len(m['file_ids'])}, текст есть в {len(m['file_texts'])}")
         changed = reply_update(m, found)
         if changed:
