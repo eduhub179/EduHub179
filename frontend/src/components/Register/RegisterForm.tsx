@@ -18,10 +18,11 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
         const email = String(formData.get('email') ?? '');
+        const name = String(formData.get('name') ?? '').trim();
 
         try {
             onRegister({
-                name: email,
+                name,
                 email,
                 password: String(formData.get('password') ?? ''),
             });
@@ -32,6 +33,17 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
 
     return (
         <form className="register-form" onSubmit={handleSubmit}>
+            <label className="register-form__field">
+                <span>Никнейм</span>
+                <input
+                    autoComplete="nickname"
+                    name="name"
+                    placeholder="Например, admin"
+                    required
+                    type="text"
+                />
+            </label>
+
             <label className="register-form__field">
                 <span>Электронная почта</span>
                 <input
