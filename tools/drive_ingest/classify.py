@@ -38,7 +38,10 @@ TYPES = {
     "program": ["программа", "program", "скрипт", "project"],
 }
 
-GRADE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(?:класс|кл\b|[-–]?[А-ЯЁа-яё]\b)", re.I)
+# «9 класс», «9 кл.»
+GRADE_WORD = re.compile(r"(?<!\d)(\d{1,2})\s*(?:класс|кл\.?\b)", re.I)
+# «8Б», «10 А» — только заглавная буква и не часть слова (лист04д — номер листка, не класс)
+GRADE_LETTER = re.compile(r"(?<![\d])(\d{1,2})\s*[-–]?\s*([А-ЯЁ])(?![А-Яа-яЁё])")
 
 # папки, которые ничего не говорят о предмете
 NOISE_DIRS = {"не в папках", "разное", "мой диск", "диск", "classroom", "корзина"}
@@ -87,12 +90,26 @@ def subject_of(path, name):
     return ("other_subject", "none") if noise else ("unknown", "none")
 
 
-def grade_of(path, name):
-    for chunk in [name] + list(reversed(path.split("/")[:-1])):
-        m = GRADE_RE.search(chunk)
+def _grade_in(text, letters=True):
+    for rx in ([GRADE_WORD, GRADE_LETTER] if letters else [GRADE_WORD]):
+        m = rx.search(text)
         if m:
-            return int(m.group(1))
+            n = int(m.group(1))
+            if 1 <= n <= 11:                 # 12-й параллели не бывает
+                return n
     return None
+
+
+def grade_of(path, name):
+    """Класс: сначала папки (надёжно), потом имя — и в имени только «N класс».
+
+    Порядок важен: «Матан/9 класс/лист12д--...pdf» — это 9 класс, а не 12-й.
+    """
+    for part in reversed(path.split("/")[:-1]):
+        found = _grade_in(part)
+        if found:
+            return found
+    return _grade_in(name, letters=False)
 
 
 def type_of(path, name, text=""):
