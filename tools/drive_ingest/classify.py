@@ -9,25 +9,41 @@ program, other} — ровно те, что в gold.
 точности, gemma3:4b — 73%, qwen2.5:3b — 71%, при 0.05 с против 10 с на файл. Гибрид
 (правила + модель только на неуверенных) — 88.6%, и это следующий шаг, а не первый.
 """
+import json
+import os
 import re
+from pathlib import Path
 
-SUBJECTS = {
-    "algebra": ["алгебра", "алг"],
-    "geometry": ["геометрия", "геом"],
-    "calculus": ["матан", "мат.анализ", "матанализ", "математический анализ"],
-    "digital_tech": ["цифровые технологии", "основы цифровых", "опцт"],
-    "misc": ["разное", "не в папках", "python", "питон", "colab"],
-}
+DEFAULT_CATEGORIES = Path(__file__).with_name("categories.json")
+_categories = None
 
-TYPES = {
-    "worksheet": ["лист", "листок", "плюсник", "задачник", "сборник", "вариант", "worksheet"],
-    "homework": ["дз", "домашнее задание", "домашка", "homework"],
-    "test": ["контрольная", "контрольн", "кр", "зачёт", "зачет", "экзамен"],
-    "independent_work": ["самостоятельная", "самост", "отработка"],
-    "notes": ["конспект", "урок", "лекция", "notes"],
-    "textbook": ["учебник", "пособие", "книга"],
-    "program": ["программа", "скрипт", "проект", "program", "project"],
-}
+
+def load_categories(path=None):
+    """Категории из JSON. Новый предмет или тип — это строка в файле, а не правка кода.
+
+    Формат: {"subjects": {код: [синонимы]}, "types": {...}, "fallback": {...}}.
+    Порядок ключей в "types" важен: worksheet проверяется раньше остальных, чтобы
+    «Листок 16. Самостоятельная работа» не стал листком (см. type_of).
+    """
+    global _categories
+    p = Path(path or os.environ.get("EDUHUB_CATEGORIES") or DEFAULT_CATEGORIES)
+    data = json.loads(p.read_text(encoding="utf-8"))
+    for key in ("subjects", "types"):
+        if not data.get(key):
+            raise ValueError(f"{p}: пустой раздел {key}")
+    data.setdefault("fallback", {"subject": "misc", "type": "other"})
+    _categories = data
+    return data
+
+
+def categories():
+    return _categories if _categories is not None else load_categories()
+
+
+def set_categories(data):
+    global _categories
+    _categories = data
+
 
 # «9 класс», «9 кл.»
 GRADE_WORD = re.compile(r"(?<!\d)(\d{1,2})\s*(?:класс|кл\.?\b)", re.I)
@@ -60,18 +76,37 @@ def _hit(words, text):
     return best
 
 
+def _type_order():
+    """Порядок проверки: как в JSON, «other» последний, worksheet — после остальных.
+
+    «Листок 16. Самостоятельная работа» должен стать самостоятельной работой, а не листком,
+    поэтому самый общий тип проверяется последним среди содержательных.
+    """
+    fallback = categories()["fallback"]["type"]
+    order = [k for k in categories()["types"] if k != fallback]
+    if "worksheet" in order:
+        order.remove("worksheet")
+        order.append("worksheet")
+    return order
+
+
+def _type_words(kind):
+    return categories()["types"].get(kind, [])
+
+
 def subject_of(path, name):
     """Предмет: папки снизу вверх, потом имя. «Разное» — это misc, а не отсутствие предмета."""
     parts = [p for p in path.split("/")[:-1] if p.lower() not in NOISE_DIRS]
+    subjects = categories()["subjects"]
     for part in reversed(parts):
-        for key, words in SUBJECTS.items():
+        for key, words in subjects.items():
             if _hit(words, part)[1] == "high":
                 return key, "high"
-    for key, words in SUBJECTS.items():
+    for key, words in subjects.items():
         if _hit(words, name)[1] == "high":
             return key, "high"
     for part in reversed(parts):
-        for key, words in SUBJECTS.items():
+        for key, words in subjects.items():
             if _hit(words, part)[0]:
                 return key, "medium"
     return "unknown", "none"
@@ -105,9 +140,9 @@ def type_of(path, name, text=""):
     Порядок проверок не случаен: «Листок 16. Самостоятельная работа» — это самостоятельная,
     а не листок, поэтому worksheet идёт последним из «содержательных» типов.
     """
-    order = ["homework", "test", "independent_work", "notes", "textbook", "worksheet"]
+    order = _type_order()
     for kind in order:
-        hit, conf = _hit(TYPES[kind], name)
+        hit, conf = _hit(_type_words(kind), name)
         if hit:
             return kind, conf
     # вложения сохранённых страниц (*_files/) — не материал, а картинки и скрипты страницы
@@ -115,7 +150,7 @@ def type_of(path, name, text=""):
         return "other", "high"
     for part in reversed(path.split("/")[:-1]):
         for kind in order:
-            hit, conf = _hit(TYPES[kind], part)
+            hit, conf = _hit(_type_words(kind), part)
             if hit:
                 return kind, conf
     ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
@@ -123,7 +158,7 @@ def type_of(path, name, text=""):
         return "program", "high"
     if text:
         for kind in order:
-            if _hit(TYPES[kind], text[:400])[0]:
+            if _hit(_type_words(kind), text[:400])[0]:
                 return kind, "medium"
     return "other", "low"
 
