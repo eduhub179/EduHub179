@@ -13,10 +13,11 @@
 графики и скриншоты установщика. Порог поэтому стоит в пустоте, а не на глаз.
 
 Распознанное не отправляется никуда: фото и текст остаются на этом компьютере.
-Всё, что прочитать не удалось, но текстом быть может, пишется в `chats/ocr_queue.jsonl` —
+Кеша распознанного нет: одинаковые байты ещё не значат одинаковое задание, а порог
+уверенности меняется — старые ответы пришлось бы сбрасывать вручную.
+Всё, что прочитать не удалось, но текстом быть может, пишется в `state/ocr_queue.jsonl` —
 это очередь для будущего движка (облачный OCR или модель), см. ocr_providers.py.
 """
-import hashlib
 import json
 import os
 import tempfile
@@ -24,23 +25,24 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from eduhub_agent.paths import CHATS as PATHS_CHATS
+from eduhub_agent.paths import STATE as PATHS_STATE
 from eduhub_agent.media import ocr_providers as providers
 
 # Порог: 70. Проверено на архиве (402 документа): в полосе 60-79 нет ни одного домашнего
 # задания — только графики и скриншоты установщика. Печатный листок даёт 85-95.
 CONF_TEXT = float(os.environ.get("OCR_MIN_CONF", 70))
 MIN_WORDS = 4           # как в прежнем правиле files.py («хотя бы 4 настоящих слова»)
-MIN_NUMBERS = 10        # и в правиле для таблиц ответов
-MIN_TABLE_WORDS = 2     # таблица ответов — это числа плюс подписи («625 Дж»), а не голая ось графика
+# Правило для таблиц чисел и подписей осей отключено 18.10.2026 по решению Макса: различать
+# график и таблицу пока не нужно. Код оставлен ниже, включается TABLE_RULE = True.
+TABLE_RULE = False
+MIN_NUMBERS = 10        # порог для правила таблиц (когда его включат)
+MIN_TABLE_WORDS = 1     # у таблицы есть хотя бы заголовок или единица; у оси подписей нет вовсе
 CONF_TABLE = 60.0       # печатная таблица читается уверенно; мусор с цифрами — нет
 MAX_SIDE = 2600         # больше не нужно: телефонное фото 4000 px читается дольше и не точнее
 UPSCALE_TO = 1600       # мелкие фото увеличиваем, так Tesseract ошибается реже
 
-CHATS = PATHS_CHATS
-QUEUE = CHATS / "ocr_queue.jsonl"
-CACHE = CHATS / "ocr_cache.json"
-_cache = None
+STATE = PATHS_STATE
+QUEUE = STATE / "ocr_queue.jsonl"
 
 
 @dataclass
@@ -56,54 +58,23 @@ class Triage:
     engine: str
 
 
-def _sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _load_cache():
-    global _cache
-    if _cache is None:
-        try:
-            _cache = json.load(open(CACHE, encoding="utf-8"))
-        except (OSError, ValueError):
-            _cache = {}
-    return _cache
-
-
-def _save_cache(key, row):
-    cache = _load_cache()
-    cache[key] = row
-    try:
-        CHATS.mkdir(exist_ok=True)
-        json.dump(cache, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)
-    except OSError:
-        pass
-
-
 def _queue(path, reading, reason):
-    """Записать фото в очередь для будущего движка. Повторы (то же фото переслали ещё раз) не дублируем."""
+    """Записать фото в очередь для будущего движка: что не прочитали, но прочитать можно.
+
+    Дедупликации нет намеренно: одинаковые байты ещё не значат одинаковое задание, а
+    разные фото одной доски — тем более. Пять снимков одной страницы останутся пятью
+    строками; разбирать их будет движок, который знает больше, чем хеш.
+    """
     if not reading:
         return
     try:
-        CHATS.mkdir(exist_ok=True)
-        row = {"sha256": _sha256(path), "name": Path(path).name, "reason": reason,
-               "conf": reading.mean_conf, "words": reading.words, "numbers": reading.numbers,
+        STATE.mkdir(exist_ok=True)
+        row = {"name": Path(path).name, "reason": reason, "conf": reading.mean_conf,
+               "words": reading.words, "numbers": reading.numbers,
                "shape": "handwriting" if reading.words >= MIN_WORDS else "no_text",
                "ts": int(time.time())}
-        seen = set()
-        if QUEUE.exists():
-            for line in open(QUEUE, encoding="utf-8"):
-                try:
-                    seen.add(json.loads(line)["sha256"])
-                except (ValueError, KeyError):
-                    continue
-        if row["sha256"] not in seen:
-            with open(QUEUE, "a", encoding="utf-8") as f:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        with open(QUEUE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
         pass
 
@@ -116,6 +87,8 @@ def looks_like_text(reading):
 def looks_like_table(reading):
     """Распечатанная таблица чисел: слов мало, зато много чисел («625 Дж», «1:3:5»).
 
+    Вызывается только при TABLE_RULE = True (сейчас выключено).
+
     Три ограничителя, без которых правило принимает мусор: подписи оси графика (монотонный
     ряд чисел), картинку без единого слова и неразборчивое фото с цифрами.
     """
@@ -125,13 +98,14 @@ def looks_like_table(reading):
 
 
 def accept(reading):
-    """(берём ли текст, почему). Уверенность решает для текста, структура — для таблиц."""
+    """(берём ли текст, почему). Решает уверенность Tesseract; структура — только если включено правило таблиц."""
     if not reading:
         return False, "не прочитано"
-    if reading.axis_like:
-        return False, "подписи оси графика"
-    if looks_like_table(reading):
-        return True, "таблица чисел"
+    if TABLE_RULE:                       # отключено: см. TABLE_RULE выше
+        if reading.axis_like:
+            return False, "подписи оси графика"
+        if looks_like_table(reading):
+            return True, "таблица чисел"
     if looks_like_text(reading) and reading.mean_conf >= CONF_TEXT:
         return True, "печатный текст"
     if reading.words < MIN_WORDS:
@@ -164,12 +138,6 @@ def _prepare(path):
 def read_image(path):
     """Разобрать одно фото. Возвращает Triage; текст в `.text` (или None)."""
     path = Path(path)
-    key = _sha256(path)
-    cached = _load_cache().get(key)
-    if cached:
-        return Triage(text=cached.get("text"), route=cached["route"], reason=cached.get("reason", "кеш"),
-                      conf=cached.get("conf", 0.0), words=cached.get("words", 0), numbers=cached.get("numbers", 0),
-                      psm=cached.get("psm", 0), ms=0, engine="cache:" + str(cached.get("engine", "?")))
 
     src, tmp = _prepare(path)
     try:
@@ -208,9 +176,6 @@ def read_image(path):
                     engine=best.engine if best else "none")
     if route == "queued":
         _queue(path, best, reason)
-    _save_cache(key, {"text": text, "route": route, "reason": reason, "conf": result.conf,
-                      "words": result.words, "numbers": result.numbers, "psm": result.psm,
-                      "engine": result.engine})
     return result
 
 
