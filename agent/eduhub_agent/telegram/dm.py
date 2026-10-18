@@ -167,7 +167,24 @@ def subjects_typo(text, names):
             first = n.lower().split()[0]
             if n not in hit and questions.close(w[:len(first) + 1], first, 0.75):
                 hit.append(n)
+        for alias, full in timetable.ALIASES.items():  # «физрв» ~ «физра» = физкультура
+            if len(alias) >= 5 and questions.close(w[:len(alias) + 1], alias, 0.8):
+                hit += [n for n in names if timetable.same_subject(n, full) and n not in hit]
     return hit
+
+
+UNKNOWN_SUBJECT = re.compile(r"(?:\bпо|\bкогда|\bгде|\bкакой кабинет у|\bкабинет)\s+([а-яё\-]{3,})", re.I)
+NOT_SUBJECT = {"завтра", "сегодня", "послезавтра", "нас", "урок", "урока", "уроки", "следующий", "следующего", "будет",
+               "первый", "второй", "ближайший", "мне", "идти", "кабинет", "какому", "какой", "дз"}
+
+
+def unknown_subject(text):
+    """Слово на месте предмета («когда физрв», «что по матеше»), которое не узнали, или None."""
+    m = UNKNOWN_SUBJECT.search(text)
+    w = m and m.group(1).lower()
+    if not w or w in NOT_SUBJECT or questions.parse_day(w, NOW().date()):
+        return None
+    return w
 
 
 def resolve(d, it):
@@ -451,6 +468,11 @@ def _question(msg, chat_id, text, cid):
     if not found and q.get("subject"):
         found = [n for n in names if timetable.same_subject(n, q["subject"])]
     day = questions.parse_day(text, NOW().date()) or (q.get("day") and questions.parse_day(q["day"], NOW().date()))
+    odd = not found and q["intent"] in ("homework", "next") and unknown_subject(text)
+    if odd:  # спросили про предмет, который не узнали: не отвечаем про «любой урок»
+        tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
+           text=f"Не понял предмет «{odd}». Предметы класса: " + ", ".join(sorted(names)) + ".")
+        return True
     print(f"ЛС: вопрос {q['intent']} ({q['by']}), день {day}, предмет {found[:1]}")
     tg("sendMessage", chat_id=chat_id, text=answer_question(q["intent"], cid, day, found[0] if found else None),
        reply_markup=MENU)
