@@ -253,7 +253,8 @@ def answer_question(intent, cid, day=None, subject=None):
         if not les:
             return f"{when(d, today).capitalize()} ({day_label(d.isoformat())}) уроков нет." if d in (
                 today, today + timedelta(days=1)) else f"В {day_label(d.isoformat())} уроков нет."
-        return f"{when(d, today).capitalize()}, {day_label(d.isoformat())}:\n" + "\n".join(lesson_line(l) for l in les)
+        head = when(d, today).capitalize() + (f", {day_label(d.isoformat())}" if d <= today + timedelta(days=1) else "")
+        return f"{head}:\n" + "\n".join(lesson_line(l) for l in les)
     if intent == "next":
         if day:
             l = next((x for x in lessons_now(cid, day) if subject is None or timetable.same_subject(x["subject_name"], subject)), None)
@@ -291,7 +292,8 @@ def answer_question(intent, cid, day=None, subject=None):
     hw = [l for l in les if hw_text(l)]
     if not hw:
         return f"На {when(d, today)} домашки пока нет."
-    return f"ДЗ на {when(d, today)}:\n\n" + "\n\n".join(f"{l['subject_name']}: {hw_text(l)}" for l in hw)
+    lines = list(dict.fromkeys(f"{l['subject_name']}: {hw_text(l)}" for l in hw))  # сдвоенный урок — одно ДЗ, один раз
+    return f"ДЗ на {when(d, today)}:\n\n" + "\n\n".join(lines)
 
 
 def answer_menu(button, cid):
@@ -495,7 +497,7 @@ def _draft(msg, chat_id, text, user, cls, cid):
     drafts = load()
     drafts[d["id"]] = d
     save(drafts)
-    if chat_id not in _menu_shown:  # человек сразу прислал ДЗ и ещё не видел кнопок внизу
+    if chat_id not in _menu_shown and user["role"] == "student":  # прислал ДЗ сразу и ещё не видел кнопок (они для учеников)
         _menu_shown.add(chat_id)
         tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
            text="Внизу кнопки: домашка на завтра, расписание на сегодня и где следующий урок.")
