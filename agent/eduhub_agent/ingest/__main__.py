@@ -21,8 +21,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from eduhub_agent.classify import classify
 from eduhub_agent.files.decide import decide
+from eduhub_agent.files.labels import label
 from eduhub_agent.files.read import read
 from eduhub_agent.ingest.grade import grade_of
 from .source import open_source
@@ -85,7 +85,7 @@ def scan(source, out_dir, classifier=None):
                     "text_status": text_status, "text_chars": len(text),
                     "read_engine": r.engine, "ocr_confidence": r.ocr_confidence,
                 }
-                row.update((classifier or classify)(rel, full.name, text))
+                row.update(label(rel, full.name, text, classifier=classifier))
                 row["route"], row["route_reason"] = decide(text_status, row)
                 row["grade"] = grade_of(rel, full.name)
                 if digest in seen:

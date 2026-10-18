@@ -9,7 +9,8 @@ from pathlib import Path
 # EDUHUB_AGENT_HOME переопределяет корень: тесты и прогоны пишут во временную папку,
 # а не в рабочие api_queue.json и chats/.
 ROOT = Path(os.environ.get("EDUHUB_AGENT_HOME") or Path(__file__).resolve().parent.parent)
-CHATS = ROOT / "chats"                          # личные данные и кеши, в git не попадают
+CHATS = ROOT / "chats"                          # переписки и выгрузки: личные данные
+STATE = ROOT / "state"                          # что сервис пишет сам: кеши и очереди
 TESSDATA = ROOT / "tessdata"                    # русский язык для Tesseract
 ENV_FILE = ROOT / ".env"
 
