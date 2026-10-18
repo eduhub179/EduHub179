@@ -15,6 +15,7 @@
         def read(self, path) -> Reading | None
 """
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -34,6 +35,7 @@ class Reading:
     psm: int
     ms: int
     engine: str
+    axis_like: bool = False   # цифры идут одной монотонной строкой — это подписи оси графика, не таблица
 
 
 class Provider:
@@ -88,9 +90,10 @@ class LocalTesseract(Provider):
                            capture_output=True, timeout=self.timeout, env=self._env())
         if r.returncode:
             return None
-        text, words, numbers, conf = _parse_tsv(r.stdout.decode("utf-8", "replace"))
+        text, words, numbers, conf, axis = _parse_tsv(r.stdout.decode("utf-8", "replace"))
         return Reading(text=text, words=words, numbers=numbers, mean_conf=conf, psm=psm,
-                       ms=int((time.time() - t0) * 1000), engine="tesseract-5/" + self.lang)
+                       ms=int((time.time() - t0) * 1000), engine="tesseract-5/" + self.lang,
+                       axis_like=axis)
 
 
 class CloudOCR(Provider):
@@ -138,10 +141,28 @@ def get(name):
     return REGISTRY[name]
 
 
+NUM = re.compile(r"^[-−]?\d+(?:[.,]\d+)?$")
+
+
+def _is_axis(tokens):
+    """Подписи оси графика: пять и больше чисел подряд, по возрастанию или убыванию."""
+    nums = []
+    for t in tokens:
+        if NUM.match(t):
+            try:
+                nums.append(float(t.replace(",", ".").replace("−", "-")))
+            except ValueError:
+                pass
+    if len(nums) < 5:
+        return False
+    return nums == sorted(nums) or nums == sorted(nums, reverse=True)
+
+
 def _parse_tsv(tsv):
-    """Текст, число слов, число чисел и средняя уверенность по словам из TSV Tesseract."""
+    """Текст, число слов, число чисел, средняя уверенность и признак оси графика."""
     lines, confs = {}, []
     words = numbers = 0
+    axis = False
     for raw in tsv.splitlines()[1:]:
         c = raw.split("\t")
         if len(c) < 12 or c[0] != "5":
@@ -159,6 +180,9 @@ def _parse_tsv(tsv):
         if any(ch.isdigit() for ch in w):
             numbers += 1
         lines.setdefault((c[2], c[3], c[4]), []).append(w)
+    for key in sorted(lines):
+        if _is_axis(lines[key]):
+            axis = True
     text = "\n".join(" ".join(v) for _, v in sorted(lines.items()))
     mean = sum(confs) / len(confs) if confs else 0.0
-    return text, words, numbers, round(mean, 1)
+    return text, words, numbers, round(mean, 1), axis
