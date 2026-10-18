@@ -131,7 +131,7 @@ class LocalVLM(Provider):
         self.model = model or os.environ.get("VLM_MODEL", "qwen2.5vl:3b")
 
     def available(self):
-        return False, "пока только определяет доску (board.py), текст не пишет"
+        return False, "VLM выключен: текст с рукописного пока не пишем"
 
 
 REGISTRY = {p.name: p for p in (LocalTesseract(), CloudOCR(), LocalVLM())}
