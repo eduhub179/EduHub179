@@ -61,8 +61,6 @@ impl DeleteHomeworkFileUseCase {
 mod tests {
     use super::*;
     use domain::entities::homework::Homework;
-    use domain::value_objects::homework_status::HomeworkStatus;
-    use domain::value_objects::role::UserRole;
 
     struct MockHomeworkRepository {
         file_exists: bool,
@@ -79,7 +77,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn get_files(&self, _: Uuid) -> Result<Vec<domain::entities::homework::HomeworkFile>, DomainError> {
+        async fn get_files(
+            &self,
+            _: Uuid,
+        ) -> Result<Vec<domain::entities::homework::HomeworkFile>, DomainError> {
             unimplemented!()
         }
 
@@ -87,7 +88,10 @@ mod tests {
             unimplemented!()
         }
 
-        async fn add_file(&self, _: domain::entities::homework::HomeworkFile) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
+        async fn add_file(
+            &self,
+            _: domain::entities::homework::HomeworkFile,
+        ) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
             unimplemented!()
         }
 
@@ -119,7 +123,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl FileStorage for MockFileStorage {
-        async fn upload(&self, _: domain::ports::file_storage::UploadFileRequest) -> Result<domain::ports::file_storage::StoredFile, DomainError> {
+        async fn upload(
+            &self,
+            _: domain::ports::file_storage::UploadFileRequest,
+        ) -> Result<domain::ports::file_storage::StoredFile, DomainError> {
             unimplemented!()
         }
 

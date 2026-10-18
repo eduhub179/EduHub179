@@ -1,0 +1,40 @@
+# Личные данные: экспорты чатов, скачанные файлы, кеши фото, обученный фильтр (в нём слова из переписок)
+chats/
+*.pkl
+tessdata/
+варианты/
+chat_labels*.txt
+
+# Настоящее расписание и замены (фамилии учителей): в репозитории только timetable.example.json
+timetable.json
+substitutions.json
+lessons.json
+
+# Что агент пишет во время работы
+events.json
+lectures.json
+seen.json
+live_items*.json
+*_llm.json
+llm_*.json
+
+# Результаты прогонов и логи
+compare_*.txt
+final*.txt
+overnight*
+test_out.txt
+exp*_messages.txt
+*.log
+
+# Окружение
+moderator.json
+.venv/
+__pycache__/
+.env
+
+# Скачанные посты каналов: публичные, но там имена учеников (олимпиады, поздравления). Скачать заново: python3 fetch_channel.py
+posts.json
+kruzhochek.json
+labels.json
+api_sent.json
+api_queue.json

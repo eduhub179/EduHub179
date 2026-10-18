@@ -1,0 +1,28 @@
+[package]
+name = "telegram-bot-bin"
+version = "0.1.0"
+edition = "2021"
+
+# Composition root for the Telegram bot binary.
+# Only this crate wires infrastructure → application → adapter together.
+
+[[bin]]
+name = "telegram-bot"
+path = "src/main.rs"
+
+[dependencies]
+# Layers
+telegram-adapter = { path = "../telegram-adapter" }
+application      = { path = "../application" }
+infrastructure   = { path = "../infrastructure" }
+domain           = { path = "../domain" }
+
+# Telegram Bot API
+teloxide = { version = "0.12", features = ["macros"] }
+
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
