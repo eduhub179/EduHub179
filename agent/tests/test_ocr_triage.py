@@ -34,6 +34,8 @@ print_text = Reading(text="Первый сплав содержит 10% меди
 handwritten = Reading(text="Яомемикее joparwue", words=45, numbers=3, mean_conf=41.0, psm=3, ms=900, engine="t")
 table = Reading(text="625 12 1:3:5 407", words=2, numbers=14, mean_conf=85.0, psm=3, ms=400, engine="t")
 garbage_nums = Reading(text="45 -37 72 -1 #0 1 2", words=16, numbers=12, mean_conf=35.7, psm=3, ms=400, engine="t")
+table_one_word = Reading(text="Ответы 625 12 1:3:5 407 81 22 9", words=1, numbers=14, mean_conf=88.0,
+                         psm=3, ms=400, engine="t")
 axis = Reading(text="0 5 10 15 20 25 30", words=0, numbers=12, mean_conf=95.0, psm=3, ms=200, engine="t",
                axis_like=True)
 
@@ -41,6 +43,9 @@ check("печатный текст принимается", T.accept(print_text)
 check("рукописное отклоняется", not T.accept(handwritten)[0], T.accept(handwritten)[1])
 check("таблица чисел принимается", T.accept(table)[0], T.accept(table)[1])
 check("неразборчивое фото с цифрами отклоняется", not T.accept(garbage_nums)[0], T.accept(garbage_nums)[1])
+check("таблица с одним заголовком принимается", T.accept(table_one_word)[0], T.accept(table_one_word)[1])
+check("числа без единого слова — не таблица",
+      not T.accept(Reading(text="625 12 407", words=0, numbers=12, mean_conf=90.0, psm=3, ms=1, engine="t"))[0])
 check("подписи оси графика отклоняются", not T.accept(axis)[0], T.accept(axis)[1])
 check("пустое не принимается", not T.accept(Reading("", 0, 0, 0.0, 3, 10, "t"))[0])
 check("граница порога: 70 берём, 69 нет",
