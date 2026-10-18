@@ -1,6 +1,6 @@
 """Проверка распознавания доски на фото из экспортов: python3 -m eduhub_agent.media.board_check [сколько фото, по умолчанию 60]
 Берёт фото без подписи и без печатного текста (те, к которым применяется правило «доска → ДЗ»), спрашивает
-модель (board.py) и делает страницу chats/доски-проверка.html: слева «доска», справа «не доска».
+модель (board.py) и делает страницу state/доски-проверка.html: слева «доска», справа «не доска».
 Открой её в браузере и посчитай ошибки. Страница и фото остаются на этом компьютере.
 """
 import html
@@ -12,6 +12,7 @@ from pathlib import Path
 from eduhub_agent.media import board
 from eduhub_agent.telegram import chat_agent as ca
 from eduhub_agent.media import files
+from eduhub_agent.paths import STATE
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 60
 photos = []
@@ -45,7 +46,8 @@ def col(title, ps):
     return f"<div><h2>{title} ({len(ps)})</h2>{imgs}</div>"
 
 
-out = Path("chats/доски-проверка.html")
+out = STATE / "доски-проверка.html"
+out.parent.mkdir(exist_ok=True)
 out.write_text("<meta charset=utf-8><style>body{display:flex;gap:20px;font-family:sans-serif}div{flex:1}"
                "img{width:180px;margin:3px;border:1px solid #ccc}</style>"
                + col("Модель: доска → ДЗ", res[True]) + col("Модель: не доска → пропуск", res[False]), encoding="utf-8")

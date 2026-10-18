@@ -5,7 +5,7 @@ python3 test_ocr_triage.py
   * порог уверенности отделяет печатный текст от рукописного;
   * правило таблиц чисел продолжает работать (иначе таблицы ответов снова станут «фото без текста»);
   * пустое фото не попадает в очередь для будущего движка, рукописное — попадает;
-  * повторное фото берётся из кеша, а не распознаётся заново;
+  * кеша нет: то же фото читается заново (одинаковые байты ≠ одинаковое задание);
   * облачный OCR и модель для картинок объявлены, но выключены (ключей и сети нет).
 """
 import json
@@ -102,7 +102,6 @@ else:
     tmpdir = Path(tempfile.mkdtemp())
     T.STATE = tmpdir
     T.QUEUE = tmpdir / "ocr_queue.jsonl"
-    T.CACHE = tmpdir / "ocr_cache.json"
     T._cache = None
 
     def picture(name, draw_text=None):
@@ -123,8 +122,9 @@ else:
     check("печатная картинка прочитана", res.route == "tesseract", f"{res.route}/{res.reason} conf={res.conf}")
     check("текст непустой", bool(res.text and "HOMEWORK" in res.text.upper()), repr((res.text or "")[:60]))
 
+    # кеша нет намеренно: то же фото читается заново, а не отдаётся из памяти
     again = T.read_image(printed)
-    check("повтор берётся из кеша", again.engine.startswith("cache:") and again.ms == 0, again.engine)
+    check("повтор читается заново, а не из кеша", again.engine == "tesseract-5/rus+eng", again.engine)
 
     blank = picture("blank.png")
     res2 = T.read_image(blank)
@@ -137,7 +137,7 @@ else:
     T._queue(printed, handwritten, "рукописное")
     check("очередь: запись появилась", T.queue_size() == 1, str(T.queue_size()))
     T._queue(printed, handwritten, "рукописное")
-    check("очередь: повтор не дублируется", T.queue_size() == 1, str(T.queue_size()))
+    check("очередь: без склейки повторов", T.queue_size() == 2, str(T.queue_size()))
     rows = [json.loads(l) for l in open(T.QUEUE, encoding="utf-8")]
     check("очередь: форма записи", rows[0]["shape"] == "handwriting" and rows[0]["conf"] == 41.0, rows[0]["shape"])
 
