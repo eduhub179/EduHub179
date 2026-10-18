@@ -32,7 +32,10 @@ from eduhub_agent.media import ocr_providers as providers
 # задания — только графики и скриншоты установщика. Печатный листок даёт 85-95.
 CONF_TEXT = float(os.environ.get("OCR_MIN_CONF", 70))
 MIN_WORDS = 4           # как в прежнем правиле files.py («хотя бы 4 настоящих слова»)
-MIN_NUMBERS = 10        # и в правиле для таблиц ответов
+# Правило для таблиц чисел и подписей осей отключено 18.10.2026 по решению Макса: различать
+# график и таблицу пока не нужно. Код оставлен ниже, включается TABLE_RULE = True.
+TABLE_RULE = False
+MIN_NUMBERS = 10        # порог для правила таблиц (когда его включат)
 MIN_TABLE_WORDS = 1     # у таблицы есть хотя бы заголовок или единица; у оси подписей нет вовсе
 CONF_TABLE = 60.0       # печатная таблица читается уверенно; мусор с цифрами — нет
 MAX_SIDE = 2600         # больше не нужно: телефонное фото 4000 px читается дольше и не точнее
@@ -84,6 +87,8 @@ def looks_like_text(reading):
 def looks_like_table(reading):
     """Распечатанная таблица чисел: слов мало, зато много чисел («625 Дж», «1:3:5»).
 
+    Вызывается только при TABLE_RULE = True (сейчас выключено).
+
     Три ограничителя, без которых правило принимает мусор: подписи оси графика (монотонный
     ряд чисел), картинку без единого слова и неразборчивое фото с цифрами.
     """
@@ -93,13 +98,14 @@ def looks_like_table(reading):
 
 
 def accept(reading):
-    """(берём ли текст, почему). Уверенность решает для текста, структура — для таблиц."""
+    """(берём ли текст, почему). Решает уверенность Tesseract; структура — только если включено правило таблиц."""
     if not reading:
         return False, "не прочитано"
-    if reading.axis_like:
-        return False, "подписи оси графика"
-    if looks_like_table(reading):
-        return True, "таблица чисел"
+    if TABLE_RULE:                       # отключено: см. TABLE_RULE выше
+        if reading.axis_like:
+            return False, "подписи оси графика"
+        if looks_like_table(reading):
+            return True, "таблица чисел"
     if looks_like_text(reading) and reading.mean_conf >= CONF_TEXT:
         return True, "печатный текст"
     if reading.words < MIN_WORDS:
