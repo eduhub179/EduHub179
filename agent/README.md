@@ -13,7 +13,7 @@ agent/
 │   ├── paths.py               # где лежат chats/, tessdata, .env, timetable.json
 │   ├── config.py              # env(): переменные окружения и .env
 │   ├── telegram/              # всё, что говорит с Telegram
-│   ├── media/                 # вложения: PDF/DOCX, фото, распознавание
+│   ├── files/                 # всё про файлы: чтение, вложения, OCR, доски
 │   ├── llm/                   # модель, правила, датасет, обучение фильтра
 │   ├── server/                # бэкенд EduHub и расписание
 │   ├── classify/              # классификатор материалов из трека P2 (промпт + модель)
@@ -44,7 +44,9 @@ agent/
 | `telegram/fetch_channel.py`, `telegram/kruzhochek.py` | скачивание публичной страницы канала, разбор анонсов «Кружочка» |
 | `server/backend_api.py` | подтверждённые ДЗ и контрольные -> `POST /api/homework` / `PATCH /api/homework/{id}/text`; проверка на поддельном сервере: `python3 tests/test_backend_api.py` |
 | `server/timetable.py` | расписание для агента: к какому уроку относится ДЗ и к какому сдавать. Источник — `timetable.json` или бэкенд (`TIMETABLE_URL`) |
-| `media/files.py`, `media/board.py` | вложения: текст из PDF/DOCX/PPTX, распознавание фото доски (`PHOTO_MODE=board`) |
+| `files/read.py` | **один читатель для всех источников**: PDF (с OCR для сканов), DOCX, PPTX, XLSX, TXT, фото |
+| `files/decide.py` | один решатель: `accepted` / `queued` / `review` / `skip` — общий для папки, Drive и Telegram |
+| `files/attachments.py`, `files/board.py` | Telegram-специфика: скачивание вложения, вопрос «это доска?» (`PHOTO_MODE=board`) |
 | `media/ocr_triage.py`, `media/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
 | `llm/llm_extract.py`, `llm/baseline_rules.py` | мероприятия из постов: модель + правила |
 | `llm/train_classifier.py`, `llm/build_dataset.py` | фильтр болтовни (нужны экспорты чатов, в репозиторий не входят) |
@@ -71,7 +73,7 @@ BOT_TOKEN=*** .venv/bin/python chat_agent.py live --channel  # основной 
 ```
 
 Утилиты без обёртки запускаются как модули из корня `agent/` (там лежит пакет `eduhub_agent`), например
-`python3 -m eduhub_agent.server.backend_api retry`, `python3 -m eduhub_agent.media.board_check 60`,
+`python3 -m eduhub_agent.server.backend_api retry`, `python3 -m eduhub_agent.files.board_check 60`,
 `python3 -m eduhub_agent.llm.make_labels`.
 
 ## Команды бота-модератора

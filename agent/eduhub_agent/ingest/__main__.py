@@ -22,7 +22,8 @@ from collections import Counter
 from pathlib import Path
 
 from eduhub_agent.classify import classify
-from eduhub_agent.ingest.extract import extract
+from eduhub_agent.files.decide import decide
+from eduhub_agent.files.read import read
 from eduhub_agent.ingest.grade import grade_of
 from .source import open_source
 
@@ -75,14 +76,17 @@ def scan(source, out_dir, classifier=None):
                 with open(full, "rb") as f:
                     head = f.read(64)
                 digest = sha256(full)
-                text, text_status = extract(full)
+                r = read(full)
+                text, text_status = r.text, r.status
                 row = {
                     "path": rel, "name": full.name, "ext": full.suffix.lower(),
                     "size": st.st_size, "mtime": int(st.st_mtime),
                     "sha256": digest, "mime": mime_of(full, head),
                     "text_status": text_status, "text_chars": len(text),
+                    "read_engine": r.engine, "ocr_confidence": r.ocr_confidence,
                 }
                 row.update((classifier or classify)(rel, full.name, text))
+                row["route"], row["route_reason"] = decide(text_status, row)
                 row["grade"] = grade_of(rel, full.name)
                 if digest in seen:
                     row["duplicate_of"] = seen[digest]

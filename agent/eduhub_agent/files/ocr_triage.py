@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from eduhub_agent.paths import CHATS as PATHS_CHATS
-from eduhub_agent.media import ocr_providers as providers
+from eduhub_agent.files import ocr_providers as providers
 
 # Порог: 70. Проверено на архиве (402 документа): в полосе 60-79 нет ни одного домашнего
 # задания — только графики и скриншоты установщика. Печатный листок даёт 85-95.
