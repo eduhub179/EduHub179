@@ -47,3 +47,21 @@ export async function fetchDaySchedule(
     `/api/schedule/day?date=${encodeURIComponent(date)}&student_id=${encodeURIComponent(studentId)}`,
   );
 }
+
+export async function fetchClassWeekSchedule(
+  date: string,
+  classId: string,
+): Promise<WeeklyScheduleDto> {
+  return apiFetch<WeeklyScheduleDto>(
+    `/api/classes/schedule/week?date=${encodeURIComponent(date)}&class_id=${encodeURIComponent(classId)}`,
+  );
+}
+
+export async function fetchClassDaySchedule(
+  date: string,
+  classId: string,
+): Promise<DayScheduleDto> {
+  return apiFetch<DayScheduleDto>(
+    `/api/classes/schedule/day?date=${encodeURIComponent(date)}&class_id=${encodeURIComponent(classId)}`,
+  );
+}
