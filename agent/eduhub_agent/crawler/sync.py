@@ -11,8 +11,8 @@ import json
 import time
 from pathlib import Path
 
-from eduhub_agent.classify import classify
 from eduhub_agent.files.decide import decide
+from eduhub_agent.files.labels import label
 from eduhub_agent.files.read import read
 from eduhub_agent.ingest.grade import grade_of
 
@@ -70,7 +70,10 @@ def apply_changes(changes, state):
 def event_row(kind, source, item, text_status="not_downloaded", text="", classifier=None,
               ocr_confidence=None, read_engine="none"):
     """Одна схема на все источники: импорт не должен ветвиться по source."""
-    meta = (classifier or classify)(item.get("path") or item.get("name", ""), item.get("name", ""), text)
+    meta = label(item.get("path") or item.get("name", ""), item.get("name", ""), text,
+                 caption=item.get("caption"), chat=item.get("chat"),
+                 chat_subjects=item.get("chat_subjects"), chat_class=item.get("chat_class"),
+                 classifier=classifier)
     meta = {**meta, "grade": grade_of(item.get("path") or item.get("id", ""), item.get("name", ""))}
     route, route_reason = decide(text_status, meta)
     return {

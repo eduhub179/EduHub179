@@ -47,7 +47,10 @@ agent/
 | `server/timetable.py` | расписание для агента: к какому уроку относится ДЗ и к какому сдавать. Источник — `timetable.json` или бэкенд (`TIMETABLE_URL`) |
 | `files/read.py` | **один читатель для всех источников**: PDF (с OCR для сканов), DOCX, PPTX, XLSX, TXT, фото |
 | `files/decide.py` | один решатель: `accepted` / `queued` / `review` / `skip` — общий для папки, Drive и Telegram |
-| `files/attachments.py`, `files/board.py` | Telegram-специфика: скачивание вложения, вопрос «это доска?» (`PHOTO_MODE=board`) |
+| `files/labels.py` | метки: подсказки (подпись, чат, путь) → правила по имени → модель только на остаток |
+| `files/taxonomy.py`, `files/hints.py`, `files/name_rules.py` | предметы и синонимы, подсказки, тип по имени файла |
+| `files/queue.py` | очередь классификации: файл принимаем сразу, метки считаем в фоне |
+| `files/attachments.py` | Telegram-специфика: скачивание вложения и текст из него (фото читаются всегда) |
 | `files/ocr_triage.py`, `files/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
 | `llm/llm_extract.py`, `llm/baseline_rules.py` | мероприятия из постов: модель + правила |
 | `llm/train_classifier.py`, `llm/build_dataset.py` | фильтр болтовни (нужны экспорты чатов, в репозиторий не входят) |

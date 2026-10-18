@@ -38,20 +38,27 @@ def extract_text(path):
     return r.text if len(r.text) >= 20 else None
 
 
-def texts_for(paths, names=None, ocr=True):
-    """[(имя файла, текст)] для читаемых вложений. У фото в имени помечено, что текст распознан и может быть с ошибками.
-    ocr=False — фото не распознавать (заглушка для беты: chat_agent.py, PHOTO_MODE=stub)."""
+def read_many(paths):
+    """[(путь, Reading)] — один проход по вложениям, статус и текст вместе."""
+    return [(p, read(p)) for p in (paths or [])]
+
+
+def texts_from(readings, names=None):
+    """[(имя, текст)] из уже прочитанных файлов. У фото в имени помечено, что это OCR."""
     out = []
-    for i, p in enumerate(paths or []):
-        if not ocr and Path(p).suffix.lower() in IMAGES:
+    for i, (p, r) in enumerate(readings or []):
+        if not r.text or r.status not in ("native", "ocr"):
             continue
-        t = extract_text(p)
-        if t:
-            name = (names[i] if names and i < len(names) else None) or Path(p).name
-            if Path(p).suffix.lower() in IMAGES:
-                name += ", распознано с фото, возможны ошибки"
-            out.append((name, t))
+        name = (names[i] if names and i < len(names) else None) or Path(p).name
+        if r.status == "ocr":
+            name += ", распознано с фото, возможны ошибки"
+        out.append((name, r.text))
     return out
+
+
+def texts_for(paths, names=None):
+    """Текст вложений. Фото читаются всегда — переключателя «не распознавать» больше нет."""
+    return texts_from(read_many(paths), names)
 
 
 def safe_name(s):
