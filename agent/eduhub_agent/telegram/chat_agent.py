@@ -49,10 +49,10 @@ from pathlib import Path
 
 from eduhub_agent.paths import CHATS, data
 
-from eduhub_agent.media import board
+from eduhub_agent.files import board
 from eduhub_agent.telegram import chat_moderation
 from eduhub_agent.telegram import dm
-from eduhub_agent.media import files as attachments
+from eduhub_agent.files import attachments
 from eduhub_agent.server import timetable
 from eduhub_agent.llm.baseline_rules import WEEKDAYS, extract as rules_extract
 

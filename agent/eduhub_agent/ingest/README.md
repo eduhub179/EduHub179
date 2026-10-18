@@ -68,7 +68,7 @@ python3 -m eduhub_agent.ingest scan --drive "<folder_id>" --out out/class-9b
   доступ к дискам классов и `GOOGLE_APPLICATION_CREDENTIALS` + `DRIVE_FOLDER_ID`.
   Остальной код при этом не меняется — источник подменяется одной строкой.
 - **Сканы не распознаются.** `text_status = "scanned"` означает «текстового слоя нет»;
-  OCR — отдельный шаг (`agent/eduhub_agent/media/ocr_triage.py`), сюда не затянут намеренно.
+  OCR — отдельный шаг (`agent/eduhub_agent/files/ocr_triage.py`), сюда не затянут намеренно.
 - **Старые `.doc/.ppt/.xls`** помечаются `binary`: для них нужен LibreOffice, пока не читаем.
 - **Тип `other`** — это нормально, а не ошибка: листок с ребусами и правда не ДЗ.
 

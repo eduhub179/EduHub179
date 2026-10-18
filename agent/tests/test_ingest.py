@@ -19,7 +19,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from eduhub_agent.ingest.grade import grade_of  # noqa: E402
-from eduhub_agent.ingest.extract import extract  # noqa: E402
+from eduhub_agent.files.read import read  # noqa: E402
+from eduhub_agent.files.decide import decide  # noqa: E402
 from eduhub_agent.ingest.source import LocalSource  # noqa: E402
 from eduhub_agent.ingest.__main__ import scan  # noqa: E402
 
@@ -74,13 +75,19 @@ check("parse: отсутствие полей отклоняется", parse('{"
 with tempfile.TemporaryDirectory() as td:
     txt = Path(td) / "a.txt"
     txt.write_text("Домашнее задание по алгебре, решить номера 5 и 6", encoding="utf-8")
-    text, status = extract(txt)
-    check("txt читается", status == "native" and "алгебре" in text, status)
+    r = read(txt)
+    check("txt читается", r.status == "native" and "алгебре" in r.text, r.status)
 
     exe = Path(td) / "b.exe"
     exe.write_bytes(b"MZ\x90\x00")
-    check("exe — binary", extract(exe)[1] == "binary")
-    check("png — картинка без текста", extract(Path(td) / "c.png")[1] == "scanned")
+    check("exe — binary", read(exe).status == "binary")
+    check("нет файла — not_downloaded", read(Path(td) / "нет.pdf").status == "not_downloaded")
+    # решатель: один и тот же набор правил для всех источников
+    check("decide: binary → skip", decide("binary")[0] == "skip")
+    check("decide: Drive без файла → review", decide("not_downloaded")[0] == "review")
+    check("decide: рукописное → queued", decide("scanned")[0] == "queued")
+    check("decide: текст + high → accepted", decide("ocr", {"confidence": "high"})[0] == "accepted")
+    check("decide: текст без меток → review", decide("native", {"confidence": "none"})[0] == "review")
 
     # --- скан папки ------------------------------------------------------------------
     root = Path(td) / "drive"
