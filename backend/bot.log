@@ -1,0 +1,23 @@
+warning: unused variable: `e`
+   --> crates/infrastructure/src/auth/smtp_code_sender.rs:105:23
+    |
+105 |             .map_err(|e| DomainError::InternalError)?;
+    |                       ^ help: if this is intentional, prefix it with an underscore: `_e`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `infrastructure` (lib) generated 1 warning (run `cargo fix --lib -p infrastructure` to apply 1 suggestion)
+warning: unused import: `LoggingCodeSender`
+  --> crates/telegram-bot-bin/src/main.rs:11:50
+   |
+11 | use infrastructure::auth::{Argon2PasswordHasher, LoggingCodeSender, Numer...
+   |                                                  ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `telegram-bot-bin` (bin "telegram-bot") generated 1 warning (run `cargo fix --bin "telegram-bot" -p telegram-bot-bin` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.34s
+     Running `target/debug/telegram-bot`
+[2m2026-10-18T20:11:17.178594Z[0m [32m INFO[0m [2mtelegram_bot[0m[2m:[0m Starting EduHub179 Telegram bot...
+[2m2026-10-18T20:11:17.868506Z[0m [32m INFO[0m [2mtelegram_bot[0m[2m:[0m Telegram bot polling started
+[2m2026-10-18T20:12:41.336346Z[0m [31mERROR[0m [2mteloxide::error_handlers[0m[2m:[0m Error: Domain(InternalError)
