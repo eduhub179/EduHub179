@@ -73,3 +73,90 @@ in-sample оценка, а не честный тест на новых данн
 Краулер **не** публикует ничего сам: он пишет `events.jsonl`. Кто их применяет — импорт
 или модератор — решается на стороне платформы. Так же устроен агент чатов: находки ждут
 подтверждения, а не сразу уезжают в базу.
+
+---
+
+## Следующий шаг (точно)
+
+**Цель:** `tools/crawler` умеет синхронизировать Google Drive по `changes.list`, проверено
+на записанных фикстурах, без сети. День, когда появится service account, — это день, когда
+меняется одна переменная окружения, а не день, когда начинается разработка.
+
+### Что появляется в коде
+
+```
+tools/crawler/
+  sources/__init__.py     # реестр источников
+  sources/local.py        # LocalFolderSource (перенос текущей логики из sync.py)
+  sources/drive.py        # DriveSource
+  transport.py            # Transport: urllib-реализация + FixtureTransport для тестов
+  state.py                # SyncState (уже есть, вынести из sync.py)
+  sync.py                 # движок: run(source, state, out) — без знания про Drive
+  test_drive_source.py    # офлайн-тесты на фикстурах
+  fixtures/drive_*.json   # записанные ответы API
+```
+
+### Контракт источника
+
+```python
+class Source(Protocol):
+    name: str
+    def full_scan(self) -> Iterator[Item]: ...
+    def changes(self, cursor: str | None) -> tuple[list[Change], str]: ...
+```
+
+`Item`: `id, parent_id, name, mime, size, mtime, md5, version, deleted`.
+`id` — `fileId` у Drive и относительный путь у папки; путь в события не попадает как
+идентификатор никогда.
+
+### Drive: конкретные вызовы
+
+1. `GET /drive/v3/changes/startPageToken?supportsAllDrives=true` — при первом запуске.
+2. `GET /drive/v3/changes?pageToken=...&pageSize=1000&includeRemoved=true&includeItemsFromAllDrives=true&supportsAllDrives=true&fields=nextPageToken,newStartPageToken,changes(changeType,fileId,removed,file(id,name,mimeType,size,modifiedTime,md5Checksum,version,parents,trashed))`
+3. Идти по `nextPageToken`, пока не придёт `newStartPageToken`; **курсор сохраняется только
+   после обработки всех страниц** — упали на середине, следующий запуск повторит пачку.
+4. `removed=true` или `trashed=true` → событие `deleted`.
+5. Папки (`application/vnd.google-apps.folder`) в события не идут, но нужны для пути:
+   по `parents` поднимаемся вверх, имена кешируем в состоянии (`folders: {id: name}`),
+   иначе классификатор не увидит «Алгебра/дз/9 класс».
+6. Google-документы не имеют `md5Checksum` — отпечаток по `version`.
+
+### Фикстуры (пишутся руками по документации API)
+
+| файл | что внутри |
+|---|---|
+| `drive_first.json` | `startPageToken`, затем страница из 3 файлов (pdf, docx, папка) |
+| `drive_second.json` | 1 новый, 1 изменённый (`md5` другой), 1 `removed=true` |
+| `drive_paged.json` | две страницы: `nextPageToken` → `newStartPageToken` |
+| `drive_tree.json` | `files.get` для двух папок, чтобы собрать путь |
+
+### Тесты (офлайн, `transport.hits` проверяется)
+
+1. первый запуск: 3 события `created`, курсор взят из `startPageToken`;
+2. повторный прогон на тех же данных: **0 событий**;
+3. `md5` изменился → `updated`, `version` изменился → `updated`;
+4. `removed=true` → `deleted`, состояние очищено;
+5. две страницы → один курсор, `changes` вызван ровно 2 раза;
+6. падение на второй странице → курсор **не** сдвинулся;
+7. путь из `parents` → `Алгебра/дз/9 класс/ДЗ-001.pdf`, предмет `algebra`, класс 9;
+8. событие из Drive по схеме **идентично** событию из папки (одни и те же ключи) —
+   импорт не должен ветвиться по источнику.
+
+### Критерий готовности
+
+`python3 tools/crawler/test_drive_source.py` → exit 0, ни одного сетевого вызова,
+`sync` по фикстуре даёт те же события, что и по папке с теми же файлами.
+
+### Что нужно от Макса
+
+Один service account и один `folder_id` любого классного диска — только для живого
+smoke-теста (два запроса: `startPageToken` и одна страница `changes`). Без них шаг
+закрывается на фикстурах.
+
+### Чего в этом шаге нет
+
+Classroom, Gmail, уведомления, импорт в бэкенд. Они идут после, каждый — отдельный PR.
+
+### Оценка
+
+~3 часа: движок 40 мин, `drive.py` 60 мин, фикстуры 30 мин, тесты 45 мин, документация 15 мин.
