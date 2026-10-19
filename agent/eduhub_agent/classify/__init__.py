@@ -1,13 +1,20 @@
-"""Классификатор материалов — тот самый, из трека P2, без переписывания.
+"""Классификатор материалов — модель из трека P2, но с полным списком школы.
 
-Здесь лежит код из `eduhub-eval/scripts/run_identify.py` (модель + JSON-схема) и
-`eduhub-eval/prompts/material_identify.md` (промпт), перенесённый как есть: те же
-константы, тот же разбор ответа, тот же промпт. Меняются только пути и то, что
-вызывается он не по строке файла, а по папке и имени.
+Код запроса и строгий разбор ответа перенесены из `eduhub-eval/scripts/run_identify.py`;
+промпт — из `eduhub-eval/prompts/material_identify.md`. Отличие одно: списки предметов и
+типов больше не зашиты в промпт по-отдельности.
 
-Почему модель, а не правила: правила в треке писались ad hoc и в репозиторий не попали,
-их код не существует. Модель — существует, измерена (subject 84%, type 86%, joint 73% на
-287 размеченных файлах, 10 с на файл) и настраивается промптом, а не правкой Python.
+В P2 измеряли только математику, поэтому в схеме было пять предметов. В живом агенте
+подсказка может дать физику или историю, и модель обязана уметь вернуть тот же предмет,
+иначе конфликт «подсказка vs модель» возникает на ровном месте. Теперь:
+
+  * предметы — `files/taxonomy.SUBJECTS` (полный список школы + русские синонимы);
+  * типы — `TYPE_HINTS` ниже, один список и для схемы, и для промпта;
+  * `unknown` — разрешённый ответ предмета: если ни текст, ни имя не говорят ничего,
+    модель обязана сказать `unknown`, а не выбрать ближайший похожий предмет.
+
+Промпт (`prompt.md`) — шаблон: списки подставляются из этих констант, чтобы не было
+второго места, где список надо обновлять.
 
 Модель: любая в Ollama, по умолчанию qwen2.5:7b (как у агента чатов).
 """
@@ -17,12 +24,33 @@ import time
 import urllib.request
 from pathlib import Path
 
+from eduhub_agent.files import taxonomy
+
 HERE = Path(__file__).resolve().parent
 DEFAULT_PROMPT = HERE / "prompt.md"
 
-SUBJECTS = ["algebra", "geometry", "calculus", "digital_tech", "programming"]
-TYPES = ["worksheet", "homework", "test", "independent_work", "notes",
-         "textbook", "presentation", "plusnik_sheet", "program", "other"]
+# Полный список школы из одного места. `unknown` — не предмет, а честный ответ модели;
+# `misc` — не учебный материал (классный час, объявления).
+SCHOOL_SUBJECTS = list(taxonomy.SUBJECTS)
+SUBJECTS = SCHOOL_SUBJECTS + ["unknown"]
+
+TYPE_HINTS = {
+    "worksheet": "лист упражнений: «Листок 13», «Задачки», задачи для решения",
+    "homework": "сдаваемое задание: «ДЗ», «домашняя работа», «дом_п»",
+    "test": "контрольная работа, зачёт, тест, проверочная",
+    "independent_work": "самостоятельная работа (СР), отработка",
+    "lab": "лабораторная работа, лабораторка, практикум",
+    "notes": "конспект, лекция, теория, справочный текст без заданий",
+    "textbook": "учебник, задачник, пособие, сборник задач",
+    "presentation": "презентация, слайды",
+    "plusnik_sheet": "«Плюсник»: таблица с оценками и номерами листков, а не задания",
+    "essay": "сочинение, эссе, изложение, доклад, реферат",
+    "project": "проект, проектная работа",
+    "answers": "готовые ответы, решения, ключи к заданиям",
+    "program": "исходный код (.py, .ipynb) или файл данных к программе",
+    "other": "ничего из перечисленного",
+}
+TYPES = list(TYPE_HINTS)
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -100,6 +128,36 @@ def parse(text):
     return {"subject": o["subject"], "type": o["type"], "lesson": lesson, "date": date}
 
 
+def _subject_lines():
+    """Строки промпта из taxonomy: код — русские синонимы. Одно место правки."""
+    lines = []
+    for code in SCHOOL_SUBJECTS:
+        if code == "misc":
+            desc = "не учебный материал: классный час, объявления, разное"
+        else:
+            desc = ", ".join(taxonomy.SYNONYMS.get(code, [])) or code
+        lines.append(f"- `{code}` — {desc}")
+    lines.append("- `unknown` — ни текст, ни имя не позволяют определить предмет; не угадывать")
+    return "\n".join(lines)
+
+
+def _type_lines():
+    return "\n".join(f"- `{code}` — {hint}" for code, hint in TYPE_HINTS.items())
+
+
+_prompt_cache = None
+
+
+def prompt_text():
+    """Промпт с полными списками. Кешируется: файл читается один раз на процесс."""
+    global _prompt_cache
+    if _prompt_cache is None:
+        template = DEFAULT_PROMPT.read_text(encoding="utf-8")
+        _prompt_cache = (template.replace("{{SUBJECTS}}", _subject_lines())
+                                 .replace("{{TYPES}}", _type_lines()))
+    return _prompt_cache
+
+
 def classify(path, name="", text="", timeout=300, retries=1):
     """Предмет и тип материала. Возвращает те же поля, что и раньше, плюс confidence.
 
@@ -115,7 +173,7 @@ def classify(path, name="", text="", timeout=300, retries=1):
     row = {"name": name or Path(path).name,
            "folder": str(Path(path).parent) if path and "/" in str(path) else "",
            "text": (text or "")[:6000]}
-    prompt = DEFAULT_PROMPT.read_text(encoding="utf-8")
+    prompt = prompt_text()
     for _ in range(retries + 1):
         try:
             txt, ms, _ = ask(URL, model, row, prompt, timeout=timeout)
