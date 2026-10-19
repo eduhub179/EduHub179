@@ -9,23 +9,10 @@ output **one JSON object, nothing else**. No comments, no explanation, no markdo
 ```
 
 ## subject — pick exactly one
-- `algebra` — алгебра
-- `geometry` — геометрия, планиметрия, стереометрия
-- `calculus` — математический анализ, матан, производные/интегралы/пределы, линейная алгебра
-- `digital_tech` — цифровые технологии, цифровая электроника, логические схемы, logisim
-- `programming` — Python, программирование, алгоритмы, игры/задачи на код
+{{SUBJECTS}}
 
 ## type — pick exactly one
-- `worksheet` — a sheet of exercises: «Листок 13», «Задачки», «A. Напишите программу», задачи для решения
-- `homework` — a turn-in assignment: «ДЗ», «домашняя работа», «дом_п», «зачётное ДЗ»
-- `test` — контрольная работа, зачёт, тест
-- `independent_work` — самостоятельная работа (СР)
-- `notes` — конспект, теория, аксиомы, справочный текст без заданий
-- `textbook` — учебник, задачник, сборник
-- `presentation` — презентация, слайды
-- `plusnik_sheet` — «Плюсник»: таблица с оценками/номерами листков
-- `program` — исходный код (.py, .ipynb) или файл данных к программе
-- `other` — ничего из перечисленного
+{{TYPES}}
 
 ## Rules
 1. Judge by **content** first. Use the name/folder only as supporting evidence.
@@ -34,7 +21,11 @@ output **one JSON object, nothing else**. No comments, no explanation, no markdo
    Never invent a number.
 4. `date` only if the document states a real date, else null. Score lists are not dates.
 5. Never output a subject or type outside the lists above.
-6. If the text is empty or meaningless, decide from the name. If that is meaningless too, pick the most plausible subject and use type `other`.
+6. If the text is empty and the name is meaningless too, use subject `unknown` and type `other`.
+   Never invent a subject: `unknown` is the honest answer.
+7. A «плюсник» is a table of marks/sheet numbers, not a worksheet: type `plusnik_sheet`.
+8. «Задачник» is a textbook (`textbook`), not a worksheet.
+9. «Вариант» alone is usually an independent work or a test; pick by content, not by the word.
 
 ## Input
 One JSON object with some of: `name`, `folder`, `text`.
