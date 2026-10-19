@@ -116,11 +116,6 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                             {item.homework.description}
                                         </span>
                                     )}
-                                    {item.homework && (
-                                        <span className="schedule__homework-badge" aria-label="Есть домашнее задание">
-                                            ДЗ
-                                        </span>
-                                    )}
                                 </div>
                             </button>
                         </li>
