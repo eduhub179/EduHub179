@@ -22,6 +22,8 @@ pub struct Config {
     pub jwt_secret: String,
     /// JWT token lifetime in seconds (required).
     pub jwt_ttl_seconds: u64,
+    /// Secret for deterministic HMAC hashing of cookie session tokens.
+    pub session_hash_secret: String,
     /// Server bind host (default: 127.0.0.1).
     pub server_host: String,
     /// Server bind port (default: 8080).
@@ -56,6 +58,10 @@ impl Config {
             .expect("JWT_TTL_SECONDS must be set in .env")
             .parse::<u64>()
             .expect("JWT_TTL_SECONDS must be a valid integer");
+        let session_hash_secret = env::var("SESSION_HASH_SECRET")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| jwt_secret.clone());
         let server_host = env::var("SERVER_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
         let server_port = env::var("SERVER_PORT")
             .unwrap_or_else(|_| "8080".to_string())
@@ -83,6 +89,7 @@ impl Config {
             database_url,
             jwt_secret,
             jwt_ttl_seconds,
+            session_hash_secret,
             server_host,
             server_port,
             org_email_domain,
@@ -103,6 +110,7 @@ impl Config {
             database_url: "postgres://mock:test@localhost/mock_db".to_string(),
             jwt_secret: "test_secret_at_least_32_bytes_long_for_hs256!".to_string(),
             jwt_ttl_seconds: 900,
+            session_hash_secret: "test_session_hash_secret_32_bytes_minimum!".to_string(),
             server_host: "127.0.0.1".to_string(),
             server_port: 8080,
             org_email_domain: "@179.ru".to_string(),
