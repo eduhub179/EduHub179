@@ -61,15 +61,33 @@ check("двузначный класс в имени", grade_of("Математ�
 
 # --- порт классификатора из P2: строгий разбор ответа модели ---------------------------
 from eduhub_agent.classify import SUBJECTS, TYPES, parse  # noqa: E402
+from eduhub_agent.files import taxonomy  # noqa: E402
 
-check("категории — те же, что в P2",
-      SUBJECTS == ["algebra", "geometry", "calculus", "digital_tech", "programming"]
-      and TYPES[-1] == "other" and "plusnik_sheet" in TYPES, (SUBJECTS, TYPES))
+check("предметы — полный список школы + unknown",
+      set(taxonomy.SUBJECTS) <= set(SUBJECTS) and "unknown" in SUBJECTS
+      and len(SUBJECTS) == len(taxonomy.SUBJECTS) + 1, SUBJECTS)
+check("в списке есть не только математика",
+      {"physics", "chemistry", "history"} <= set(SUBJECTS), SUBJECTS)
+check("категории типов — один список без дублей",
+      len(TYPES) == len(set(TYPES)) and TYPES[-1] == "other" and "plusnik_sheet" in TYPES, TYPES)
 check("parse: валидный ответ",
       parse('{"subject":"algebra","type":"homework","lesson":3,"date":null}')["lesson"] == 3)
-check("parse: чужая категория отклоняется", parse('{"subject":"физика","type":"homework"}') is None)
+check("parse: физика принимается",
+      parse('{"subject":"physics","type":"homework"}')["subject"] == "physics")
+check("parse: unknown принимается, а не угадывается",
+      parse('{"subject":"unknown","type":"other"}')["subject"] == "unknown")
+check("parse: чужая категория отклоняется", parse('{"subject":"астрономия","type":"homework"}') is None)
+check("parse: чужой тип отклоняется", parse('{"subject":"algebra","type":"доклад"}') is None)
 check("parse: мусор отклоняется", parse("не json") is None)
 check("parse: отсутствие полей отклоняется", parse('{"subject":"algebra"}') is None)
+
+from eduhub_agent.classify import prompt_text  # noqa: E402
+
+P = prompt_text()
+check("промпт перечисляет все предметы из taxonomy",
+      all(f"`{s}`" in P for s in SUBJECTS), [s for s in SUBJECTS if f"`{s}`" not in P])
+check("промпт перечисляет все типы",
+      all(f"`{t}`" in P for t in TYPES), [t for t in TYPES if f"`{t}`" not in P])
 
 # --- извлечение текста ---------------------------------------------------------------
 with tempfile.TemporaryDirectory() as td:

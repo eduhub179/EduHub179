@@ -21,7 +21,7 @@ agent/
 │   └── crawler/               # синхронизация источника: что изменилось (Drive/папка)
 ├── tests/                     # test_*.py и test_*.tsv
 ├── data/                      # timetable.example.json
-├── docs/                      # фото-разбор.md, models_results.md
+├── docs/                      # files.md (карта files/), фото-разбор.md, models_results.md
 ├── chats/                     # личные данные и кеши (в git не попадают)
 ├── requirements.txt
 └── .env.example
@@ -45,9 +45,9 @@ agent/
 | `server/backend_api.py` | подтверждённые ДЗ и контрольные -> `POST /api/homework` / `PATCH /api/homework/{id}/text`; проверка на поддельном сервере: `python3 tests/test_backend_api.py` |
 | `server/timetable.py` | расписание для агента: к какому уроку относится ДЗ и к какому сдавать. Источник — `timetable.json` или бэкенд (`TIMETABLE_URL`) |
 | `files/read.py` | **один читатель для всех источников**: PDF (с OCR для сканов), DOCX, PPTX, XLSX, TXT, фото |
-| `files/decide.py` | один решатель: `accepted` / `queued` / `review` / `skip` — общий для папки, Drive и Telegram |
+| `files/decide.py` | один решатель **только для файлов**: `accepted` / `queued` / `review` / `skip` — общий для папки, Drive и Telegram; `queued` = очередь OCR, не сообщений |
 | `files/labels.py` | метки: подсказки (подпись, чат, путь) → правила по имени → модель только на остаток |
-| `files/taxonomy.py`, `files/hints.py`, `files/name_rules.py` | предметы и синонимы, подсказки, тип по имени файла |
+| `files/taxonomy.py`, `files/hints.py`, `files/name_rules.py` | предметы и синонимы, подсказки, тип по имени файла (плюсник ≠ листок, задачник = учебник) |
 | `files/queue.py` | очередь классификации: файл принимаем сразу, метки считаем в фоне |
 | `files/attachments.py` | Telegram-специфика: скачивание вложения и текст из него (фото читаются всегда) |
 | `files/ocr_triage.py`, `files/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
@@ -56,9 +56,10 @@ agent/
 | `llm/make_labels.py`, `llm/show_labels.py` | ручная разметка постов канала (`labels.json`); сами посты в репозиторий не входят, там имена учеников |
 | `tests/test_agent.py` + `tests/test_*.tsv` | проверка на придуманных сообщениях: `python3 tests/test_agent.py tests/test_final.tsv` |
 | `tests/test_timetable.py` | проверка привязки ДЗ к урокам, без модели |
-| `classify/` | предмет и тип материала: промпт P2 + JSON-схема, модель из Ollama. Подменяется в тестах параметром `classifier` |
+| `classify/` | предмет и тип материала: промпт P2 + JSON-схема, **полный список предметов школы** из `files/taxonomy.py` и все типы из `TYPE_HINTS`; модель из Ollama. Подменяется в тестах параметром `classifier` |
 | `ingest/` | разовый проход по папке: `python3 -m eduhub_agent.ingest scan "<папка>" --out out/math` |
-| `crawler/` | синхронизация: из папки `agent/` — `python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json`; `--fixture` — без ключей |
+| `crawler/` | синхронизация: из папки `agent/` — `python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json`; `--fixture FILE` — офлайн-повтор записанных ответов API (сами ответы лежат в `tests/fixtures/drive/`) |
+| `docs/files.md` | карта пакета `files/`: кто читает, кто метит, кто решает и чего каждый модуль не делает |
 | `docs/models_results.md` | сравнение локальных моделей |
 | `docs/фото-разбор.md` | что сделано с фото 16.10 и как к этому вернуться |
 

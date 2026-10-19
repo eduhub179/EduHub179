@@ -1,12 +1,14 @@
 """Краулер: собирает материалы из внешних источников в платформу.
 
   python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json --out out/sync
-  python3 -m eduhub_agent.crawler sync --fixture agent/eduhub_agent/crawler/fixtures/drive_first.json \\
-      --folder-id PROOT --state state/fake.json --out out/fake     # Drive без ключей
+
+  --fixture FILE — офлайн-повтор записанных ответов API (без ключей Drive).
+  Это не рабочий режим: записанные ответы лежат в tests/fixtures/drive/ и нужны
+  тестам; флаг существует, чтобы тот же движок можно было прогнать руками без OAuth.
 
 Первый запуск = снимок источника, дальше — только изменения. Второй прогон по тем же
 данным обязан дать ноль событий. Источники: папка на диске (сейчас), Google Drive
-(на записанных ответах), дальше Classroom и Gmail — та же схема событий.
+(при наличии токена), дальше Classroom и Gmail — та же схема событий.
 """
 import argparse
 import json
@@ -26,7 +28,7 @@ def main():
     s.add_argument("path", nargs="?", help="папка-источник (локальный диск, выгрузка Takeout)")
     s.add_argument("--drive", action="store_true", help="источник — Google Drive (нужен токен)")
     s.add_argument("--folder-id", action="append", default=[], help="id папки Drive (можно несколько)")
-    s.add_argument("--fixture", help="вместо сети — записанные ответы API (для проверки без ключей)")
+    s.add_argument("--fixture", help="вместо сети — файл с записанными ответами API (офлайн-прогон)")
     s.add_argument("--state", default="state/sync.json", help="файл состояния (создаётся сам)")
     s.add_argument("--out", default="out/sync", help="куда писать events.jsonl и summary.md")
 

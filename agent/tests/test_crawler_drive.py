@@ -46,7 +46,7 @@ def check(name, cond, detail=""):
     fails += not cond
 
 
-FIX = HERE.parent / "eduhub_agent" / "crawler" / "fixtures"
+FIX = HERE / "fixtures" / "drive"
 
 
 def fixture(name):
