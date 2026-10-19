@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {Link} from 'react-router-dom';
 
 interface TopicFile {
     id: string;
@@ -100,6 +101,7 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({ isAdmin }) => {
                                     <span className="visually-hidden">Добавить</span>+
                                 </th>
                             )}
+                            <th scope="col">Плюсник</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -161,6 +163,14 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({ isAdmin }) => {
                                         </a>
                                     </td>
                                 )}
+                                <td>
+                                    <Link
+                                        className="math-admin-table__plusnik-link"
+                                        to={`/plusnik/${topic.id}`}
+                                    >
+                                        Открыть
+                                    </Link>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
