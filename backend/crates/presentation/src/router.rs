@@ -3,7 +3,10 @@
 //! This is the initial MVP. It exposes health, auth routes, and schedule routes.
 
 use application::use_cases::{
-    auth::login::{LoginCommand, LoginUseCase},
+    auth::{
+        login::{LoginCommand, LoginUseCase},
+        OneTimeCodeService,
+    },
     homework::{
         create_homework::{CreateHomeworkCommand, CreateHomeworkUseCase},
         update_homework_text::{UpdateHomeworkTextCommand, UpdateHomeworkTextUseCase},
@@ -166,6 +169,12 @@ impl ApiError {
             DomainError::InvalidLoginFormat => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "Invalid login format")
             }
+            DomainError::InvalidEmailFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid email format")
+            }
+            DomainError::InvalidAuthCode => {
+                (StatusCode::UNAUTHORIZED, "Invalid or expired auth code")
+            }
             DomainError::UserNotFound => (StatusCode::UNAUTHORIZED, "Invalid login or password"),
             DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
@@ -247,6 +256,8 @@ pub struct AppState {
     pub create_homework_use_case: Option<Arc<CreateHomeworkUseCase>>,
     pub update_homework_use_case: Option<Arc<UpdateHomeworkTextUseCase>>,
     pub class_repository: Option<Arc<dyn ClassRepository>>,
+    pub user_repository: Option<Arc<dyn UserRepository>>,
+    pub one_time_code_service: Option<Arc<OneTimeCodeService>>,
     pub telegram_lookup: Option<TelegramLookup>,
 }
 
@@ -290,6 +301,8 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(login_handler))
+        .route("/api/auth/code/send", post(send_auth_code_handler))
+        .route("/api/auth/code/verify", post(verify_auth_code_handler))
         .route("/api/schedule/week", get(schedule_week_handler))
         .route("/api/schedule/day", get(day_schedule_handler))
         .route("/api/classes/schedule/week", get(class_schedule_week_handler))
@@ -304,6 +317,8 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             create_homework_use_case: None,
             update_homework_use_case: None,
             class_repository: None,
+            user_repository: None,
+            one_time_code_service: None,
             telegram_lookup: None,
         })
 }
@@ -326,6 +341,8 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             create_homework_use_case: None,
             update_homework_use_case: None,
             class_repository: None,
+            user_repository: None,
+            one_time_code_service: None,
             telegram_lookup: None,
         })
 }
@@ -336,12 +353,16 @@ pub fn create_app_with_auth_and_schedule(
     create_homework_use_case: Arc<CreateHomeworkUseCase>,
     update_homework_use_case: Arc<UpdateHomeworkTextUseCase>,
     class_repository: Arc<dyn ClassRepository>,
+    user_repository: Arc<dyn UserRepository>,
+    one_time_code_service: Arc<OneTimeCodeService>,
     telegram_lookup: Option<TelegramLookup>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(login_handler))
+        .route("/api/auth/code/send", post(send_auth_code_handler))
+        .route("/api/auth/code/verify", post(verify_auth_code_handler))
         .route("/api/schedule/week", get(schedule_week_handler))
         .route("/api/schedule/day", get(day_schedule_handler))
         .route("/api/classes/schedule/week", get(class_schedule_week_handler))
@@ -357,6 +378,8 @@ pub fn create_app_with_auth_and_schedule(
             create_homework_use_case: Some(create_homework_use_case),
             update_homework_use_case: Some(update_homework_use_case),
             class_repository: Some(class_repository),
+            user_repository: Some(user_repository),
+            one_time_code_service: Some(one_time_code_service),
             telegram_lookup,
         })
 }
@@ -800,6 +823,103 @@ async fn telegram_user_handler(
         login: user.login,
         role: user.role.to_string(),
         class_id: user.class_id.map(|id| id.to_string()),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SendAuthCodeRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SendAuthCodeResponse {
+    pub email: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyAuthCodeRequest {
+    pub email: String,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VerifyAuthCodeResponse {
+    pub valid: bool,
+    pub user_id: Option<String>,
+}
+
+async fn send_auth_code_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<SendAuthCodeRequest>,
+) -> Result<Json<SendAuthCodeResponse>, ApiError> {
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+    let one_time_code_service = state.one_time_code_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "One-time code service not initialized".to_string(),
+    })?;
+
+    let login = domain::value_objects::login::Login::from_email(&payload.email)
+        .map_err(ApiError::from_auth_domain)?;
+    let user = user_repository
+        .get_by_login(login.as_str())
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    one_time_code_service
+        .issue(user.id, &payload.email)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    Ok(Json(SendAuthCodeResponse {
+        email: payload.email.trim().to_ascii_lowercase(),
+        message: "Code sent to email".to_string(),
+    }))
+}
+
+async fn verify_auth_code_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<VerifyAuthCodeRequest>,
+) -> Result<Json<VerifyAuthCodeResponse>, ApiError> {
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+    let one_time_code_service = state.one_time_code_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "One-time code service not initialized".to_string(),
+    })?;
+
+    let login = domain::value_objects::login::Login::from_email(&payload.email)
+        .map_err(ApiError::from_auth_domain)?;
+    let user = user_repository
+        .get_by_login(login.as_str())
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    let valid = one_time_code_service
+        .verify(user.id, &payload.code)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !valid {
+        return Err(ApiError::from_auth_domain(DomainError::InvalidAuthCode));
+    }
+
+    Ok(Json(VerifyAuthCodeResponse {
+        valid: true,
+        user_id: Some(user.id.to_string()),
     }))
 }
 

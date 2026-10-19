@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use application::use_cases::{
-    auth::login::LoginUseCase,
+    auth::OneTimeCodeService,
     homework::{
         create_homework::CreateHomeworkUseCase,
         update_homework_text::UpdateHomeworkTextUseCase,
     },
     schedule::ScheduleService,
 };
+use domain::settings::Settings;
 use infrastructure::{
-    auth::{Argon2PasswordHasher, JwtTokenIssuer},
+    auth::{Argon2PasswordHasher, JwtTokenIssuer, LoggingCodeSender, NumericCodeGenerator},
     config::Config,
     postgres::{
         create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg,
@@ -17,28 +18,49 @@ use infrastructure::{
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
         SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
     },
+    redis::AuthCodeStoreRedis,
 };
 use presentation::{create_app_with_auth_and_schedule, TelegramLookup};
 
 #[tokio::main]
 async fn main() {
     let config = Config::load();
+    let settings = Settings::try_new(config.org_email_domain.clone())
+        .expect("ORG_EMAIL_DOMAIN must look like '@179.ru'");
+    domain::settings::init(settings);
 
     let pool = create_pool(&config.database_url)
         .await
         .expect("failed to create PostgreSQL pool");
 
     let class_repo = Arc::new(ClassRepositoryPg::new(pool.clone()));
-
     let user_repo = Arc::new(UserRepositoryPg::new(pool.clone()));
     let password_hasher = Arc::new(Argon2PasswordHasher);
-    let credentials_store = Arc::new(CredentialsStorePg::new(pool.clone(), password_hasher));
+    let credentials_store = Arc::new(CredentialsStorePg::new(pool.clone(), password_hasher.clone()));
     let token_issuer = Arc::new(JwtTokenIssuer::new(
         config.jwt_secret.clone(),
         config.jwt_ttl_seconds as i64,
     ));
 
-    let login_use_case = Arc::new(LoginUseCase::new(user_repo, credentials_store, token_issuer));
+    let login_use_case = Arc::new(application::use_cases::auth::login::LoginUseCase::new(
+        user_repo.clone(),
+        credentials_store,
+        token_issuer,
+    ));
+
+    let redis_hasher = Arc::new(Argon2PasswordHasher);
+    let auth_code_store = Arc::new(
+        AuthCodeStoreRedis::new(&config.redis_url, redis_hasher)
+            .await
+            .expect("failed to connect to Redis auth code store"),
+    );
+    let code_generator = Arc::new(NumericCodeGenerator);
+    let code_sender = Arc::new(LoggingCodeSender);
+    let one_time_code_service = Arc::new(OneTimeCodeService::new(
+        code_generator,
+        auth_code_store,
+        code_sender,
+    ));
 
     let schedule_weeks = Arc::new(ScheduleWeekRepositoryPg::new(pool.clone()));
     let student_groups = Arc::new(StudentGroupRepositoryPg::new(pool.clone()));
@@ -65,7 +87,6 @@ async fn main() {
     let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));
     let update_homework_use_case = Arc::new(UpdateHomeworkTextUseCase::new(homeworks));
 
-    // Chat agent asks "who wrote to the bot?" (GET /api/telegram/users/{id}); off without AGENT_KEY.
     let agent_key = std::env::var("AGENT_KEY").unwrap_or_default();
     let telegram_lookup = (!agent_key.is_empty()).then(|| TelegramLookup {
         bindings: Arc::new(TelegramBindingRepositoryPg::new(pool.clone())),
@@ -79,11 +100,12 @@ async fn main() {
         create_homework_use_case,
         update_homework_use_case,
         class_repo,
+        user_repo.clone(),
+        one_time_code_service,
         telegram_lookup,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
-
     println!("starting EduHub179 API on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr)
