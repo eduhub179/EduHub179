@@ -1,17 +1,14 @@
-use application::use_cases::auth::login::{LoginCommand, LoginUseCase};
+use application::use_cases::auth::login::LoginCommand;
 use axum::{
     extract::State,
     http::StatusCode,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+    Json,
 };
 use domain::errors::DomainError;
+use domain::value_objects::login::Login;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::sync::Arc;
 
-use crate::router::{AppState, ApiError};
+use crate::router::{ApiError, AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -37,11 +34,30 @@ pub struct PublicUser {
     pub class_id: Option<String>,
 }
 
-pub fn auth_router() -> Router {
-    Router::new().route("/api/auth/login", post(login_handler))
+#[derive(Debug, Deserialize)]
+pub struct SendAuthCodeRequest {
+    pub email: String,
 }
 
-async fn login_handler(
+#[derive(Debug, Serialize)]
+pub struct SendAuthCodeResponse {
+    pub email: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyAuthCodeRequest {
+    pub email: String,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct VerifyAuthCodeResponse {
+    pub valid: bool,
+    pub user_id: Option<String>,
+}
+
+pub async fn login_handler(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, ApiError> {
@@ -70,5 +86,77 @@ async fn login_handler(
             is_active: session.user.is_active,
             class_id: session.user.class_id.map(|id| id.to_string()),
         },
+    }))
+}
+
+pub async fn send_auth_code_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<SendAuthCodeRequest>,
+) -> Result<Json<SendAuthCodeResponse>, ApiError> {
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+    let one_time_code_service = state.one_time_code_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "One-time code service not initialized".to_string(),
+    })?;
+
+    let login = Login::from_email(&payload.email).map_err(ApiError::from_auth_domain)?;
+    let user = user_repository
+        .get_by_login(login.as_str())
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    one_time_code_service
+        .issue(user.id, &payload.email)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    Ok(Json(SendAuthCodeResponse {
+        email: payload.email.trim().to_ascii_lowercase(),
+        message: "Code sent to email".to_string(),
+    }))
+}
+
+pub async fn verify_auth_code_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<VerifyAuthCodeRequest>,
+) -> Result<Json<VerifyAuthCodeResponse>, ApiError> {
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+    let one_time_code_service = state.one_time_code_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "One-time code service not initialized".to_string(),
+    })?;
+
+    let login = Login::from_email(&payload.email).map_err(ApiError::from_auth_domain)?;
+    let user = user_repository
+        .get_by_login(login.as_str())
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    let valid = one_time_code_service
+        .verify(user.id, &payload.code)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !valid {
+        return Err(ApiError::from_auth_domain(DomainError::InvalidAuthCode));
+    }
+
+    Ok(Json(VerifyAuthCodeResponse {
+        valid: true,
+        user_id: Some(user.id.to_string()),
     }))
 }

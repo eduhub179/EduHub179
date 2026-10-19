@@ -8,15 +8,21 @@ use application::use_cases::{
     },
     schedule::ScheduleService,
 };
+use domain::ports::session_security::{SessionTokenGenerator, SessionTokenHasher};
+use domain::repositories::web_session_repository::WebSessionRepository;
 use domain::settings::Settings;
 use infrastructure::{
-    auth::{Argon2PasswordHasher, JwtTokenIssuer, LoggingCodeSender, NumericCodeGenerator},
+    auth::{
+        Argon2PasswordHasher, HmacSessionTokenHasher, JwtTokenIssuer, LoggingCodeSender,
+        NumericCodeGenerator, SecureSessionTokenGenerator,
+    },
     config::Config,
     postgres::{
         create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg,
         HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
         SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
+        WebSessionRepositoryPg,
     },
     redis::AuthCodeStoreRedis,
 };
@@ -62,6 +68,15 @@ async fn main() {
         code_sender,
     ));
 
+    let web_session_repository: Arc<dyn WebSessionRepository> =
+        Arc::new(WebSessionRepositoryPg::new(pool.clone()));
+    let session_token_hasher: Arc<dyn SessionTokenHasher> = Arc::new(
+        HmacSessionTokenHasher::try_new(&config.session_hash_secret)
+            .expect("SESSION_HASH_SECRET must be set and non-empty"),
+    );
+    let session_token_generator: Arc<dyn SessionTokenGenerator> =
+        Arc::new(SecureSessionTokenGenerator);
+
     let schedule_weeks = Arc::new(ScheduleWeekRepositoryPg::new(pool.clone()));
     let student_groups = Arc::new(StudentGroupRepositoryPg::new(pool.clone()));
     let instances = Arc::new(LessonInstanceRepositoryPg::new(pool.clone()));
@@ -102,6 +117,9 @@ async fn main() {
         class_repo,
         user_repo.clone(),
         one_time_code_service,
+        web_session_repository,
+        session_token_hasher,
+        session_token_generator,
         telegram_lookup,
     );
 
