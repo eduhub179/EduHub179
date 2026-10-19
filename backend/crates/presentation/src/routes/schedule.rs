@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::NaiveDate;
@@ -8,7 +8,7 @@ use domain::errors::DomainError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::router::{ApiError, AppState};
+use crate::router::{require_authenticated_user, ApiError, AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct ScheduleWeekQuery {
@@ -75,8 +75,10 @@ pub struct ClassScheduleDayQuery {
 
 pub async fn schedule_week_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ScheduleWeekQuery>,
 ) -> Result<Json<ScheduleWeekResponse>, ApiError> {
+    let user = require_authenticated_user(&state, &headers).await?;
     let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
         .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
 
@@ -85,6 +87,10 @@ pub async fn schedule_week_handler(
         .as_deref()
         .and_then(|id| Uuid::parse_str(id).ok())
         .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
+
+    if user.role.is_student() && user.id != student_id {
+        return Err(ApiError::from_schedule_domain(DomainError::InsufficientPermissions));
+    }
 
     let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -135,8 +141,10 @@ pub async fn schedule_week_handler(
 
 pub async fn class_schedule_week_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ClassScheduleWeekQuery>,
 ) -> Result<Json<ScheduleWeekResponse>, ApiError> {
+    let _user = require_authenticated_user(&state, &headers).await?;
     let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
         .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
 
@@ -195,8 +203,10 @@ pub async fn class_schedule_week_handler(
 
 pub async fn day_schedule_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ScheduleDayQuery>,
 ) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
+    let user = require_authenticated_user(&state, &headers).await?;
     let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
         .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
 
@@ -205,6 +215,10 @@ pub async fn day_schedule_handler(
         .as_deref()
         .and_then(|id| Uuid::parse_str(id).ok())
         .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
+
+    if user.role.is_student() && user.id != student_id {
+        return Err(ApiError::from_schedule_domain(DomainError::InsufficientPermissions));
+    }
 
     let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -248,8 +262,10 @@ pub async fn day_schedule_handler(
 
 pub async fn class_day_schedule_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<ClassScheduleDayQuery>,
 ) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
+    let _user = require_authenticated_user(&state, &headers).await?;
     let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
         .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
 

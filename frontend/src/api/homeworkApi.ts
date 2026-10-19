@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import { requireTeacherUser } from './access';
 
 export interface CreateHomeworkRequest {
   lesson_instance_id: string;
@@ -27,6 +28,7 @@ export interface HomeworkResponse {
 export async function createHomework(
   payload: CreateHomeworkRequest,
 ): Promise<HomeworkResponse> {
+  requireTeacherUser();
   return apiFetch<HomeworkResponse>('/api/homework', {
     method: 'POST',
     headers: {
@@ -40,6 +42,7 @@ export async function updateHomeworkText(
   homeworkId: string,
   payload: UpdateHomeworkTextRequest,
 ): Promise<HomeworkResponse> {
+  requireTeacherUser();
   return apiFetch<HomeworkResponse>(`/api/homework/${homeworkId}/text`, {
     method: 'PATCH',
     headers: {

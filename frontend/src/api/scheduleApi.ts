@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import { assertCanAccessClassSchedule, assertCanAccessStudentSchedule } from './access';
 
 export interface HomeworkDto {
   id: string;
@@ -34,6 +35,7 @@ export async function fetchWeekSchedule(
   date: string,
   studentId: string,
 ): Promise<WeeklyScheduleDto> {
+  assertCanAccessStudentSchedule(studentId);
   return apiFetch<WeeklyScheduleDto>(
     `/api/schedule/week?date=${encodeURIComponent(date)}&student_id=${encodeURIComponent(studentId)}`,
   );
@@ -43,6 +45,7 @@ export async function fetchDaySchedule(
   date: string,
   studentId: string,
 ): Promise<DayScheduleDto> {
+  assertCanAccessStudentSchedule(studentId);
   return apiFetch<DayScheduleDto>(
     `/api/schedule/day?date=${encodeURIComponent(date)}&student_id=${encodeURIComponent(studentId)}`,
   );
@@ -52,6 +55,7 @@ export async function fetchClassWeekSchedule(
   date: string,
   classId: string,
 ): Promise<WeeklyScheduleDto> {
+  assertCanAccessClassSchedule(classId);
   return apiFetch<WeeklyScheduleDto>(
     `/api/classes/schedule/week?date=${encodeURIComponent(date)}&class_id=${encodeURIComponent(classId)}`,
   );
@@ -61,6 +65,7 @@ export async function fetchClassDaySchedule(
   date: string,
   classId: string,
 ): Promise<DayScheduleDto> {
+  assertCanAccessClassSchedule(classId);
   return apiFetch<DayScheduleDto>(
     `/api/classes/schedule/day?date=${encodeURIComponent(date)}&class_id=${encodeURIComponent(classId)}`,
   );

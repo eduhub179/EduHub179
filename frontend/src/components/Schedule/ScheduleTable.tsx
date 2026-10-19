@@ -10,13 +10,13 @@ interface FullScheduleTableProps {
 
 const WEEKDAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 const DEFAULT_LESSON_TIMES = [
-    '08:30 – 09:15',
-    '09:25 – 10:10',
-    '10:20 – 11:05',
-    '11:15 – 12:00',
-    '12:10 – 12:55',
-    '13:05 – 13:50',
-    '14:00 – 14:45',
+    '09:00 – 09:45',
+    '09:55 – 10:40',
+    '11:00 – 11:45',
+    '11:55 – 12:40',
+    '13:10 – 13:55',
+    '14:15 – 15:00',
+    '15:10 – 15:55',
 ];
 const LESSON_SLOT_HEIGHT = 63;
 
@@ -71,6 +71,29 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
             .sort((first, second) => first.startTime.localeCompare(second.startTime))
     }));
 
+    const getLessonPositioning = (lessons: ScheduleItem[]) => {
+        const slotTotals = new Map<string, number>();
+        const slotSeen = new Map<string, number>();
+
+        lessons.forEach((lesson) => {
+            const slotKey = `${lesson.startTime}-${lesson.endTime}`;
+            slotTotals.set(slotKey, (slotTotals.get(slotKey) ?? 0) + 1);
+        });
+
+        return lessons.map((lesson) => {
+            const slotKey = `${lesson.startTime}-${lesson.endTime}`;
+            const slotCount = slotTotals.get(slotKey) ?? 1;
+            const slotIndex = slotSeen.get(slotKey) ?? 0;
+            slotSeen.set(slotKey, slotIndex + 1);
+
+            return {
+                lesson,
+                slotCount,
+                slotIndex,
+            };
+        });
+    };
+
     return (
         <div className="full-schedule-table">
             {isLoading ? (
@@ -118,7 +141,7 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                         onMouseEnter={() => setHoveredDay(day.name)}
                                     >
                                         <div className="schedule-grid__timeline">
-                                            {day.lessons.map((lesson) => {
+                                            {getLessonPositioning(day.lessons).map(({lesson, slotCount, slotIndex}) => {
                                                 const top = getTimelinePosition(lesson.startTime);
                                                 const bottom = getTimelinePosition(lesson.endTime);
                                                 const isNonStandardTime = !DEFAULT_LESSON_INTERVALS.some(
@@ -126,10 +149,18 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                         start === parseTimeInMinutes(lesson.startTime) &&
                                                         end === parseTimeInMinutes(lesson.endTime),
                                                 );
+
+                                                const width = 100 / slotCount;
+                                                const left = width * slotIndex;
                                                 return (
                                                     <button
-                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}`}
-                                                        style={{top, height: Math.max(0, bottom - top)}}
+                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}`}
+                                                        style={{
+                                                            top,
+                                                            left: `${left}%`,
+                                                            width: `${width}%`,
+                                                            height: Math.max(0, bottom - top),
+                                                        }}
                                                         type="button"
                                                         key={lesson.id}
                                                         onClick={() => onLessonSelect(lesson)}

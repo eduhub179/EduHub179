@@ -19,6 +19,7 @@ export async function apiFetch<T>(
 
   const response = await fetch(`${API_BASE_URL}${input}`, {
     ...init,
+    credentials: init?.credentials ?? 'include',
     headers,
   });
 

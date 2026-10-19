@@ -52,6 +52,8 @@
     font-size: 0.75rem;
     font-weight: 500;
     white-space: nowrap;
+    padding: 0 14px;
+    vertical-align: top;
 }
 
 .schedule-grid__row-heading {
@@ -119,10 +121,8 @@
 
 .schedule-grid__lesson {
     position: absolute;
-    left: 0;
     z-index: 1;
     box-sizing: border-box;
-    width: 100%;
     min-height: 0;
     display: flex;
     align-items: center;
@@ -136,6 +136,10 @@
     font: inherit;
     text-align: left;
     cursor: pointer;
+}
+
+.schedule-grid__lesson--split {
+    border-left: 1px solid #e5e5e5;
 }
 
 .schedule-grid__lesson--non-standard {

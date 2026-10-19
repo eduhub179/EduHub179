@@ -7,8 +7,8 @@ interface AuthContextValue {
     user: User | null;
     register: (data: RegistrationData) => void;
     login: (credentials: Credentials) => Promise<void>;
-    updateSchoolClass: (schoolClass: string) => void;
-    logout: () => void;
+    updateSchoolClass: (schoolClass: string) => Promise<void>;
+    logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -22,10 +22,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const register = (data: RegistrationData) => setUser(authService.register(data));
     const login = async (credentials: Credentials) => setUser(await authService.login(credentials));
-    const updateSchoolClass = (schoolClass: string) =>
-        setUser(authService.updateSchoolClass(schoolClass));
-    const logout = () => {
-        authService.logout();
+    const updateSchoolClass = async (schoolClass: string) =>
+        setUser(await authService.updateSchoolClass(schoolClass));
+    const logout = async () => {
+        await authService.logout();
         setUser(null);
     };
 
