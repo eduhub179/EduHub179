@@ -146,6 +146,7 @@ impl UserRepository for UserRepositoryPg {
             VALUES ($1, $2, $3::user_role, $4, $5, $6, $7, $8)
             ON CONFLICT (user_id) DO UPDATE SET
                 login = EXCLUDED.login,
+                role = EXCLUDED.role,
                 last_name = EXCLUDED.last_name,
                 first_name = EXCLUDED.first_name,
                 middle_name = EXCLUDED.middle_name,

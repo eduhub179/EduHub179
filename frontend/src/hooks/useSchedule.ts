@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {fetchClassWeekSchedule, fetchSchoolClasses} from '../api';
+import {fetchClassWeekSchedule, fetchSchoolClasses, fetchWeekSchedule} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import type {DaySchedule, ScheduleItem} from '../types/ScheduleTypes';
 
@@ -84,7 +84,11 @@ export const useSchedule = (selectedClassOverride?: string): ScheduleState => {
                     return;
                 }
 
-                const week = await fetchClassWeekSchedule(getLocalDate(new Date()), selectedClass.id);
+                const usePersonalStudentSchedule =
+                    !selectedClassOverride && user?.role === 'student' && Boolean(user.id);
+                const week = usePersonalStudentSchedule
+                    ? await fetchWeekSchedule(getLocalDate(new Date()), user!.id!)
+                    : await fetchClassWeekSchedule(getLocalDate(new Date()), selectedClass.id);
                 if (isCurrent) {
                     setState({days: mapScheduleWeek(week), isLoading: false, error: null, hasClass: true});
                 }
@@ -105,7 +109,7 @@ export const useSchedule = (selectedClassOverride?: string): ScheduleState => {
         return () => {
             isCurrent = false;
         };
-    }, [schoolClass]);
+    }, [schoolClass, user?.id, user?.role]);
 
     return state;
 };

@@ -8,6 +8,7 @@ use application::use_cases::{
     },
     schedule::ScheduleService,
 };
+use domain::ports::auth::TokenIssuer;
 use domain::ports::session_security::{SessionTokenGenerator, SessionTokenHasher};
 use domain::repositories::web_session_repository::WebSessionRepository;
 use domain::settings::Settings;
@@ -51,7 +52,7 @@ async fn main() {
     let login_use_case = Arc::new(application::use_cases::auth::login::LoginUseCase::new(
         user_repo.clone(),
         credentials_store,
-        token_issuer,
+        token_issuer.clone(),
     ));
 
     let redis_hasher = Arc::new(Argon2PasswordHasher);
@@ -118,6 +119,7 @@ async fn main() {
         user_repo.clone(),
         one_time_code_service,
         web_session_repository,
+        token_issuer as Arc<dyn TokenIssuer>,
         session_token_hasher,
         session_token_generator,
         telegram_lookup,

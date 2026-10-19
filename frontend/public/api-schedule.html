@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EduHub API Schedule</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f5f7fb;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 24px auto;
+            padding: 0 16px;
+        }
+
+        h1 {
+            margin: 0 0 16px;
+            font-size: 24px;
+        }
+
+        .panel {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 220px;
+            flex: 1;
+        }
+
+        input {
+            height: 36px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 0 10px;
+            font: inherit;
+        }
+
+        button {
+            height: 36px;
+            border: 0;
+            border-radius: 8px;
+            padding: 0 12px;
+            background: #2563eb;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button.secondary {
+            background: #4b5563;
+        }
+
+        pre {
+            margin: 0;
+            background: #0b1220;
+            color: #e5e7eb;
+            padding: 12px;
+            border-radius: 10px;
+            overflow: auto;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .hint {
+            font-size: 13px;
+            color: #4b5563;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Запрос расписания через браузер</h1>
+
+    <div class="panel">
+        <div class="row">
+            <div class="field">
+                <label for="apiBase">API base</label>
+                <input id="apiBase" value="http://localhost:8080" />
+            </div>
+            <div class="field">
+                <label for="date">Дата</label>
+                <input id="date" type="date" value="2026-10-19" />
+            </div>
+        </div>
+        <p class="hint">Страница использует cookie-сессию. Сначала войдите в приложении EduHub.</p>
+    </div>
+
+    <div class="panel">
+        <div class="row">
+            <button id="loadClasses">1) Загрузить классы</button>
+            <button id="loadSchedule" class="secondary">2) Загрузить расписание класса</button>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+            <div class="field">
+                <label for="classId">Class ID</label>
+                <input id="classId" placeholder="UUID класса" />
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <pre id="output">Нажмите кнопку, чтобы выполнить API запрос...</pre>
+    </div>
+</div>
+
+<script>
+    const output = document.getElementById('output');
+    const apiBaseInput = document.getElementById('apiBase');
+    const dateInput = document.getElementById('date');
+    const classIdInput = document.getElementById('classId');
+    const loadClassesBtn = document.getElementById('loadClasses');
+    const loadScheduleBtn = document.getElementById('loadSchedule');
+
+    function show(data) {
+        output.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    }
+
+    function normalizeBase(value) {
+        return value.trim().replace(/\/$/, '');
+    }
+
+    function suggestApiBase() {
+        const host = window.location.hostname;
+        if (host === '127.0.0.1' || host === 'localhost') {
+            return `http://${host}:8080`;
+        }
+        return 'http://localhost:8080';
+    }
+
+    function buildFallbackBase(apiBase) {
+        try {
+            const url = new URL(apiBase);
+            if (url.hostname === 'localhost') {
+                url.hostname = '127.0.0.1';
+                return url.toString().replace(/\/$/, '');
+            }
+            if (url.hostname === '127.0.0.1') {
+                url.hostname = 'localhost';
+                return url.toString().replace(/\/$/, '');
+            }
+        } catch (_) {
+            return null;
+        }
+        return null;
+    }
+
+    async function callApiOnce(apiBase, path) {
+        const response = await fetch(`${apiBase}${path}`, {
+            method: 'GET',
+            credentials: 'include',
+        });
+
+        const text = await response.text();
+        let body = text;
+        try {
+            body = JSON.parse(text);
+        } catch (_) {
+            // keep text response
+        }
+
+        return {response, body};
+    }
+
+    async function callApi(path) {
+        const primaryBase = normalizeBase(apiBaseInput.value);
+        const fallbackBase = buildFallbackBase(primaryBase);
+
+        let {response, body} = await callApiOnce(primaryBase, path);
+
+        if ((response.status === 401 || response.status === 403) && fallbackBase) {
+            const retry = await callApiOnce(fallbackBase, path);
+            if (retry.response.ok) {
+                apiBaseInput.value = fallbackBase;
+                show({
+                    info: `Автоматически переключено на ${fallbackBase}, потому что cookie-сессия привязана к другому хосту.`,
+                    data: retry.body,
+                });
+                return retry.body;
+            }
+            response = retry.response;
+            body = retry.body;
+        }
+
+        if (!response.ok) {
+            show({
+                status: response.status,
+                statusText: response.statusText,
+                body,
+            });
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        return body;
+    }
+
+    apiBaseInput.value = suggestApiBase();
+
+    loadClassesBtn.addEventListener('click', async () => {
+        show('Загрузка классов...');
+        try {
+            const data = await callApi('/api/classes');
+            const firstClassId = data?.classes?.[0]?.id;
+            if (firstClassId && !classIdInput.value.trim()) {
+                classIdInput.value = firstClassId;
+            }
+            show(data);
+        } catch (_) {
+            // already shown in output
+        }
+    });
+
+    loadScheduleBtn.addEventListener('click', async () => {
+        const classId = classIdInput.value.trim();
+        const date = dateInput.value;
+
+        if (!classId) {
+            show('Сначала укажите class_id или нажмите "Загрузить классы".');
+            return;
+        }
+
+        show('Загрузка расписания...');
+        try {
+            const data = await callApi(`/api/classes/schedule/week?date=${encodeURIComponent(date)}&class_id=${encodeURIComponent(classId)}`);
+            show(data);
+        } catch (_) {
+            // already shown in output
+        }
+    });
+</script>
+</body>
+</html>

@@ -1,14 +1,15 @@
+use std::str::FromStr;
+
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
-use domain::{errors::DomainError, value_objects::{homework_status::HomeworkStatus, role::UserRole}};
+use domain::{errors::DomainError, value_objects::homework_status::HomeworkStatus};
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::router::{ApiError, AppState};
+use crate::router::{require_authenticated_user, ApiError, AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateHomeworkRequest {
@@ -55,8 +56,14 @@ pub struct UpdateHomeworkResponse {
 
 pub async fn create_homework_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<CreateHomeworkRequest>,
 ) -> Result<Json<CreateHomeworkResponse>, ApiError> {
+    let user = require_authenticated_user(&state, &headers).await?;
+    if !user.is_teacher() {
+        return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
+    }
+
     let create_homework_use_case = state.create_homework_use_case.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         message: "Create homework use case not initialized".to_string(),
@@ -64,18 +71,14 @@ pub async fn create_homework_handler(
 
     let lesson_instance_id = Uuid::parse_str(&payload.lesson_instance_id)
         .map_err(|_| ApiError::from_homework_domain(DomainError::LessonInstanceNotFound))?;
-    let created_by = Uuid::parse_str(&payload.created_by)
-        .map_err(|_| ApiError::from_homework_domain(DomainError::UserNotFound))?;
-    let created_by_role = UserRole::from_str(&payload.created_by_role)
-        .map_err(ApiError::from_homework_domain)?;
     let status = HomeworkStatus::from_str(&payload.status)
         .map_err(ApiError::from_homework_domain)?;
 
     let homework = create_homework_use_case
         .execute(application::use_cases::homework::create_homework::CreateHomeworkCommand::new(
             lesson_instance_id,
-            created_by,
-            created_by_role,
+            user.id,
+            user.role,
             payload.text_content,
             status,
         ))
@@ -97,9 +100,15 @@ pub async fn create_homework_handler(
 
 pub async fn update_homework_text_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(homework_id): Path<String>,
     Json(payload): Json<UpdateHomeworkRequest>,
 ) -> Result<Json<UpdateHomeworkResponse>, ApiError> {
+    let user = require_authenticated_user(&state, &headers).await?;
+    if !user.is_teacher() {
+        return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
+    }
+
     let update_homework_use_case = state.update_homework_use_case.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
         message: "Update homework use case not initialized".to_string(),

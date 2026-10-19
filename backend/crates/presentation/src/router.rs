@@ -9,13 +9,15 @@ use application::use_cases::{
     schedule::ScheduleService,
 };
 use axum::{
-    http::{HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::{get, patch, post},
     Json, Router,
 };
 use domain::{
+    entities::user::User,
     errors::DomainError,
+    ports::auth::TokenIssuer,
     ports::session_security::{SessionTokenGenerator, SessionTokenHasher},
     repositories::{
         class_repository::ClassRepository,
@@ -141,6 +143,7 @@ pub struct AppState {
     pub user_repository: Option<Arc<dyn UserRepository>>,
     pub one_time_code_service: Option<Arc<OneTimeCodeService>>,
     pub web_session_repository: Option<Arc<dyn WebSessionRepository>>,
+    pub token_issuer: Option<Arc<dyn TokenIssuer>>,
     pub session_token_hasher: Option<Arc<dyn SessionTokenHasher>>,
     pub session_token_generator: Option<Arc<dyn SessionTokenGenerator>>,
     pub telegram_lookup: Option<TelegramLookup>,
@@ -176,6 +179,64 @@ fn cors_layer() -> CorsLayer {
         .allow_credentials(true)
 }
 
+fn extract_cookie_value(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
+    let header = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+
+    header
+        .split(';')
+        .filter_map(|pair| {
+            let mut parts = pair.trim().splitn(2, '=');
+            let name = parts.next()?.trim();
+            let value = parts.next()?.trim();
+            (name == cookie_name).then(|| value.to_string())
+        })
+        .next()
+}
+
+pub(crate) async fn require_authenticated_user(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<User, ApiError> {
+    let web_session_repository =
+        state
+            .web_session_repository
+            .as_ref()
+            .ok_or_else(|| ApiError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "Web session repository not initialized".to_string(),
+            })?;
+    let session_token_hasher = state.session_token_hasher.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Session token hasher not initialized".to_string(),
+    })?;
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+
+    let raw_token = extract_cookie_value(headers, "session").ok_or_else(|| ApiError {
+        status: StatusCode::UNAUTHORIZED,
+        message: "Authentication required".to_string(),
+    })?;
+    let token_hash = session_token_hasher
+        .hash_session_token(&raw_token)
+        .map_err(ApiError::from_auth_domain)?;
+    let session = web_session_repository
+        .get_active_by_token_hash(&token_hash)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+    let user = user_repository
+        .get_by_id(session.user_id)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    Ok(user)
+}
+
 pub fn create_app() -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -188,6 +249,9 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(auth::login_handler))
+        .route("/api/auth/session/init", post(auth::init_session_handler))
+        .route("/api/auth/logout", post(auth::logout_handler))
+        .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
         .route("/api/auth/code/send", post(auth::send_auth_code_handler))
         .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
         .route("/api/schedule/week", get(schedule::schedule_week_handler))
@@ -216,6 +280,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             user_repository: None,
             one_time_code_service: None,
             web_session_repository: None,
+            token_issuer: None,
             session_token_hasher: None,
             session_token_generator: None,
             telegram_lookup: None,
@@ -252,6 +317,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             user_repository: None,
             one_time_code_service: None,
             web_session_repository: None,
+            token_issuer: None,
             session_token_hasher: None,
             session_token_generator: None,
             telegram_lookup: None,
@@ -267,6 +333,7 @@ pub fn create_app_with_auth_and_schedule(
     user_repository: Arc<dyn UserRepository>,
     one_time_code_service: Arc<OneTimeCodeService>,
     web_session_repository: Arc<dyn WebSessionRepository>,
+    token_issuer: Arc<dyn TokenIssuer>,
     session_token_hasher: Arc<dyn SessionTokenHasher>,
     session_token_generator: Arc<dyn SessionTokenGenerator>,
     telegram_lookup: Option<TelegramLookup>,
@@ -275,6 +342,9 @@ pub fn create_app_with_auth_and_schedule(
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
         .route("/api/auth/login", post(auth::login_handler))
+        .route("/api/auth/session/init", post(auth::init_session_handler))
+        .route("/api/auth/logout", post(auth::logout_handler))
+        .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
         .route("/api/auth/code/send", post(auth::send_auth_code_handler))
         .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
         .route("/api/schedule/week", get(schedule::schedule_week_handler))
@@ -304,6 +374,7 @@ pub fn create_app_with_auth_and_schedule(
             user_repository: Some(user_repository),
             one_time_code_service: Some(one_time_code_service),
             web_session_repository: Some(web_session_repository),
+            token_issuer: Some(token_issuer),
             session_token_hasher: Some(session_token_hasher),
             session_token_generator: Some(session_token_generator),
             telegram_lookup,
