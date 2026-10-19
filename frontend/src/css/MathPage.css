@@ -170,6 +170,18 @@
     opacity: 0.6;
 }
 
+.math-admin-table__plusnik-link {
+    color: var(--color-accent);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.math-admin-table__plusnik-link:hover,
+.math-admin-table__plusnik-link:focus-visible {
+    text-decoration: underline;
+}
+
 .math-topics__error {
     margin: 0 0 12px;
     color: #b42318;
