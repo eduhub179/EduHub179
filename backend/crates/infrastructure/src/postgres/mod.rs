@@ -20,6 +20,7 @@ pub mod student_group_repository_pg;
 pub mod subject_repository_pg;
 pub mod telegram_bindigs_repository_pg;
 pub mod user_repository_pg;
+pub mod web_session_repository_pg;
 
 // Re-export for convenience in the `bin` crate (DI composition root).
 pub use cabinet_repository_pg::CabinetRepositoryPg;
@@ -37,4 +38,5 @@ pub use schedule_week_repository_pg::ScheduleWeekRepositoryPg;
 pub use student_group_repository_pg::StudentGroupRepositoryPg;
 pub use subject_repository_pg::SubjectRepositoryPg;
 pub use user_repository_pg::UserRepositoryPg;
+pub use web_session_repository_pg::WebSessionRepositoryPg;
 pub use telegram_bindigs_repository_pg::TelegramBindingRepositoryPg;
