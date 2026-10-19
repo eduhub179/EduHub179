@@ -46,6 +46,13 @@ check("«Листок 16. Самостоятельная работа» → са
       name_rules.type_of("Листок 16. Самостоятельная работа.docx")[0] == "independent_work")
 check("лист → worksheet", name_rules.type_of("лист 03.pdf")[0] == "worksheet")
 check("«кружок» не становится контрольной", name_rules.type_of("кружок.txt")[0] is None)
+check("«листинг» не становится листком", name_rules.type_of("листинг.py")[0] == "program")
+check("задачник → textbook, а не worksheet", name_rules.type_of("задачник 8 класс.pdf")[0] == "textbook")
+check("плюсник → plusnik_sheet", name_rules.type_of("плюсник 11Б.xlsx")[0] == "plusnik_sheet")
+check("вариант без контекста → самостоятельная, medium",
+      name_rules.type_of("вариант 2.pdf")[:2] == ("independent_work", "medium"))
+check("КР вариант 2 → контрольная", name_rules.type_of("КР вариант 2.pdf")[0] == "test")
+check("лабораторная → lab", name_rules.type_of("лабораторная 3.docx")[0] == "lab")
 check(".py → program", name_rules.type_of("script.py")[0] == "program")
 check("безымянное фото — ничего", name_rules.type_of("photo_2026-10-18.jpg")[0] is None)
 
