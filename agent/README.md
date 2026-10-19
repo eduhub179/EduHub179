@@ -21,7 +21,7 @@ agent/
 │   └── crawler/               # синхронизация источника: что изменилось (Drive/папка)
 ├── tests/                     # test_*.py и test_*.tsv
 ├── data/                      # timetable.example.json
-├── docs/                      # files.md (карта files/), фото-разбор.md, models_results.md
+├── docs/                      # structure.md (кто кого зовёт), files.md (карта files/), фото-разбор.md, models_results.md
 ├── chats/                     # личные данные и кеши (в git не попадают)
 ├── requirements.txt
 └── .env.example
@@ -60,6 +60,7 @@ agent/
 | `ingest/` | разовый проход по папке: `python3 -m eduhub_agent.ingest scan "<папка>" --out out/math` |
 | `crawler/` | синхронизация: из папки `agent/` — `python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json`; `--fixture FILE` — офлайн-повтор записанных ответов API (сами ответы лежат в `tests/fixtures/drive/`) |
 | `docs/files.md` | карта пакета `files/`: кто читает, кто метит, кто решает и чего каждый модуль не делает |
+| `docs/structure.md` | карта зависимостей всего агента: точки входа, кто кого импортирует, реальные цепочки вызовов |
 | `docs/models_results.md` | сравнение локальных моделей |
 | `docs/фото-разбор.md` | что сделано с фото 16.10 и как к этому вернуться |
 
