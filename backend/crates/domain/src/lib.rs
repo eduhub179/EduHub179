@@ -18,6 +18,9 @@ pub mod entities {
 }
 
 pub mod value_objects {
+    pub mod announcement_priority;
+    pub mod announcement_status;
+    pub mod announcements;
     pub mod class_letter;
     pub mod day_of_week;
     pub mod homework_status;

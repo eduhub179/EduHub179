@@ -180,8 +180,23 @@ pub enum DomainError {
     InvalidAuthCode,
     /// Binding already active — re-authorization not required.
     TelegramBindingAlreadyActive,
+    /// Announcement with the specified ID was not found.
+    AnnouncementNotFound,
+    /// Announcement title must be non-empty and at most 255 chars.
+    InvalidAnnouncementTitle,
+    /// Announcement content (MarkdownV2 body) must be non-empty after trim.
+    InvalidAnnouncementContent,
+    /// Unknown announcement_status value in the database.
+    InvalidAnnouncementStatus,
+    /// Unknown announcement_priority value in the database.
+    InvalidAnnouncementPriority,
+    /// Announcement file metadata is invalid (empty field or over length limit).
+    InvalidAnnouncementFileFormat,
+    /// Announcement file size must be non-negative.
+    InvalidAnnouncementFileSize,
+    /// Announcement file with the specified ID was not found.
+    AnnouncementFileNotFound,
 }
-
 impl fmt::Display for DomainError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Note: These are for logging. The presentation layer should map
@@ -278,6 +293,16 @@ impl fmt::Display for DomainError {
             DomainError::TelegramBindingAlreadyActive => {
                 write!(f, "Telegram binding already active")
             }
+            DomainError::AnnouncementNotFound => write!(f, "Announcement not found"),
+            DomainError::InvalidAnnouncementTitle => write!(f, "Invalid announcement title"),
+            DomainError::InvalidAnnouncementContent => write!(f, "Invalid announcement content"),
+            DomainError::InvalidAnnouncementStatus => write!(f, "Invalid announcement status"),
+            DomainError::InvalidAnnouncementPriority => write!(f, "Invalid announcement priority"),
+            DomainError::InvalidAnnouncementFileFormat => {
+                write!(f, "Invalid announcement file format")
+            }
+            DomainError::InvalidAnnouncementFileSize => write!(f, "Invalid announcement file size"),
+            DomainError::AnnouncementFileNotFound => write!(f, "Announcement file not found"),
         }
     }
 }
