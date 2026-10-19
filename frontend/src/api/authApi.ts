@@ -40,6 +40,28 @@ export interface VerifyAuthCodeResponse {
   user_id?: string | null;
 }
 
+export interface InitSessionRequest {
+  user_id: string;
+  auth_token: string;
+  remember_me?: boolean;
+}
+
+export interface InitSessionResponse {
+  ok: boolean;
+  user_id: string;
+  expires_at: string;
+}
+
+export interface LogoutResponse {
+  ok: boolean;
+}
+
+export interface UpdateProfileClassRequest {
+  class_id: string;
+}
+
+export type UpdateProfileClassResponse = PublicUserDto;
+
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
   return apiFetch<LoginResponse>('/api/auth/login', {
     method: 'POST',
@@ -71,5 +93,38 @@ export async function verifyAuthCode(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function initSession(
+  payload: InitSessionRequest,
+): Promise<InitSessionResponse> {
+  return apiFetch<InitSessionResponse>('/api/auth/session/init', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProfileClass(
+  payload: UpdateProfileClassRequest,
+): Promise<UpdateProfileClassResponse> {
+  return apiFetch<UpdateProfileClassResponse>('/api/auth/profile/class', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function logoutSession(): Promise<LogoutResponse> {
+  return apiFetch<LogoutResponse>('/api/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
   });
 }

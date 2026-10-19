@@ -22,6 +22,7 @@ build/
 
 # Rust
 backend/target/
+backend/bin/src/bin/import_timetable_agent.rs
 
 # Dumps
 project_dump*.txt

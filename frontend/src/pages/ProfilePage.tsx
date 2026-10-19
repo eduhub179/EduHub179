@@ -54,12 +54,12 @@ const ProfilePage: React.FC = () => {
         };
     }, [user?.schoolClass]);
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         navigate('/main');
     };
 
-    const handleSave = (event: FormEvent<HTMLFormElement>) => {
+    const handleSave = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const value = schoolClassId.trim();
         if (!value) {
@@ -69,7 +69,7 @@ const ProfilePage: React.FC = () => {
         }
 
         try {
-            updateSchoolClass(value);
+            await updateSchoolClass(value);
             setError('');
             setSaved(true);
         } catch (saveError) {
