@@ -1,4 +1,5 @@
 import React from 'react';
+import '../css/ClassTable.css';
 
 export interface ClassOption {
     grade: number;
@@ -21,18 +22,9 @@ const ClassTable: React.FC<ClassTableProps> = ({selectedClass, onSelectClass, cl
     return (
         <div className="math-class-table-wrap">
             <table className="math-class-table" aria-label="Выбор класса">
-                <thead>
-                    <tr>
-                        <th scope="col">Параллель</th>
-                        {letters.map((letter) => (
-                            <th key={letter} scope="col">{letter}</th>
-                        ))}
-                    </tr>
-                </thead>
                 <tbody>
                     {grades.map((grade) => (
                         <tr key={grade}>
-                            <th scope="row">{grade} класс</th>
                             {letters.map((letter) => {
                                 const option = classOptions.find((item) => item.grade === grade && item.letter === letter);
                                 return (
