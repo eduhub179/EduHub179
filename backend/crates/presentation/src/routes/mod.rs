@@ -1,5 +1,5 @@
 pub mod auth;
+pub mod classes;
+pub mod homework;
 pub mod schedule;
-
-pub use auth::auth_router;
-pub use schedule::schedule_router;
+pub mod telegram;

@@ -1,166 +1,44 @@
-//! Axum router for the HTTP API.
-//!
-//! This is the initial MVP. It exposes health, auth routes, and schedule routes.
+use std::sync::Arc;
 
 use application::use_cases::{
-    auth::{
-        login::{LoginCommand, LoginUseCase},
-        OneTimeCodeService,
-    },
+    auth::{login::LoginUseCase, OneTimeCodeService},
     homework::{
-        create_homework::{CreateHomeworkCommand, CreateHomeworkUseCase},
-        update_homework_text::{UpdateHomeworkTextCommand, UpdateHomeworkTextUseCase},
+        create_homework::CreateHomeworkUseCase,
+        update_homework_text::UpdateHomeworkTextUseCase,
     },
     schedule::ScheduleService,
 };
 use axum::{
-    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::{get, patch, post},
     Json, Router,
 };
-use chrono::NaiveDate;
 use domain::{
+    entities::user::User,
     errors::DomainError,
+    ports::auth::TokenIssuer,
+    ports::session_security::{SessionTokenGenerator, SessionTokenHasher},
     repositories::{
         class_repository::ClassRepository,
         telegram_bindigs_repository::TelegramBindingRepository,
         user_repository::UserRepository,
+        web_session_repository::WebSessionRepository,
     },
-    value_objects::{homework_status::HomeworkStatus, role::UserRole},
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{str::FromStr, sync::Arc};
-use tower_http::cors::{CorsLayer};
-use uuid::Uuid;
+use tower_http::cors::CorsLayer;
 
-#[derive(Debug, Deserialize)]
-pub struct LoginRequest {
-    pub login: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct LoginResponse {
-    pub token: String,
-    pub user: PublicUser,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PublicUser {
-    pub id: String,
-    pub login: String,
-    pub role: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub middle_name: Option<String>,
-    pub is_active: bool,
-    pub class_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateHomeworkRequest {
-    pub lesson_instance_id: String,
-    pub created_by: String,
-    #[serde(default)]
-    pub created_by_role: String,
-    #[serde(default)]
-    pub text_content: Option<String>,
-    #[serde(default)]
-    pub status: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CreateHomeworkResponse {
-    pub id: String,
-    pub lesson_instance_id: String,
-    pub created_by: String,
-    pub created_by_role: String,
-    pub text_content: Option<String>,
-    pub status: String,
-    pub locked_by_teacher: bool,
-    pub last_edited_by: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateHomeworkRequest {
-    pub text_content: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct UpdateHomeworkResponse {
-    pub id: String,
-    pub lesson_instance_id: String,
-    pub created_by: String,
-    pub created_by_role: String,
-    pub text_content: Option<String>,
-    pub status: String,
-    pub locked_by_teacher: bool,
-    pub last_edited_by: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ScheduleWeekQuery {
-    pub date: String,
-    #[serde(default)]
-    pub student_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleWeekResponse {
-    pub week_start_date: String,
-    pub days: Vec<ScheduleDayResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleDayResponse {
-    pub date: String,
-    pub lessons: Vec<ScheduleLessonResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleLessonResponse {
-    pub id: String,
-    pub start_time: String,
-    pub end_time: String,
-    pub subject_name: String,
-    pub teachers: Vec<String>,
-    pub cabinet: Option<String>,
-    pub homework: Option<HomeworkResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct HomeworkResponse {
-    pub id: String,
-    pub text: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ClassListItemResponse {
-    pub id: String,
-    pub graduation_year: i32,
-    pub letter: String,
-    pub name: String,
-    pub is_active: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ClassListResponse {
-    pub classes: Vec<ClassListItemResponse>,
-}
+use crate::routes::{auth, classes, homework, schedule, telegram};
 
 #[derive(Debug)]
 pub struct ApiError {
-    status: StatusCode,
-    message: String,
+    pub(crate) status: StatusCode,
+    pub(crate) message: String,
 }
 
 impl ApiError {
-    fn from_auth_domain(error: DomainError) -> Self {
+    pub(crate) fn from_auth_domain(error: DomainError) -> Self {
         let (status, message) = match error {
             DomainError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid login or password")
@@ -176,7 +54,9 @@ impl ApiError {
                 (StatusCode::UNAUTHORIZED, "Invalid or expired auth code")
             }
             DomainError::UserNotFound => (StatusCode::UNAUTHORIZED, "Invalid login or password"),
-            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
         };
 
@@ -186,7 +66,7 @@ impl ApiError {
         }
     }
 
-    fn from_schedule_domain(error: DomainError) -> Self {
+    pub(crate) fn from_schedule_domain(error: DomainError) -> Self {
         let (status, message) = match error {
             DomainError::UserNotFound => (StatusCode::NOT_FOUND, "Student not found"),
             DomainError::UserIsInactive => (StatusCode::FORBIDDEN, "User account is inactive"),
@@ -199,7 +79,9 @@ impl ApiError {
             DomainError::InvalidLessonInstanceDate => {
                 (StatusCode::BAD_REQUEST, "Invalid lesson date")
             }
-            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
         };
 
@@ -209,7 +91,7 @@ impl ApiError {
         }
     }
 
-    fn from_homework_domain(error: DomainError) -> Self {
+    pub(crate) fn from_homework_domain(error: DomainError) -> Self {
         let (status, message) = match error {
             DomainError::InvalidHomeworkTextFormat => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "Invalid homework text format")
@@ -228,7 +110,9 @@ impl ApiError {
             DomainError::InsufficientPermissions => {
                 (StatusCode::FORBIDDEN, "Insufficient permissions")
             }
-            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
         };
 
@@ -258,15 +142,17 @@ pub struct AppState {
     pub class_repository: Option<Arc<dyn ClassRepository>>,
     pub user_repository: Option<Arc<dyn UserRepository>>,
     pub one_time_code_service: Option<Arc<OneTimeCodeService>>,
+    pub web_session_repository: Option<Arc<dyn WebSessionRepository>>,
+    pub token_issuer: Option<Arc<dyn TokenIssuer>>,
+    pub session_token_hasher: Option<Arc<dyn SessionTokenHasher>>,
+    pub session_token_generator: Option<Arc<dyn SessionTokenGenerator>>,
     pub telegram_lookup: Option<TelegramLookup>,
 }
 
-/// What `GET /api/telegram/users/{telegram_id}` needs: active bindings, users, and the agent key.
 #[derive(Clone)]
 pub struct TelegramLookup {
     pub bindings: Arc<dyn TelegramBindingRepository>,
     pub users: Arc<dyn UserRepository>,
-    /// Shared secret of the chat agent (`X-Agent-Key` header). Route is closed when empty.
     pub agent_key: String,
 }
 
@@ -280,13 +166,75 @@ fn cors_layer() -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(allow_origin)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PATCH])
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PATCH,
+        ])
         .allow_headers([
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
             axum::http::header::HeaderName::from_static("x-internal-secret"),
         ])
         .allow_credentials(true)
+}
+
+fn extract_cookie_value(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
+    let header = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+
+    header
+        .split(';')
+        .filter_map(|pair| {
+            let mut parts = pair.trim().splitn(2, '=');
+            let name = parts.next()?.trim();
+            let value = parts.next()?.trim();
+            (name == cookie_name).then(|| value.to_string())
+        })
+        .next()
+}
+
+pub(crate) async fn require_authenticated_user(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<User, ApiError> {
+    let web_session_repository =
+        state
+            .web_session_repository
+            .as_ref()
+            .ok_or_else(|| ApiError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "Web session repository not initialized".to_string(),
+            })?;
+    let session_token_hasher = state.session_token_hasher.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Session token hasher not initialized".to_string(),
+    })?;
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+
+    let raw_token = extract_cookie_value(headers, "session").ok_or_else(|| ApiError {
+        status: StatusCode::UNAUTHORIZED,
+        message: "Authentication required".to_string(),
+    })?;
+    let token_hash = session_token_hasher
+        .hash_session_token(&raw_token)
+        .map_err(ApiError::from_auth_domain)?;
+    let session = web_session_repository
+        .get_active_by_token_hash(&token_hash)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+    let user = user_repository
+        .get_by_id(session.user_id)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    Ok(user)
 }
 
 pub fn create_app() -> Router {
@@ -300,16 +248,28 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
-        .route("/api/auth/login", post(login_handler))
-        .route("/api/auth/code/send", post(send_auth_code_handler))
-        .route("/api/auth/code/verify", post(verify_auth_code_handler))
-        .route("/api/schedule/week", get(schedule_week_handler))
-        .route("/api/schedule/day", get(day_schedule_handler))
-        .route("/api/classes/schedule/week", get(class_schedule_week_handler))
-        .route("/api/classes/schedule/day", get(class_day_schedule_handler))
-        .route("/api/homework", post(create_homework_handler))
-        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
-        .route("/api/classes", get(classes_handler))
+        .route("/api/auth/login", post(auth::login_handler))
+        .route("/api/auth/session/init", post(auth::init_session_handler))
+        .route("/api/auth/logout", post(auth::logout_handler))
+        .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
+        .route("/api/auth/code/send", post(auth::send_auth_code_handler))
+        .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
+        .route("/api/schedule/week", get(schedule::schedule_week_handler))
+        .route("/api/schedule/day", get(schedule::day_schedule_handler))
+        .route(
+            "/api/classes/schedule/week",
+            get(schedule::class_schedule_week_handler),
+        )
+        .route(
+            "/api/classes/schedule/day",
+            get(schedule::class_day_schedule_handler),
+        )
+        .route("/api/homework", post(homework::create_homework_handler))
+        .route(
+            "/api/homework/:homework_id/text",
+            patch(homework::update_homework_text_handler),
+        )
+        .route("/api/classes", get(classes::classes_handler))
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -319,6 +279,10 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             class_repository: None,
             user_repository: None,
             one_time_code_service: None,
+            web_session_repository: None,
+            token_issuer: None,
+            session_token_hasher: None,
+            session_token_generator: None,
             telegram_lookup: None,
         })
 }
@@ -327,13 +291,22 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
-        .route("/api/schedule/week", get(schedule_week_handler))
-        .route("/api/schedule/day", get(day_schedule_handler))
-        .route("/api/classes/schedule/week", get(class_schedule_week_handler))
-        .route("/api/classes/schedule/day", get(class_day_schedule_handler))
-        .route("/api/homework", post(create_homework_handler))
-        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
-        .route("/api/classes", get(classes_handler))
+        .route("/api/schedule/week", get(schedule::schedule_week_handler))
+        .route("/api/schedule/day", get(schedule::day_schedule_handler))
+        .route(
+            "/api/classes/schedule/week",
+            get(schedule::class_schedule_week_handler),
+        )
+        .route(
+            "/api/classes/schedule/day",
+            get(schedule::class_day_schedule_handler),
+        )
+        .route("/api/homework", post(homework::create_homework_handler))
+        .route(
+            "/api/homework/:homework_id/text",
+            patch(homework::update_homework_text_handler),
+        )
+        .route("/api/classes", get(classes::classes_handler))
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: None,
@@ -343,6 +316,10 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             class_repository: None,
             user_repository: None,
             one_time_code_service: None,
+            web_session_repository: None,
+            token_issuer: None,
+            session_token_hasher: None,
+            session_token_generator: None,
             telegram_lookup: None,
         })
 }
@@ -355,22 +332,38 @@ pub fn create_app_with_auth_and_schedule(
     class_repository: Arc<dyn ClassRepository>,
     user_repository: Arc<dyn UserRepository>,
     one_time_code_service: Arc<OneTimeCodeService>,
+    web_session_repository: Arc<dyn WebSessionRepository>,
+    token_issuer: Arc<dyn TokenIssuer>,
+    session_token_hasher: Arc<dyn SessionTokenHasher>,
+    session_token_generator: Arc<dyn SessionTokenGenerator>,
     telegram_lookup: Option<TelegramLookup>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
-        .route("/api/auth/login", post(login_handler))
-        .route("/api/auth/code/send", post(send_auth_code_handler))
-        .route("/api/auth/code/verify", post(verify_auth_code_handler))
-        .route("/api/schedule/week", get(schedule_week_handler))
-        .route("/api/schedule/day", get(day_schedule_handler))
-        .route("/api/classes/schedule/week", get(class_schedule_week_handler))
-        .route("/api/classes/schedule/day", get(class_day_schedule_handler))
-        .route("/api/homework", post(create_homework_handler))
-        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
-        .route("/api/classes", get(classes_handler))
-        .route("/api/telegram/users/:telegram_id", get(telegram_user_handler))
+        .route("/api/auth/login", post(auth::login_handler))
+        .route("/api/auth/session/init", post(auth::init_session_handler))
+        .route("/api/auth/logout", post(auth::logout_handler))
+        .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
+        .route("/api/auth/code/send", post(auth::send_auth_code_handler))
+        .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
+        .route("/api/schedule/week", get(schedule::schedule_week_handler))
+        .route("/api/schedule/day", get(schedule::day_schedule_handler))
+        .route(
+            "/api/classes/schedule/week",
+            get(schedule::class_schedule_week_handler),
+        )
+        .route(
+            "/api/classes/schedule/day",
+            get(schedule::class_day_schedule_handler),
+        )
+        .route("/api/homework", post(homework::create_homework_handler))
+        .route(
+            "/api/homework/:homework_id/text",
+            patch(homework::update_homework_text_handler),
+        )
+        .route("/api/classes", get(classes::classes_handler))
+        .route("/api/telegram/users/:telegram_id", get(telegram::telegram_user_handler))
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -380,6 +373,10 @@ pub fn create_app_with_auth_and_schedule(
             class_repository: Some(class_repository),
             user_repository: Some(user_repository),
             one_time_code_service: Some(one_time_code_service),
+            web_session_repository: Some(web_session_repository),
+            token_issuer: Some(token_issuer),
+            session_token_hasher: Some(session_token_hasher),
+            session_token_generator: Some(session_token_generator),
             telegram_lookup,
         })
 }
@@ -388,538 +385,6 @@ async fn health_check() -> Json<Value> {
     Json(json!({
         "status": "ok",
         "service": "eduhub-api"
-    }))
-}
-
-async fn login_handler(
-    State(state): State<AppState>,
-    Json(payload): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, ApiError> {
-    let login_use_case = state.login_use_case.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Login use case not initialized".to_string(),
-    })?;
-
-    let command = LoginCommand::try_new(payload.login, payload.password)
-        .map_err(ApiError::from_auth_domain)?;
-
-    let session = login_use_case
-        .execute(command)
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-
-    Ok(Json(LoginResponse {
-        token: session.token,
-        user: PublicUser {
-            id: session.user.id.to_string(),
-            login: session.user.login,
-            role: session.user.role.to_string(),
-            first_name: session.user.first_name,
-            last_name: session.user.last_name,
-            middle_name: session.user.middle_name,
-            is_active: session.user.is_active,
-            class_id: session.user.class_id.map(|id| id.to_string()),
-        },
-    }))
-}
-
-async fn create_homework_handler(
-    State(state): State<AppState>,
-    Json(payload): Json<CreateHomeworkRequest>,
-) -> Result<Json<CreateHomeworkResponse>, ApiError> {
-    let create_homework_use_case = state.create_homework_use_case.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Create homework use case not initialized".to_string(),
-    })?;
-
-    let lesson_instance_id = Uuid::parse_str(&payload.lesson_instance_id)
-        .map_err(|_| ApiError::from_homework_domain(DomainError::LessonInstanceNotFound))?;
-    let created_by = Uuid::parse_str(&payload.created_by)
-        .map_err(|_| ApiError::from_homework_domain(DomainError::UserNotFound))?;
-    let created_by_role = UserRole::from_str(&payload.created_by_role)
-        .map_err(ApiError::from_homework_domain)?;
-    let status = HomeworkStatus::from_str(&payload.status)
-        .map_err(ApiError::from_homework_domain)?;
-
-    let homework = create_homework_use_case
-        .execute(CreateHomeworkCommand::new(
-            lesson_instance_id,
-            created_by,
-            created_by_role,
-            payload.text_content,
-            status,
-        ))
-        .await
-        .map_err(ApiError::from_homework_domain)?;
-
-    Ok(Json(CreateHomeworkResponse {
-        id: homework.id.to_string(),
-        lesson_instance_id: homework.lesson_instance_id.to_string(),
-        created_by: homework.created_by.to_string(),
-        created_by_role: homework.created_by_role.to_string(),
-        text_content: homework.text_content,
-        status: homework.status.to_string(),
-        locked_by_teacher: homework.locked_by_teacher,
-        last_edited_by: homework.last_edited_by.map(|id| id.to_string()),
-        created_at: homework.created_at.to_rfc3339(),
-    }))
-}
-
-async fn update_homework_text_handler(
-    State(state): State<AppState>,
-    Path(homework_id): Path<String>,
-    Json(payload): Json<UpdateHomeworkRequest>,
-) -> Result<Json<UpdateHomeworkResponse>, ApiError> {
-    let update_homework_use_case = state.update_homework_use_case.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Update homework use case not initialized".to_string(),
-    })?;
-
-    let homework_uuid = Uuid::parse_str(&homework_id)
-        .map_err(|_| ApiError::from_homework_domain(DomainError::HomeworkNotFound))?;
-
-    let homework = update_homework_use_case
-        .execute(UpdateHomeworkTextCommand::new(homework_uuid, payload.text_content))
-        .await
-        .map_err(ApiError::from_homework_domain)?;
-
-    Ok(Json(UpdateHomeworkResponse {
-        id: homework.id.to_string(),
-        lesson_instance_id: homework.lesson_instance_id.to_string(),
-        created_by: homework.created_by.to_string(),
-        created_by_role: homework.created_by_role.to_string(),
-        text_content: homework.text_content,
-        status: homework.status.to_string(),
-        locked_by_teacher: homework.locked_by_teacher,
-        last_edited_by: homework.last_edited_by.map(|id| id.to_string()),
-        created_at: homework.created_at.to_rfc3339(),
-    }))
-}
-
-async fn schedule_week_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ScheduleWeekQuery>,
-) -> Result<Json<ScheduleWeekResponse>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let student_id = query
-        .student_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .current_week_schedule(student_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let days = response
-        .days
-        .into_iter()
-        .map(|day| ScheduleDayResponse {
-            date: day.date.to_string(),
-            lessons: day
-                .lessons
-                .into_iter()
-                .map(|lesson| ScheduleLessonResponse {
-                    id: lesson.instance.id.to_string(),
-                    start_time: lesson.start_time.format("%H:%M").to_string(),
-                    end_time: lesson.end_time.format("%H:%M").to_string(),
-                    subject_name: lesson.subject.name,
-                    teachers: lesson
-                        .teachers
-                        .into_iter()
-                        .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                        .collect(),
-                    cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(|homework| HomeworkResponse {
-                        id: homework.homework.id.to_string(),
-                        text: homework
-                            .homework
-                            .text_content
-                            .unwrap_or_else(|| String::new()),
-                    }),
-                })
-                .collect(),
-        })
-        .collect();
-
-    Ok(Json(ScheduleWeekResponse {
-        week_start_date: response.week_start_date.to_string(),
-        days,
-    }))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ClassScheduleWeekQuery {
-    pub date: String,
-    #[serde(default)]
-    pub class_id: Option<String>,
-}
-
-async fn class_schedule_week_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ClassScheduleWeekQuery>,
-) -> Result<Json<ScheduleWeekResponse>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let class_id = query
-        .class_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::ClassNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .class_week_schedule(class_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let days = response
-        .days
-        .into_iter()
-        .map(|day| ScheduleDayResponse {
-            date: day.date.to_string(),
-            lessons: day
-                .lessons
-                .into_iter()
-                .map(|lesson| ScheduleLessonResponse {
-                    id: lesson.instance.id.to_string(),
-                    start_time: lesson.start_time.format("%H:%M").to_string(),
-                    end_time: lesson.end_time.format("%H:%M").to_string(),
-                    subject_name: lesson.subject.name,
-                    teachers: lesson
-                        .teachers
-                        .into_iter()
-                        .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                        .collect(),
-                    cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(|homework| HomeworkResponse {
-                        id: homework.homework.id.to_string(),
-                        text: homework
-                            .homework
-                            .text_content
-                            .unwrap_or_else(|| String::new()),
-                    }),
-                })
-                .collect(),
-        })
-        .collect();
-
-    Ok(Json(ScheduleWeekResponse {
-        week_start_date: response.week_start_date.to_string(),
-        days,
-    }))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ScheduleDayQuery {
-    pub date: String,
-    #[serde(default)]
-    pub student_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleDayResponseDto {
-    pub date: String,
-    pub lessons: Vec<ScheduleLessonResponse>,
-}
-
-async fn day_schedule_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ScheduleDayQuery>,
-) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let student_id = query
-        .student_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .day_schedule(student_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let lessons = response
-        .lessons
-        .into_iter()
-        .map(|lesson| ScheduleLessonResponse {
-            id: lesson.instance.id.to_string(),
-            start_time: lesson.start_time.format("%H:%M").to_string(),
-            end_time: lesson.end_time.format("%H:%M").to_string(),
-            subject_name: lesson.subject.name,
-            teachers: lesson
-                .teachers
-                .into_iter()
-                .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                .collect(),
-            cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(|homework| HomeworkResponse {
-                id: homework.homework.id.to_string(),
-                text: homework
-                    .homework
-                    .text_content
-                    .unwrap_or_else(|| String::new()),
-            }),
-        })
-        .collect();
-
-    Ok(Json(ScheduleDayResponseDto {
-        date: response.date.to_string(),
-        lessons,
-    }))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ClassScheduleDayQuery {
-    pub date: String,
-    #[serde(default)]
-    pub class_id: Option<String>,
-}
-
-async fn class_day_schedule_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ClassScheduleDayQuery>,
-) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let class_id = query
-        .class_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::ClassNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .class_day_schedule(class_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let lessons = response
-        .lessons
-        .into_iter()
-        .map(|lesson| ScheduleLessonResponse {
-            id: lesson.instance.id.to_string(),
-            start_time: lesson.start_time.format("%H:%M").to_string(),
-            end_time: lesson.end_time.format("%H:%M").to_string(),
-            subject_name: lesson.subject.name,
-            teachers: lesson
-                .teachers
-                .into_iter()
-                .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                .collect(),
-            cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(|homework| HomeworkResponse {
-                id: homework.homework.id.to_string(),
-                text: homework
-                    .homework
-                    .text_content
-                    .unwrap_or_else(|| String::new()),
-            }),
-        })
-        .collect();
-
-    Ok(Json(ScheduleDayResponseDto {
-        date: response.date.to_string(),
-        lessons,
-    }))
-}
-
-async fn classes_handler(
-    State(state): State<AppState>,
-) -> Result<Json<ClassListResponse>, ApiError> {
-    let class_repository = state.class_repository.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Class repository not initialized".to_string(),
-    })?;
-
-    let classes = class_repository
-        .get_all_active()
-        .await
-        .map_err(ApiError::from_homework_domain)?;
-
-    let response = ClassListResponse {
-        classes: classes
-            .into_iter()
-            .map(|class| ClassListItemResponse {
-                id: class.id.to_string(),
-                graduation_year: class.graduation_year,
-                letter: class.letter.to_string(),
-                name: class.full_name(),
-                is_active: class.is_active,
-            })
-            .collect(),
-    };
-
-    Ok(Json(response))
-}
-
-#[derive(Debug, Serialize)]
-pub struct TelegramUserResponse {
-    pub user_id: String,
-    pub login: String,
-    pub role: String,
-    pub class_id: Option<String>,
-}
-
-/// Who is writing to the bot: Telegram id -> school user, only for an active binding
-/// (made by the login flow in telegram-adapter). Used by the chat agent to set the homework author.
-/// Requires `X-Agent-Key` equal to `AGENT_KEY`; without it the route answers 404 to everyone.
-async fn telegram_user_handler(
-    State(state): State<AppState>,
-    Path(telegram_id): Path<i64>,
-    headers: HeaderMap,
-) -> Result<Json<TelegramUserResponse>, ApiError> {
-    let not_found = || ApiError {
-        status: StatusCode::NOT_FOUND,
-        message: "Telegram account is not linked".to_string(),
-    };
-    let lookup = state.telegram_lookup.as_ref().ok_or_else(not_found)?;
-    let key = headers.get("x-agent-key").and_then(|v| v.to_str().ok()).unwrap_or("");
-    if lookup.agent_key.is_empty() || key != lookup.agent_key {
-        return Err(ApiError {
-            status: StatusCode::UNAUTHORIZED,
-            message: "Agent key required".to_string(),
-        });
-    }
-
-    let user_id = match lookup.bindings.get_active_user_by_telegram_id(telegram_id).await {
-        Ok(id) => id,
-        Err(DomainError::TelegramBindingNotFound) => return Err(not_found()),
-        Err(e) => return Err(ApiError::from_homework_domain(e)),
-    };
-    let user = match lookup.users.get_by_id(user_id).await {
-        Ok(user) if user.is_active => user,
-        Ok(_) | Err(DomainError::UserNotFound) => return Err(not_found()),
-        Err(e) => return Err(ApiError::from_homework_domain(e)),
-    };
-
-    Ok(Json(TelegramUserResponse {
-        user_id: user.id.to_string(),
-        login: user.login,
-        role: user.role.to_string(),
-        class_id: user.class_id.map(|id| id.to_string()),
-    }))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SendAuthCodeRequest {
-    pub email: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SendAuthCodeResponse {
-    pub email: String,
-    pub message: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VerifyAuthCodeRequest {
-    pub email: String,
-    pub code: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct VerifyAuthCodeResponse {
-    pub valid: bool,
-    pub user_id: Option<String>,
-}
-
-async fn send_auth_code_handler(
-    State(state): State<AppState>,
-    Json(payload): Json<SendAuthCodeRequest>,
-) -> Result<Json<SendAuthCodeResponse>, ApiError> {
-    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "User repository not initialized".to_string(),
-    })?;
-    let one_time_code_service = state.one_time_code_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "One-time code service not initialized".to_string(),
-    })?;
-
-    let login = domain::value_objects::login::Login::from_email(&payload.email)
-        .map_err(ApiError::from_auth_domain)?;
-    let user = user_repository
-        .get_by_login(login.as_str())
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-
-    if !user.is_active {
-        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
-    }
-
-    one_time_code_service
-        .issue(user.id, &payload.email)
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-
-    Ok(Json(SendAuthCodeResponse {
-        email: payload.email.trim().to_ascii_lowercase(),
-        message: "Code sent to email".to_string(),
-    }))
-}
-
-async fn verify_auth_code_handler(
-    State(state): State<AppState>,
-    Json(payload): Json<VerifyAuthCodeRequest>,
-) -> Result<Json<VerifyAuthCodeResponse>, ApiError> {
-    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "User repository not initialized".to_string(),
-    })?;
-    let one_time_code_service = state.one_time_code_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "One-time code service not initialized".to_string(),
-    })?;
-
-    let login = domain::value_objects::login::Login::from_email(&payload.email)
-        .map_err(ApiError::from_auth_domain)?;
-    let user = user_repository
-        .get_by_login(login.as_str())
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-
-    if !user.is_active {
-        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
-    }
-
-    let valid = one_time_code_service
-        .verify(user.id, &payload.code)
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-
-    if !valid {
-        return Err(ApiError::from_auth_domain(DomainError::InvalidAuthCode));
-    }
-
-    Ok(Json(VerifyAuthCodeResponse {
-        valid: true,
-        user_id: Some(user.id.to_string()),
     }))
 }
 
@@ -1034,7 +499,9 @@ mod tests {
     async fn login_route_works() {
         let user = create_test_user();
         let app = create_app_with_auth(Arc::new(LoginUseCase::new(
-            Arc::new(MockUserRepository { user: Some(user.clone()) }),
+            Arc::new(MockUserRepository {
+                user: Some(user.clone()),
+            }),
             Arc::new(MockCredentialsStore { is_valid: true }),
             Arc::new(MockTokenIssuer {
                 token: "mock_token".to_string(),

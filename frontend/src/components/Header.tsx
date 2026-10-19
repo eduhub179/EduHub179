@@ -32,7 +32,7 @@ const Header: React.FC = () => {
                         <Link to="/profile" className="header__link">
                             Профиль
                         </Link>
-                        <button className="header__link header__logout" onClick={logout} type="button">
+                        <button className="header__link header__logout" onClick={() => void logout()} type="button">
                             Выйти
                         </button>
                     </>

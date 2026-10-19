@@ -1,12 +1,22 @@
-import { login as loginWithApi } from '../api/authApi';
+import {
+    initSession,
+    login as loginWithApi,
+    logoutSession,
+    updateProfileClass,
+} from '../api/authApi';
 
 export interface User {
+    id: string | null;
     name: string;
     email: string;
+    role: 'student' | 'teacher' | 'admin' | null;
+    classId: string | null;
     schoolClass: string | null;
 }
 
-export interface RegistrationData extends Omit<User, 'schoolClass'> {
+export interface RegistrationData {
+    name: string;
+    email: string;
     password: string;
 }
 
@@ -19,13 +29,11 @@ export interface AuthService {
     getCurrentUser(): User | null;
     register(data: RegistrationData): User;
     login(credentials: Credentials): Promise<User>;
-    updateSchoolClass(schoolClass: string): User;
-    logout(): void;
+    updateSchoolClass(schoolClass: string): Promise<User>;
+    logout(): Promise<void>;
 }
 
 const CURRENT_USER_KEY = 'eduhub.demo.currentUser';
-const AUTH_TOKEN_KEY = 'eduhub.auth.token';
-
 class LocalStorageAuthService implements AuthService {
     getCurrentUser(): User | null {
         const storedUser = localStorage.getItem(CURRENT_USER_KEY);
@@ -33,7 +41,14 @@ class LocalStorageAuthService implements AuthService {
     }
 
     register(data: RegistrationData): User {
-        const user: User = { name: data.name, email: data.email, schoolClass: null };
+        const user: User = {
+            id: null,
+            name: data.name,
+            email: data.email,
+            role: null,
+            classId: null,
+            schoolClass: null,
+        };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
     }
@@ -43,33 +58,46 @@ class LocalStorageAuthService implements AuthService {
             login: credentials.email.trim(),
             password: credentials.password,
         });
+        await initSession({ user_id: session.user.id, auth_token: session.token });
         const user: User = {
+            id: session.user.id,
             name: [session.user.first_name, session.user.middle_name, session.user.last_name]
                 .filter(Boolean)
                 .join(' '),
             email: credentials.email.trim(),
+            role: (session.user.role as User['role']) ?? null,
+            classId: session.user.class_id ?? null,
             schoolClass: session.user.class_id ?? null,
         };
 
-        localStorage.setItem(AUTH_TOKEN_KEY, session.token);
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
     }
 
-    updateSchoolClass(schoolClass: string): User {
+    async updateSchoolClass(schoolClass: string): Promise<User> {
         const currentUser = this.getCurrentUser();
         if (!currentUser) {
             throw new Error('Войдите в аккаунт, чтобы изменить профиль.');
         }
 
-        const updatedUser: User = { ...currentUser, schoolClass };
+        const updated = await updateProfileClass({ class_id: schoolClass });
+
+        const updatedUser: User = {
+            ...currentUser,
+            role: (updated.role as User['role']) ?? currentUser.role,
+            classId: updated.class_id ?? null,
+            schoolClass: updated.class_id ?? null,
+        };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
         return updatedUser;
     }
 
-    logout(): void {
-        localStorage.removeItem(CURRENT_USER_KEY);
-        localStorage.removeItem(AUTH_TOKEN_KEY);
+    async logout(): Promise<void> {
+        try {
+            await logoutSession();
+        } finally {
+            localStorage.removeItem(CURRENT_USER_KEY);
+        }
     }
 
     private parseUser(value: string): User {
@@ -77,10 +105,14 @@ class LocalStorageAuthService implements AuthService {
         if (
             typeof user !== 'object' ||
             user === null ||
+            !('id' in user) ||
+            (user.id !== null && typeof user.id !== 'string') ||
             !('name' in user) ||
             typeof user.name !== 'string' ||
             !('email' in user) ||
             typeof user.email !== 'string' ||
+            ('role' in user && user.role !== null && typeof user.role !== 'string') ||
+            ('classId' in user && user.classId !== null && typeof user.classId !== 'string') ||
             ('schoolClass' in user &&
                 user.schoolClass !== null &&
                 typeof user.schoolClass !== 'string')
@@ -88,8 +120,15 @@ class LocalStorageAuthService implements AuthService {
             throw new Error('Не удалось прочитать данные аккаунта.');
         }
         return {
+            id: 'id' in user && typeof user.id === 'string' ? user.id : null,
             name: user.name,
             email: user.email,
+            role: 'role' in user && typeof user.role === 'string'
+                ? (user.role as User['role'])
+                : null,
+            classId: 'classId' in user && typeof user.classId === 'string'
+                ? user.classId
+                : null,
             schoolClass: 'schoolClass' in user && typeof user.schoolClass === 'string'
                 ? user.schoolClass
                 : null,
