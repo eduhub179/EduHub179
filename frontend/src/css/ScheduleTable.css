@@ -140,7 +140,8 @@
 
 .schedule-grid__lesson--non-standard {
     z-index: 3;
-    border: 1px solid #cfd4dc;
+    border-top: 1px solid #cfd4dc;
+    border-bottom: 1px solid #cfd4dc;
     background: #ffffff;
 }
 
