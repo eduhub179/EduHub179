@@ -165,6 +165,10 @@ pub enum DomainError {
     PlusnikRecordAlreadyExists,
     // task_id does not belong to sheet_id (trigger check_task_belongs_to_sheet).
     TaskNotInSheet,
+    // Pluses can be granted only for problems of a published sheet.
+    PlusnikSheetNotPublished,
+    // The student is not in the lesson's audience (its class or group).
+    StudentNotInLesson,
 
     // Class Settings.rs
     // Invalid OrgEmailDomain
@@ -286,6 +290,8 @@ impl fmt::Display for DomainError {
                 write!(f, "Plusnik record already exists")
             }
             DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
+            DomainError::PlusnikSheetNotPublished => write!(f, "Plusnik sheet is not published"),
+            DomainError::StudentNotInLesson => write!(f, "Student is not in this lesson"),
             DomainError::InvalidOrgEmailDomain => write!(f, "Invalid ORG_EMAIL_DOMAIN"),
             DomainError::InvalidDeviceTokenFormat => write!(f, "Invalid device token format"),
             DomainError::TelegramBindingNotFound => write!(f, "Telegram binding not found"),

@@ -207,6 +207,24 @@ impl PlusnikRepositoryPg {
         }
     }
 
+    /// Maps a DB error of a DELETE blocked by `ON DELETE RESTRICT` from `plusnik_records`.
+    ///
+    /// PostgreSQL reports a RESTRICT/NO ACTION violation as SQLSTATE 23503
+    /// (foreign_key_violation), the same code as a missing parent on INSERT, so the
+    /// generic mapper would turn "has records" into "not found". On a DELETE a 23503
+    /// can only mean that child records still reference the row.
+    fn map_delete_err(err: sqlx::Error, has_records: DomainError, fallback: fn(sqlx::Error) -> DomainError) -> DomainError {
+        let is_fk_violation = matches!(
+            &err,
+            sqlx::Error::Database(db_err) if db_err.code().as_deref() == Some("23503")
+        );
+        if is_fk_violation {
+            has_records
+        } else {
+            fallback(err)
+        }
+    }
+
     /// Maps a DB error for record operations (default not-found = RecordNotFound).
     fn map_db_err_record(err: sqlx::Error) -> DomainError {
         let mapped = Self::map_db_err(err);
@@ -323,7 +341,9 @@ impl PlusnikRepository for PlusnikRepositoryPg {
         .bind(sheet_id)
         .execute(&self.pool)
         .await
-        .map_err(Self::map_db_err)?;
+        .map_err(|err| {
+            Self::map_delete_err(err, DomainError::PlusnikSheetHasRecords, Self::map_db_err)
+        })?;
 
         if result.rows_affected() == 0 {
             return Err(DomainError::PlusnikSheetNotFound);
@@ -402,7 +422,9 @@ impl PlusnikRepository for PlusnikRepositoryPg {
         .bind(task_id)
         .execute(&self.pool)
         .await
-        .map_err(Self::map_db_err_task)?;
+        .map_err(|err| {
+            Self::map_delete_err(err, DomainError::PlusnikTaskHasRecords, Self::map_db_err_task)
+        })?;
 
         if result.rows_affected() == 0 {
             return Err(DomainError::PlusnikTaskNotFound);

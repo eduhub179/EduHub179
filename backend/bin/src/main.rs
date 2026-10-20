@@ -10,6 +10,7 @@ use application::use_cases::{
         download_file::DownloadHomeworkFileUseCase,
         update_homework_text::UpdateHomeworkTextUseCase,
     },
+    plusnik::PlusnikService,
     schedule::ScheduleService,
 };
 use domain::ports::auth::TokenIssuer;
@@ -26,7 +27,7 @@ use infrastructure::{
     config::Config,
     postgres::{
         create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg,
-        HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonRepositoryPg,
+        HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonRepositoryPg, PlusnikRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
         SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
         WebSessionRepositoryPg,
@@ -159,6 +160,15 @@ async fn main() {
         }
     };
 
+    let plusnik_service = Arc::new(PlusnikService::new(
+        Arc::new(PlusnikRepositoryPg::new(pool.clone())),
+        Arc::new(LessonRepositoryPg::new(pool.clone())),
+        Arc::new(UserRepositoryPg::new(pool.clone())),
+        Arc::new(StudentGroupRepositoryPg::new(pool.clone())),
+        Arc::new(SubjectRepositoryPg::new(pool.clone())),
+        Arc::new(ClassRepositoryPg::new(pool.clone())),
+    ));
+
     let app = create_app_with_auth_and_schedule(
         login_use_case,
         schedule_service,
@@ -175,6 +185,7 @@ async fn main() {
         agent_access,
         file_use_cases,
         Arc::new(DeleteHomeworkUseCase::new(homeworks, file_storage_for_cleanup)),
+        plusnik_service,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
