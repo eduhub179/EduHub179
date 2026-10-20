@@ -53,11 +53,13 @@ pub trait HomeworkRepository: Send + Sync {
     /// FK violation (homework missing) → `HomeworkNotFound`.
     async fn add_file(&self, file: HomeworkFile) -> Result<HomeworkFile, DomainError>;
 
-    /// Removes a file by its ID.
+    /// Removes a file by its ID and returns the deleted record.
     ///
-    /// Deletes by `file_id` from `homework_files`.
+    /// Deletes by `file_id` from `homework_files`. The returned record carries the
+    /// `storage_key`, so callers clean up object storage by the key from the DB,
+    /// never by a key supplied by the client.
     /// Fail-safe: Returns `HomeworkFileNotFound` if no row was affected (explicit contract).
-    async fn remove_file(&self, file_id: Uuid) -> Result<(), DomainError>;
+    async fn remove_file(&self, file_id: Uuid) -> Result<HomeworkFile, DomainError>;
 
     /// Deletes a homework by its ID.
     ///

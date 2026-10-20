@@ -1,9 +1,19 @@
 import { apiFetch } from './client';
 import { assertCanAccessClassSchedule, assertCanAccessStudentSchedule } from './access';
 
+export interface HomeworkFileDto {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  sort_order: number;
+}
+
 export interface HomeworkDto {
   id: string;
   text: string;
+  /** Contents: homeworkFileUrl(homework.id, file.id). */
+  files: HomeworkFileDto[];
 }
 
 export interface ScheduleLessonDto {

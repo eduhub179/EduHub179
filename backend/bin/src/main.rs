@@ -3,12 +3,18 @@ use std::sync::Arc;
 use application::use_cases::{
     auth::OneTimeCodeService,
     homework::{
+        attach_file_to_lesson::AttachFileToLessonUseCase,
         create_homework::CreateHomeworkUseCase,
+        delete_file::DeleteHomeworkFileUseCase,
+        delete_homework::DeleteHomeworkUseCase,
+        download_file::DownloadHomeworkFileUseCase,
         update_homework_text::UpdateHomeworkTextUseCase,
     },
     schedule::ScheduleService,
 };
 use domain::ports::auth::TokenIssuer;
+use domain::ports::file_storage::FileStorage;
+use domain::repositories::homework_repository::HomeworkRepository;
 use domain::ports::session_security::{SessionTokenGenerator, SessionTokenHasher};
 use domain::repositories::web_session_repository::WebSessionRepository;
 use domain::settings::Settings;
@@ -26,8 +32,9 @@ use infrastructure::{
         WebSessionRepositoryPg,
     },
     redis::AuthCodeStoreRedis,
+    storage::S3FileStorage,
 };
-use presentation::{create_app_with_auth_and_schedule, AgentAccess, TelegramLookup};
+use presentation::{create_app_with_auth_and_schedule, AgentAccess, FileUseCases, TelegramLookup};
 use uuid::Uuid;
 
 #[tokio::main]
@@ -102,7 +109,7 @@ async fn main() {
     ));
 
     let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));
-    let update_homework_use_case = Arc::new(UpdateHomeworkTextUseCase::new(homeworks));
+    let update_homework_use_case = Arc::new(UpdateHomeworkTextUseCase::new(homeworks.clone()));
 
     // Default is the fixed id of the agent user from 0008_create_agent_user.sql.
     let agent_user_id = std::env::var("AGENT_USER_ID")
@@ -116,6 +123,41 @@ async fn main() {
         bindings: Arc::new(TelegramBindingRepositoryPg::new(pool.clone())),
         users: Arc::new(UserRepositoryPg::new(pool.clone())),
     });
+
+    // Object storage for homework files. Without S3_* the file routes answer 503.
+    // The bucket is checked/created here, so a wrong config shows up at startup;
+    // MinIO being down does not block the rest of the API.
+    let homeworks: Arc<dyn HomeworkRepository> = homeworks;
+    let mut file_storage_for_cleanup: Option<Arc<dyn FileStorage>> = None;
+    let file_use_cases = match &config.s3 {
+        Some(s3) => {
+            let file_storage = S3FileStorage::new(s3);
+            match file_storage.ensure_bucket().await {
+                Ok(()) => println!("file storage: bucket '{}' at {} is ready", s3.bucket, s3.endpoint),
+                Err(_) => eprintln!(
+                    "file storage: cannot reach bucket '{}' at {} (is MinIO running? check S3_* in .env)",
+                    s3.bucket, s3.endpoint
+                ),
+            }
+            let storage: Arc<dyn FileStorage> = Arc::new(file_storage);
+            file_storage_for_cleanup = Some(storage.clone());
+            Some(FileUseCases {
+                attach_to_lesson: Arc::new(AttachFileToLessonUseCase::new(
+                    homeworks.clone(),
+                    storage.clone(),
+                )),
+                download: Arc::new(DownloadHomeworkFileUseCase::new(
+                    homeworks.clone(),
+                    storage.clone(),
+                )),
+                delete: Arc::new(DeleteHomeworkFileUseCase::new(homeworks.clone(), storage)),
+            })
+        }
+        None => {
+            println!("file storage: off (S3_ENDPOINT is not set), file routes answer 503");
+            None
+        }
+    };
 
     let app = create_app_with_auth_and_schedule(
         login_use_case,
@@ -131,6 +173,8 @@ async fn main() {
         session_token_generator,
         telegram_lookup,
         agent_access,
+        file_use_cases,
+        Arc::new(DeleteHomeworkUseCase::new(homeworks, file_storage_for_cleanup)),
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);

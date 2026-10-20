@@ -293,7 +293,7 @@ impl HomeworkRepository for MockRepositories {
     async fn add_file(&self, _: HomeworkFile) -> Result<HomeworkFile, DomainError> {
         Err(DomainError::HomeworkFileNotFound)
     }
-    async fn remove_file(&self, _: Uuid) -> Result<(), DomainError> {
+    async fn remove_file(&self, _: Uuid) -> Result<HomeworkFile, DomainError> {
         Err(DomainError::HomeworkFileNotFound)
     }
     async fn delete(&self, _: Uuid) -> Result<(), DomainError> {

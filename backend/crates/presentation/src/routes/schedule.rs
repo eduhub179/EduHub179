@@ -8,7 +8,10 @@ use domain::errors::DomainError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use application::use_cases::schedule::schedule::HomeworkDetails;
+
 use crate::router::{require_authenticated_user, ApiError, AppState};
+use crate::routes::files::HomeworkFileResponse;
 
 #[derive(Debug, Deserialize)]
 pub struct ScheduleWeekQuery {
@@ -44,6 +47,16 @@ pub struct ScheduleLessonResponse {
 pub struct HomeworkResponse {
     pub id: String,
     pub text: String,
+    /// Attached files; contents via `GET /api/homework/{id}/files/{file_id}`.
+    pub files: Vec<HomeworkFileResponse>,
+}
+
+fn homework_response(details: HomeworkDetails) -> HomeworkResponse {
+    HomeworkResponse {
+        id: details.homework.id.to_string(),
+        text: details.homework.text_content.unwrap_or_default(),
+        files: details.files.into_iter().map(HomeworkFileResponse::from).collect(),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,13 +134,7 @@ pub async fn schedule_week_handler(
                         .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
                         .collect(),
                     cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(|homework| HomeworkResponse {
-                        id: homework.homework.id.to_string(),
-                        text: homework
-                            .homework
-                            .text_content
-                            .unwrap_or_else(|| String::new()),
-                    }),
+                    homework: lesson.homework.map(homework_response),
                 })
                 .collect(),
         })
@@ -183,13 +190,7 @@ pub async fn class_schedule_week_handler(
                         .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
                         .collect(),
                     cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(|homework| HomeworkResponse {
-                        id: homework.homework.id.to_string(),
-                        text: homework
-                            .homework
-                            .text_content
-                            .unwrap_or_else(|| String::new()),
-                    }),
+                    homework: lesson.homework.map(homework_response),
                 })
                 .collect(),
         })
@@ -244,13 +245,7 @@ pub async fn day_schedule_handler(
                 .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
                 .collect(),
             cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(|homework| HomeworkResponse {
-                id: homework.homework.id.to_string(),
-                text: homework
-                    .homework
-                    .text_content
-                    .unwrap_or_else(|| String::new()),
-            }),
+            homework: lesson.homework.map(homework_response),
         })
         .collect();
 
@@ -299,13 +294,7 @@ pub async fn class_day_schedule_handler(
                 .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
                 .collect(),
             cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(|homework| HomeworkResponse {
-                id: homework.homework.id.to_string(),
-                text: homework
-                    .homework
-                    .text_content
-                    .unwrap_or_else(|| String::new()),
-            }),
+            homework: lesson.homework.map(homework_response),
         })
         .collect();
 

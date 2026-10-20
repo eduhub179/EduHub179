@@ -1,6 +1,17 @@
+export interface HomeworkFile {
+    id: string;
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+    /** Opens/downloads the file; the session cookie authorizes the request. */
+    url: string;
+}
+
 export interface Homework {
+    id: string;
+    /** Empty for file-only homework. */
     description: string;
-    files: string[];
+    files: HomeworkFile[];
 }
 
 export interface ScheduleItem {

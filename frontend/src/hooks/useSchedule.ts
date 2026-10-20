@@ -1,7 +1,10 @@
-import {useEffect, useState} from 'react';
-import {fetchClassWeekSchedule, fetchSchoolClasses, fetchWeekSchedule} from '../api';
+import {useEffect, useRef, useState} from 'react';
+import {fetchClassWeekSchedule, fetchSchoolClasses, fetchWeekSchedule, homeworkFileUrl} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import type {DaySchedule, ScheduleItem} from '../types/ScheduleTypes';
+
+/** Dispatch on `window` after changing lessons (e.g. attaching a file): every schedule reloads. */
+export const SCHEDULE_CHANGED_EVENT = 'eduhub:schedule-changed';
 
 interface ScheduleState {
     days: DaySchedule[];
@@ -35,7 +38,17 @@ const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>
                 teachers: lesson.teachers.map((teacher) => teacher.trim().split(/\s+/)[0]).filter(Boolean),
                 cabinet: lesson.cabinet,
                 homework: lesson.homework
-                    ? {description: lesson.homework.text, files: []}
+                    ? {
+                        id: lesson.homework.id,
+                        description: lesson.homework.text,
+                        files: lesson.homework.files.map((file) => ({
+                            id: file.id,
+                            name: file.file_name,
+                            mimeType: file.mime_type,
+                            sizeBytes: file.size_bytes,
+                            url: homeworkFileUrl(lesson.homework!.id, file.id),
+                        })),
+                    }
                     : undefined,
             })),
         };
@@ -50,18 +63,33 @@ export const useSchedule = (selectedClassOverride?: string): ScheduleState => {
         error: null,
         hasClass: false,
     });
+    const [reloadTick, setReloadTick] = useState(0);
+    // Which class/user the shown days belong to: a reload of the same schedule keeps them
+    // on screen instead of flashing "loading".
+    const loadedKey = useRef<string | null>(null);
+
+    useEffect(() => {
+        const reload = () => setReloadTick((tick) => tick + 1);
+        window.addEventListener(SCHEDULE_CHANGED_EVENT, reload);
+        return () => window.removeEventListener(SCHEDULE_CHANGED_EVENT, reload);
+    }, []);
 
     useEffect(() => {
         let isCurrent = true;
 
         if (!schoolClass) {
+            loadedKey.current = null;
             setState({days: [], isLoading: false, error: null, hasClass: false});
             return () => {
                 isCurrent = false;
             };
         }
 
-        setState({days: [], isLoading: true, error: null, hasClass: true});
+        const key = `${schoolClass}|${user?.id ?? ''}|${user?.role ?? ''}`;
+        if (loadedKey.current !== key) {
+            loadedKey.current = key;
+            setState({days: [], isLoading: true, error: null, hasClass: true});
+        }
 
         const loadSchedule = async () => {
             try {
@@ -109,7 +137,7 @@ export const useSchedule = (selectedClassOverride?: string): ScheduleState => {
         return () => {
             isCurrent = false;
         };
-    }, [schoolClass, user?.id, user?.role]);
+    }, [schoolClass, user?.id, user?.role, reloadTick]);
 
     return state;
 };

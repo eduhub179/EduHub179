@@ -30,6 +30,9 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 
 lettre = { version = "0.11", default-features = false, features = ["tokio1-native-tls", "builder", "smtp-transport"] }
 
+# S3-compatible object storage (MinIO locally / on our server, Yandex Object Storage)
+aws-sdk-s3 = "1"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

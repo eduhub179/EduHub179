@@ -3,15 +3,21 @@ use std::sync::Arc;
 use application::use_cases::{
     auth::{login::LoginUseCase, OneTimeCodeService},
     homework::{
+        attach_file_to_lesson::AttachFileToLessonUseCase,
         create_homework::CreateHomeworkUseCase,
+        delete_file::DeleteHomeworkFileUseCase,
+        delete_homework::DeleteHomeworkUseCase,
+        download_file::DownloadHomeworkFileUseCase,
         update_homework_text::UpdateHomeworkTextUseCase,
+        upload_file::MAX_FILE_SIZE,
     },
     schedule::ScheduleService,
 };
 use axum::{
+    extract::DefaultBodyLimit,
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use domain::{
@@ -30,7 +36,7 @@ use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use crate::routes::{auth, classes, homework, schedule, telegram};
+use crate::routes::{auth, classes, files, homework, schedule, telegram};
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -104,6 +110,13 @@ impl ApiError {
                 (StatusCode::NOT_FOUND, "Lesson instance not found")
             }
             DomainError::HomeworkNotFound => (StatusCode::NOT_FOUND, "Homework not found"),
+            DomainError::HomeworkFileNotFound => (StatusCode::NOT_FOUND, "File not found"),
+            DomainError::InvalidHomeworkFileFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid file name or type")
+            }
+            DomainError::InvalidHomeworkFileSize => {
+                (StatusCode::PAYLOAD_TOO_LARGE, "File is empty or larger than 100 MB")
+            }
             DomainError::InvalidHomeworkStatus => {
                 (StatusCode::BAD_REQUEST, "Invalid homework status")
             }
@@ -149,6 +162,17 @@ pub struct AppState {
     pub session_token_generator: Option<Arc<dyn SessionTokenGenerator>>,
     pub telegram_lookup: Option<TelegramLookup>,
     pub agent_access: Option<AgentAccess>,
+    /// `None` if object storage is not configured (`S3_ENDPOINT` unset): file routes answer 503.
+    pub file_use_cases: Option<FileUseCases>,
+    pub delete_homework_use_case: Option<Arc<DeleteHomeworkUseCase>>,
+}
+
+/// Homework file use cases; all of them need object storage.
+#[derive(Clone)]
+pub struct FileUseCases {
+    pub attach_to_lesson: Arc<AttachFileToLessonUseCase>,
+    pub download: Arc<DownloadHomeworkFileUseCase>,
+    pub delete: Arc<DeleteHomeworkFileUseCase>,
 }
 
 #[derive(Clone)]
@@ -201,6 +225,7 @@ fn cors_layer() -> CorsLayer {
             axum::http::Method::GET,
             axum::http::Method::POST,
             axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
         ])
         .allow_headers([
             axum::http::header::AUTHORIZATION,
@@ -401,6 +426,8 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             session_token_generator: None,
             telegram_lookup: None,
             agent_access: None,
+            file_use_cases: None,
+            delete_homework_use_case: None,
         })
 }
 
@@ -439,6 +466,8 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             session_token_generator: None,
             telegram_lookup: None,
             agent_access: None,
+            file_use_cases: None,
+            delete_homework_use_case: None,
         })
 }
 
@@ -456,6 +485,8 @@ pub fn create_app_with_auth_and_schedule(
     session_token_generator: Arc<dyn SessionTokenGenerator>,
     telegram_lookup: Option<TelegramLookup>,
     agent_access: Option<AgentAccess>,
+    file_use_cases: Option<FileUseCases>,
+    delete_homework_use_case: Arc<DeleteHomeworkUseCase>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -481,8 +512,28 @@ pub fn create_app_with_auth_and_schedule(
             "/api/homework/:homework_id/text",
             patch(homework::update_homework_text_handler),
         )
+        .route(
+            "/api/homework/:homework_id",
+            delete(homework::delete_homework_handler),
+        )
         .route("/api/classes", get(classes::classes_handler))
         .route("/api/telegram/users/:telegram_id", get(telegram::telegram_user_handler))
+        .route(
+            "/api/lessons/:lesson_instance_id/files",
+            // Axum's default body limit is 2 MB; files may be up to MAX_FILE_SIZE
+            // (+1 MB for multipart headers). The exact size is checked by the use case.
+            post(files::attach_file_to_lesson_handler).layer(DefaultBodyLimit::max(
+                usize::try_from(MAX_FILE_SIZE).unwrap_or(usize::MAX).saturating_add(1024 * 1024),
+            )),
+        )
+        .route(
+            "/api/homework/:homework_id/files/:file_id",
+            get(files::download_homework_file_handler),
+        )
+        .route(
+            "/api/homework/files/:file_id",
+            delete(files::delete_homework_file_handler),
+        )
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -498,6 +549,8 @@ pub fn create_app_with_auth_and_schedule(
             session_token_generator: Some(session_token_generator),
             telegram_lookup,
             agent_access,
+            file_use_cases,
+            delete_homework_use_case: Some(delete_homework_use_case),
         })
 }
 
@@ -689,6 +742,8 @@ mod tests {
             session_token_generator: None,
             telegram_lookup: None,
             agent_access: AgentAccess::new(AGENT_KEY.to_string(), agent_user_id),
+            file_use_cases: None,
+            delete_homework_use_case: None,
         }
     }
 
@@ -698,6 +753,17 @@ mod tests {
             map.insert(*name, HeaderValue::from_str(value).unwrap());
         }
         map
+    }
+
+    /// axum reports overlapping paths only when the router is built: keep homework paths together.
+    #[test]
+    fn homework_routes_do_not_conflict() {
+        async fn ok() {}
+        let _: Router = Router::new()
+            .route("/api/homework/:homework_id", delete(ok))
+            .route("/api/homework/:homework_id/text", patch(ok))
+            .route("/api/homework/:homework_id/files/:file_id", get(ok))
+            .route("/api/homework/files/:file_id", delete(ok));
     }
 
     #[test]

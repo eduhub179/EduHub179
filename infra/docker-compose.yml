@@ -19,15 +19,28 @@ services:
     ports:
       - "${REDIS_PORT}:6379"
 
-  # minio:
-  #   image: minio/minio
-  #   command: server /data
-  #   environment:
-  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-  #   ports:
-  #     - "${MINIO_API_PORT}:9000"
-  #     - "${MINIO_CONSOLE_PORT}:9001"
-  #
+  # S3-compatible storage for homework files. The bucket (S3_BUCKET in backend/.env)
+  # is created by the backend at startup.
+  # Image: Silo, the MinIO community fork by Pigsty (https://github.com/pgsty/silo).
+  # MinIO, Inc. removed its free images from Docker Hub and Quay; Silo is a drop-in
+  # replacement (same CLI, API and data format), built for amd64 and arm64.
+  # Version is pinned, upgrades are explicit.
+  minio:
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      retries: 5
+    volumes:
+      - miniodata:/data
+
 volumes:
   pgdata:
+  miniodata:
