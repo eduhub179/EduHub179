@@ -1,5 +1,9 @@
 import { apiFetch } from './client';
-import { assertCanAccessClassSchedule, assertCanAccessStudentSchedule } from './access';
+import {
+  assertCanAccessClassSchedule,
+  assertCanAccessStudentSchedule,
+  requireAuthenticatedUser,
+} from './access';
 
 export interface HomeworkFileDto {
   id: string;
@@ -21,6 +25,8 @@ export interface ScheduleLessonDto {
   start_time: string;
   end_time: string;
   subject_name: string;
+  /** Class ("2027б") or group the lesson is for. */
+  target_name: string;
   teachers: string[];
   cabinet?: string | null;
   homework?: HomeworkDto | null;
@@ -78,5 +84,27 @@ export async function fetchClassDaySchedule(
   assertCanAccessClassSchedule(classId);
   return apiFetch<DayScheduleDto>(
     `/api/classes/schedule/day?date=${encodeURIComponent(date)}&class_id=${encodeURIComponent(classId)}`,
+  );
+}
+
+/** Week containing `date` for a teacher: lessons of all courses they teach. */
+export async function fetchTeacherWeekSchedule(
+  date: string,
+  teacherId: string,
+): Promise<WeeklyScheduleDto> {
+  requireAuthenticatedUser();
+  return apiFetch<WeeklyScheduleDto>(
+    `/api/teachers/schedule/week?date=${encodeURIComponent(date)}&teacher_id=${encodeURIComponent(teacherId)}`,
+  );
+}
+
+/** One day for a teacher. */
+export async function fetchTeacherDaySchedule(
+  date: string,
+  teacherId: string,
+): Promise<DayScheduleDto> {
+  requireAuthenticatedUser();
+  return apiFetch<DayScheduleDto>(
+    `/api/teachers/schedule/day?date=${encodeURIComponent(date)}&teacher_id=${encodeURIComponent(teacherId)}`,
   );
 }
