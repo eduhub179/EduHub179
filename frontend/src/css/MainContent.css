@@ -141,14 +141,115 @@
     cursor: pointer;
 }
 
+.homework-view__file-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.homework-view__file-remove {
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.homework-view__file-remove:hover:not(:disabled) {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.homework-view__file-remove:disabled {
+    opacity: 0.5;
+    cursor: progress;
+}
+
 .homework-view__file--active {
     border-color: var(--color-accent);
     color: var(--color-accent);
     background: #eff6ff;
 }
 
+.homework-view__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.homework-view__attach {
+    border: 1px solid var(--color-accent);
+    border-radius: 6px;
+    padding: 8px 16px;
+    background: var(--color-accent);
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+}
+
+.homework-view__attach:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.homework-view__delete,
+.homework-view__cancel {
+    border: 1px solid #dc2626;
+    border-radius: 6px;
+    padding: 8px 16px;
+    background: transparent;
+    color: #dc2626;
+    font: inherit;
+    cursor: pointer;
+}
+
+.homework-view__cancel {
+    border-color: var(--color-border);
+    color: var(--color-text);
+}
+
+.homework-view__delete:disabled,
+.homework-view__cancel:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.homework-view__confirm {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.homework-view__upload-error {
+    margin: 0;
+    color: #dc2626;
+}
+
+.homework-view__file-frame {
+    width: 100%;
+    height: 70vh;
+    border: 0;
+}
+
+.homework-view__file-image {
+    max-width: 100%;
+    max-height: 70vh;
+}
+
+.homework-view__file-open {
+    color: var(--color-accent);
+}
+
 .homework-view__file-preview {
     display: grid;
+    gap: 12px;
     min-height: 300px;
     margin-top: 16px;
     padding: 24px;

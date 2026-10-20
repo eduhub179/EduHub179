@@ -812,7 +812,7 @@ mod tests {
         ) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
             Err(DomainError::InternalError)
         }
-        async fn remove_file(&self, _file_id: uuid::Uuid) -> Result<(), DomainError> {
+        async fn remove_file(&self, _file_id: uuid::Uuid) -> Result<HomeworkFile, DomainError> {
             Err(DomainError::InternalError)
         }
         async fn delete(&self, _homework_id: uuid::Uuid) -> Result<(), DomainError> {

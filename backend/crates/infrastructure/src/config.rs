@@ -11,6 +11,8 @@
 use dotenvy::dotenv;
 use std::env;
 
+use crate::storage::S3Settings;
+
 /// Application configuration derived from environment variables.
 ///
 /// Invariants:
@@ -46,6 +48,10 @@ pub struct Config {
     pub smtp_user: String,
     pub smtp_password: String,
     pub smtp_from_email: String,
+
+    /// Object storage for homework files (MinIO / Yandex Object Storage).
+    /// `None` if `S3_ENDPOINT` is not set: file storage is off.
+    pub s3: Option<S3Settings>,
 }
 
 impl Config {
@@ -85,6 +91,7 @@ impl Config {
         let smtp_user = env::var("SMTP_USER").expect("SMTP_USER must be set in .env");
         let smtp_password = env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set in .env");
         let smtp_from_email = env::var("SMTP_FROM_EMAIL").unwrap_or_else(|_| smtp_user.clone());
+        let s3 = Self::load_s3();
         Self {
             database_url,
             jwt_secret,
@@ -102,7 +109,31 @@ impl Config {
             smtp_user,
             smtp_password,
             smtp_from_email,
+            s3,
         }
+    }
+
+    /// `S3_ENDPOINT` turns file storage on; then the keys and the bucket are required
+    /// (fail fast at startup instead of failing on the first upload).
+    fn load_s3() -> Option<S3Settings> {
+        let endpoint = env::var("S3_ENDPOINT").ok().filter(|v| !v.trim().is_empty())?;
+        let required = |name: &str| {
+            env::var(name)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| panic!("{name} must be set in .env when S3_ENDPOINT is set"))
+        };
+
+        Some(S3Settings {
+            endpoint,
+            access_key: required("S3_ACCESS_KEY"),
+            secret_key: required("S3_SECRET_KEY"),
+            bucket: required("S3_BUCKET"),
+            region: env::var("S3_REGION")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| "us-east-1".to_string()),
+        })
     }
 
     pub fn mock() -> Self {
@@ -123,6 +154,7 @@ impl Config {
             smtp_user: "noreply@179.ru".to_string(),
             smtp_password: "smtp_password".to_string(),
             smtp_from_email: "noreply@179.ru".to_string(),
+            s3: None,
         }
     }
 }

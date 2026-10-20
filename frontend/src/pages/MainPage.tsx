@@ -56,6 +56,7 @@ const MainPage: React.FC = () => {
                     <MainContent
                         selectedLesson={selectedLesson}
                         onCloseLesson={() => setSelectedLesson(null)}
+                        onLessonUpdated={setSelectedLesson}
                     />
                 </div>
             </div>

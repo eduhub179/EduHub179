@@ -7,6 +7,11 @@ declare global {
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 
+/** Absolute URL of an API path, for links the browser opens itself (e.g. file downloads). */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
 export async function apiFetch<T>(
   input: string,
   init?: RequestInit,

@@ -135,3 +135,34 @@ pub async fn update_homework_text_handler(
         created_at: homework.created_at.to_rfc3339(),
     }))
 }
+
+/// `DELETE /api/homework/:homework_id` — removes the homework with its text and all files.
+pub async fn delete_homework_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(homework_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let Caller { user, is_agent } = require_caller(&state, &headers).await?;
+    if !user.is_teacher() && !is_agent {
+        return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
+    }
+
+    let delete_homework_use_case = state.delete_homework_use_case.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Delete homework use case not initialized".to_string(),
+    })?;
+
+    let homework_uuid = Uuid::parse_str(&homework_id)
+        .map_err(|_| ApiError::from_homework_domain(DomainError::HomeworkNotFound))?;
+
+    let deleted = delete_homework_use_case
+        .execute(homework_uuid)
+        .await
+        .map_err(ApiError::from_homework_domain)?;
+    for key in deleted.orphaned_storage_keys {
+        // The homework is gone, the object stayed: leave a trace for manual cleanup.
+        eprintln!("file storage: could not delete object '{key}' (homework {homework_uuid} removed)");
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}

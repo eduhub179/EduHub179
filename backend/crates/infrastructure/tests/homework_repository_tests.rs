@@ -471,7 +471,7 @@ async fn test_add_file_non_existent_homework(pool: PgPool) {
 // TESTS FOR remove_file
 // ============================================================================
 
-/// Test: remove_file deletes a file; other files remain.
+/// Test: remove_file deletes a file and returns the deleted record; other files remain.
 #[sqlx::test(migrations = "../../migrations")]
 async fn test_remove_file_success(pool: PgPool) {
     let (instance_id, teacher_id, _) = seed_lesson_instance(&pool).await;
@@ -485,9 +485,10 @@ async fn test_remove_file_success(pool: PgPool) {
     repo.add_file(file_1.clone()).await.unwrap();
     repo.add_file(file_2.clone()).await.unwrap();
 
-    let result = repo.remove_file(file_1.id).await;
+    let removed = repo.remove_file(file_1.id).await.unwrap();
 
-    assert!(result.is_ok());
+    assert_eq!(removed.id, file_1.id);
+    assert_eq!(removed.storage_key, file_1.storage_key);
     let files = repo.get_files(homework.id).await.unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].id, file_2.id);
