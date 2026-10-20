@@ -21,10 +21,10 @@ CREATE TABLE announcements
 (
     announcement_id UUID PRIMARY KEY      DEFAULT gen_random_uuid(),
     -- Title: short, plain text (no Markdown), shown in lists
-    title           VARCHAR(255) NOT NULL,
+    title           VARCHAR(255)     NULL,
     -- Body: MarkdownV2 format (Telegram-compatible).
     -- Rendered on client; stored as-is to avoid round-trip conversion.
-    content         TEXT         NOT NULL,
+    content         TEXT             NULL,
     -- Author (immutable after creation — audit)
     created_by      UUID         NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
     -- Lifecycle

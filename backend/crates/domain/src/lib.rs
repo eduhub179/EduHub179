@@ -1,6 +1,7 @@
 //! Domain crate: сущности, value objects, трейты репозиториев
 
 pub mod entities {
+    pub mod announcement;
     pub mod cabinet;
     pub mod class;
     pub mod device_token;

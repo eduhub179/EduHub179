@@ -19,6 +19,9 @@ impl AnnouncementStatus {
     pub fn is_draft(&self) -> bool {
         matches!(self, AnnouncementStatus::Draft)
     }
+    pub fn is_archived(&self) -> bool {
+        matches!(self, AnnouncementStatus::Archived)
+    }
 }
 
 impl FromStr for AnnouncementStatus {
