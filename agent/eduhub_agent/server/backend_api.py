@@ -15,7 +15,7 @@ GET /api/classes/schedule/day?date=...&class_id=... Из уроков на да�
   API_URL=http://localhost:8080          адрес бэкенда (SERVER_PORT из backend/.env)
   AGENT_USER_ID=<uuid>                   кто записывается автором домашки (created_by)
   AGENT_USER_ROLE=teacher                его роль: student / teacher / admin, как в таблице users
-  AGENT_KEY=<секрет>                     тот же, что AGENT_KEY в backend/.env: по нему бэкенд отвечает, кто пишет боту
+  AGENT_KEY=<секрет>                     тот же, что AGENT_KEY в backend/.env: без него бэкенд не пускает агента (401)
 Без API_URL ничего не отправляется. ДЗ из личных сообщений боту (dm.py) записывается от имени того, кто прислал:
 в находке есть author_user_id и author_role, тогда AGENT_USER_ID не нужен.
 """
@@ -55,9 +55,14 @@ class ApiError(Exception):
 
 
 def call(method, path, body=None, headers=None):
+    """Запрос к бэкенду. Cookie сессии у агента нет: бэкенд пускает по X-Agent-Key (AGENT_KEY из .env)
+    и считает автором пользователя агента или того, чей id в X-Agent-On-Behalf-Of."""
+    base = {"Content-Type": "application/json"}
+    if env("AGENT_KEY"):
+        base["X-Agent-Key"] = env("AGENT_KEY")
     req = urllib.request.Request(env("API_URL").rstrip("/") + path, method=method,
                                  data=None if body is None else json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json", **(headers or {})})
+                                 headers={**base, **(headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             return json.loads(r.read() or "null")
@@ -104,7 +109,7 @@ def telegram_user(telegram_id):
     """Кто пишет боту: {"user_id", "login", "role", "class_id"} по Telegram id, если человек вошёл в основном боте
     (таблица telegram_bindings, статус active). None — не вошёл. Нужен AGENT_KEY в .env и в backend/.env."""
     try:
-        return call("GET", f"/api/telegram/users/{int(telegram_id)}", headers={"X-Agent-Key": env("AGENT_KEY") or ""})
+        return call("GET", f"/api/telegram/users/{int(telegram_id)}")
     except ApiError as e:
         if e.status == 404:
             return None
@@ -204,7 +209,8 @@ def add_to(lesson, text, by=None):
         try:
             return call("POST", "/api/homework", {
                 "lesson_instance_id": lesson["id"], "created_by": by[0], "created_by_role": by[1],
-                "text_content": text, "status": "published"})["id"]
+                "text_content": text, "status": "published"},
+                        headers={"X-Agent-On-Behalf-Of": by[0]} if by[0] else None)["id"]  # автор берётся из заголовка, не из тела
         except ApiError as e:
             if e.status != 409:
                 raise

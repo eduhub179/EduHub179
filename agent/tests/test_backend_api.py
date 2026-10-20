@@ -10,6 +10,7 @@ from datetime import date
 from urllib.parse import parse_qs, urlparse
 
 CLASS, TEACHER = str(uuid.uuid4()), str(uuid.uuid4())
+KEY = "test-agent-key"  # AGENT_KEY: без него бэкенд отвечает 401
 GRAD = date.today().year + (1 if date.today().month >= 9 else 0)  # год выпуска нынешних 11-х
 LESSONS = {  # дата -> уроки 11Б
     "2099-10-22": [{"id": str(uuid.uuid4()), "start_time": "09:00", "end_time": "09:45", "subject_name": "Алгебра"},
@@ -30,12 +31,20 @@ class Api(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(body).encode())
 
+    def denied(self):
+        if self.headers.get("X-Agent-Key") == KEY:
+            return False
+        self.answer(401, {"error": "Authentication required"})
+        return True
+
     def body(self):
         return json.loads(self.rfile.read(int(self.headers["Content-Length"])))
 
     def do_GET(self):
         if DOWN[0]:
             return self.answer(500, {"error": "Internal server error"})
+        if self.denied():
+            return
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path == "/api/classes":
@@ -52,6 +61,9 @@ class Api(BaseHTTPRequestHandler):
         self.answer(200, {"date": day, "lessons": out})
 
     def do_POST(self):
+        if self.denied():
+            return
+        assert self.headers.get("X-Agent-On-Behalf-Of") == TEACHER, self.headers
         b = self.body()
         if b["lesson_instance_id"] in HOMEWORK:
             return self.answer(409, {"error": "Homework already exists for this lesson"})
@@ -60,6 +72,8 @@ class Api(BaseHTTPRequestHandler):
         self.answer(200, {"id": HOMEWORK[b["lesson_instance_id"]]["id"]})
 
     def do_PATCH(self):
+        if self.denied():
+            return
         hid = self.path.split("/")[3]
         hw = next(h for h in HOMEWORK.values() if h["id"] == hid)
         hw["text"] = self.body()["text_content"] or ""
@@ -70,7 +84,7 @@ def main():
     server = HTTPServer(("127.0.0.1", 0), Api)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     os.environ.update(API_URL=f"http://127.0.0.1:{server.server_port}", AGENT_USER_ID=TEACHER,
-                      AGENT_USER_ROLE="teacher")
+                      AGENT_USER_ROLE="teacher", AGENT_KEY=KEY)
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # корень agent/
     home = tempfile.mkdtemp()
     os.chdir(home)  # рабочие файлы — во временной папке

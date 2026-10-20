@@ -37,7 +37,17 @@ const CURRENT_USER_KEY = 'eduhub.demo.currentUser';
 class LocalStorageAuthService implements AuthService {
     getCurrentUser(): User | null {
         const storedUser = localStorage.getItem(CURRENT_USER_KEY);
-        return storedUser ? this.parseUser(storedUser) : null;
+        if (!storedUser) {
+            return null;
+        }
+        try {
+            return this.parseUser(storedUser);
+        } catch {
+            // Corrupted or old-format record (saved before `id` existed, without a server session):
+            // drop it and treat the user as logged out instead of crashing the whole app on render.
+            localStorage.removeItem(CURRENT_USER_KEY);
+            return null;
+        }
     }
 
     register(data: RegistrationData): User {

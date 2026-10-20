@@ -9,7 +9,7 @@ use domain::{errors::DomainError, value_objects::homework_status::HomeworkStatus
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::router::{require_authenticated_user, ApiError, AppState};
+use crate::router::{require_caller, ApiError, AppState, Caller};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateHomeworkRequest {
@@ -59,8 +59,9 @@ pub async fn create_homework_handler(
     headers: HeaderMap,
     Json(payload): Json<CreateHomeworkRequest>,
 ) -> Result<Json<CreateHomeworkResponse>, ApiError> {
-    let user = require_authenticated_user(&state, &headers).await?;
-    if !user.is_teacher() {
+    let Caller { user, is_agent } = require_caller(&state, &headers).await?;
+    // The agent may write homework on behalf of any user, e.g. a student who sent it to the bot in DM.
+    if !user.is_teacher() && !is_agent {
         return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
     }
 
@@ -104,8 +105,8 @@ pub async fn update_homework_text_handler(
     Path(homework_id): Path<String>,
     Json(payload): Json<UpdateHomeworkRequest>,
 ) -> Result<Json<UpdateHomeworkResponse>, ApiError> {
-    let user = require_authenticated_user(&state, &headers).await?;
-    if !user.is_teacher() {
+    let Caller { user, is_agent } = require_caller(&state, &headers).await?;
+    if !user.is_teacher() && !is_agent {
         return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
     }
 

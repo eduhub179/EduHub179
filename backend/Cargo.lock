@@ -166,10 +166,14 @@ version = "0.1.0"
 dependencies = [
  "application",
  "axum",
+ "chrono",
  "domain",
  "infrastructure",
  "presentation",
+ "serde_json",
+ "sqlx",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

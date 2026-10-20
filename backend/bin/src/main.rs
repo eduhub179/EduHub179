@@ -27,7 +27,8 @@ use infrastructure::{
     },
     redis::AuthCodeStoreRedis,
 };
-use presentation::{create_app_with_auth_and_schedule, TelegramLookup};
+use presentation::{create_app_with_auth_and_schedule, AgentAccess, TelegramLookup};
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
@@ -103,11 +104,17 @@ async fn main() {
     let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));
     let update_homework_use_case = Arc::new(UpdateHomeworkTextUseCase::new(homeworks));
 
-    let agent_key = std::env::var("AGENT_KEY").unwrap_or_default();
-    let telegram_lookup = (!agent_key.is_empty()).then(|| TelegramLookup {
+    // Default is the fixed id of the agent user from 0008_create_agent_user.sql.
+    let agent_user_id = std::env::var("AGENT_USER_ID")
+        .ok()
+        .filter(|id| !id.trim().is_empty())
+        .map(|id| Uuid::parse_str(id.trim()).expect("AGENT_USER_ID must be a UUID"))
+        .unwrap_or(Uuid::from_u128(0xc1));
+    let agent_access =
+        AgentAccess::new(std::env::var("AGENT_KEY").unwrap_or_default(), agent_user_id);
+    let telegram_lookup = agent_access.is_some().then(|| TelegramLookup {
         bindings: Arc::new(TelegramBindingRepositoryPg::new(pool.clone())),
         users: Arc::new(UserRepositoryPg::new(pool.clone())),
-        agent_key,
     });
 
     let app = create_app_with_auth_and_schedule(
@@ -123,6 +130,7 @@ async fn main() {
         session_token_hasher,
         session_token_generator,
         telegram_lookup,
+        agent_access,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
