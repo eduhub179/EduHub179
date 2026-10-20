@@ -4,6 +4,7 @@
 //! All types here are internal to the infrastructure layer;
 //! the domain layer interacts only via traits.
 
+pub mod announcement_repository_pg;
 pub mod cabinet_repository_pg;
 pub mod class_repository_pg;
 pub mod connections;
@@ -23,6 +24,7 @@ pub mod user_repository_pg;
 pub mod web_session_repository_pg;
 
 // Re-export for convenience in the `bin` crate (DI composition root).
+pub use announcement_repository_pg::AnnouncementRepositoryPg;
 pub use cabinet_repository_pg::CabinetRepositoryPg;
 pub use class_repository_pg::ClassRepositoryPg;
 pub use connections::create_pool;
@@ -37,6 +39,6 @@ pub use plusnik_repository_pg::PlusnikRepositoryPg;
 pub use schedule_week_repository_pg::ScheduleWeekRepositoryPg;
 pub use student_group_repository_pg::StudentGroupRepositoryPg;
 pub use subject_repository_pg::SubjectRepositoryPg;
+pub use telegram_bindigs_repository_pg::TelegramBindingRepositoryPg;
 pub use user_repository_pg::UserRepositoryPg;
 pub use web_session_repository_pg::WebSessionRepositoryPg;
-pub use telegram_bindigs_repository_pg::TelegramBindingRepositoryPg;
