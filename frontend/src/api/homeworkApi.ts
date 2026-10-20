@@ -2,10 +2,9 @@ import { apiFetch, apiUrl } from './client';
 import type { HomeworkFileDto } from './scheduleApi';
 import { requireTeacherUser } from './access';
 
+/** The author is the logged-in user: the backend takes it from the session, not from the body. */
 export interface CreateHomeworkRequest {
   lesson_instance_id: string;
-  created_by: string;
-  created_by_role: 'student' | 'teacher' | 'admin' | string;
   text_content?: string | null;
   status: 'draft' | 'published' | 'archived' | string;
 }

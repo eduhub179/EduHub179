@@ -505,7 +505,7 @@ impl PlusnikService {
                 });
             }
         }
-        progress.sort_by(|a, b| b.sheet.issue_date.cmp(&a.sheet.issue_date));
+        progress.sort_by_key(|item| std::cmp::Reverse(item.sheet.issue_date));
         Ok(progress)
     }
 
