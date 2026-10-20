@@ -8,7 +8,9 @@ use domain::errors::DomainError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use application::use_cases::schedule::schedule::HomeworkDetails;
+use application::use_cases::schedule::schedule::{
+    HomeworkDetails, ScheduleDay, ScheduleLesson, WeeklySchedule,
+};
 
 use crate::router::{require_authenticated_user, ApiError, AppState};
 use crate::routes::files::HomeworkFileResponse;
@@ -38,9 +40,49 @@ pub struct ScheduleLessonResponse {
     pub start_time: String,
     pub end_time: String,
     pub subject_name: String,
+    /// Class ("2027б") or group the lesson is for.
+    pub target_name: String,
     pub teachers: Vec<String>,
     pub cabinet: Option<String>,
     pub homework: Option<HomeworkResponse>,
+}
+
+fn lesson_response(lesson: ScheduleLesson) -> ScheduleLessonResponse {
+    ScheduleLessonResponse {
+        id: lesson.instance.id.to_string(),
+        start_time: lesson.start_time.format("%H:%M").to_string(),
+        end_time: lesson.end_time.format("%H:%M").to_string(),
+        subject_name: lesson.subject.name,
+        target_name: lesson.target_name,
+        teachers: lesson
+            .teachers
+            .into_iter()
+            .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
+            .collect(),
+        cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
+        homework: lesson.homework.map(homework_response),
+    }
+}
+
+fn week_response(week: WeeklySchedule) -> ScheduleWeekResponse {
+    ScheduleWeekResponse {
+        week_start_date: week.week_start_date.to_string(),
+        days: week
+            .days
+            .into_iter()
+            .map(|day| ScheduleDayResponse {
+                date: day.date.to_string(),
+                lessons: day.lessons.into_iter().map(lesson_response).collect(),
+            })
+            .collect(),
+    }
+}
+
+fn day_response(day: ScheduleDay) -> ScheduleDayResponseDto {
+    ScheduleDayResponseDto {
+        date: day.date.to_string(),
+        lessons: day.lessons.into_iter().map(lesson_response).collect(),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -80,6 +122,13 @@ pub struct ScheduleDayResponseDto {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TeacherScheduleQuery {
+    pub date: String,
+    #[serde(default)]
+    pub teacher_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ClassScheduleDayQuery {
     pub date: String,
     #[serde(default)]
@@ -115,35 +164,7 @@ pub async fn schedule_week_handler(
         .await
         .map_err(ApiError::from_schedule_domain)?;
 
-    let days = response
-        .days
-        .into_iter()
-        .map(|day| ScheduleDayResponse {
-            date: day.date.to_string(),
-            lessons: day
-                .lessons
-                .into_iter()
-                .map(|lesson| ScheduleLessonResponse {
-                    id: lesson.instance.id.to_string(),
-                    start_time: lesson.start_time.format("%H:%M").to_string(),
-                    end_time: lesson.end_time.format("%H:%M").to_string(),
-                    subject_name: lesson.subject.name,
-                    teachers: lesson
-                        .teachers
-                        .into_iter()
-                        .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                        .collect(),
-                    cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(homework_response),
-                })
-                .collect(),
-        })
-        .collect();
-
-    Ok(Json(ScheduleWeekResponse {
-        week_start_date: response.week_start_date.to_string(),
-        days,
-    }))
+    Ok(Json(week_response(response)))
 }
 
 pub async fn class_schedule_week_handler(
@@ -171,35 +192,7 @@ pub async fn class_schedule_week_handler(
         .await
         .map_err(ApiError::from_schedule_domain)?;
 
-    let days = response
-        .days
-        .into_iter()
-        .map(|day| ScheduleDayResponse {
-            date: day.date.to_string(),
-            lessons: day
-                .lessons
-                .into_iter()
-                .map(|lesson| ScheduleLessonResponse {
-                    id: lesson.instance.id.to_string(),
-                    start_time: lesson.start_time.format("%H:%M").to_string(),
-                    end_time: lesson.end_time.format("%H:%M").to_string(),
-                    subject_name: lesson.subject.name,
-                    teachers: lesson
-                        .teachers
-                        .into_iter()
-                        .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                        .collect(),
-                    cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(homework_response),
-                })
-                .collect(),
-        })
-        .collect();
-
-    Ok(Json(ScheduleWeekResponse {
-        week_start_date: response.week_start_date.to_string(),
-        days,
-    }))
+    Ok(Json(week_response(response)))
 }
 
 pub async fn day_schedule_handler(
@@ -231,28 +224,7 @@ pub async fn day_schedule_handler(
         .await
         .map_err(ApiError::from_schedule_domain)?;
 
-    let lessons = response
-        .lessons
-        .into_iter()
-        .map(|lesson| ScheduleLessonResponse {
-            id: lesson.instance.id.to_string(),
-            start_time: lesson.start_time.format("%H:%M").to_string(),
-            end_time: lesson.end_time.format("%H:%M").to_string(),
-            subject_name: lesson.subject.name,
-            teachers: lesson
-                .teachers
-                .into_iter()
-                .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                .collect(),
-            cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(homework_response),
-        })
-        .collect();
-
-    Ok(Json(ScheduleDayResponseDto {
-        date: response.date.to_string(),
-        lessons,
-    }))
+    Ok(Json(day_response(response)))
 }
 
 pub async fn class_day_schedule_handler(
@@ -280,26 +252,75 @@ pub async fn class_day_schedule_handler(
         .await
         .map_err(ApiError::from_schedule_domain)?;
 
-    let lessons = response
-        .lessons
-        .into_iter()
-        .map(|lesson| ScheduleLessonResponse {
-            id: lesson.instance.id.to_string(),
-            start_time: lesson.start_time.format("%H:%M").to_string(),
-            end_time: lesson.end_time.format("%H:%M").to_string(),
-            subject_name: lesson.subject.name,
-            teachers: lesson
-                .teachers
-                .into_iter()
-                .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                .collect(),
-            cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(homework_response),
-        })
-        .collect();
+    Ok(Json(day_response(response)))
+}
 
-    Ok(Json(ScheduleDayResponseDto {
-        date: response.date.to_string(),
-        lessons,
-    }))
+/// Teacher-schedule errors: an unknown id or a student id means "no such teacher".
+fn teacher_schedule_error(error: DomainError) -> ApiError {
+    match error {
+        DomainError::UserNotFound => ApiError {
+            status: StatusCode::NOT_FOUND,
+            message: "Teacher not found".to_string(),
+        },
+        other => ApiError::from_schedule_domain(other),
+    }
+}
+
+/// Validates `?date=YYYY-MM-DD&teacher_id=<uuid>` for the teacher routes.
+async fn teacher_schedule_input(
+    state: &AppState,
+    headers: &HeaderMap,
+    query: &TeacherScheduleQuery,
+) -> Result<(NaiveDate, Uuid), ApiError> {
+    // A school timetable is not secret: any logged-in user may look up a teacher.
+    require_authenticated_user(state, headers).await?;
+    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
+        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
+    let teacher_id = query
+        .teacher_id
+        .as_deref()
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(|| teacher_schedule_error(DomainError::UserNotFound))?;
+    Ok((date, teacher_id))
+}
+
+/// `GET /api/teachers/schedule/week?date=YYYY-MM-DD&teacher_id=<uuid>` — the week
+/// containing `date`: lessons of all courses the teacher is assigned to.
+pub async fn teacher_schedule_week_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TeacherScheduleQuery>,
+) -> Result<Json<ScheduleWeekResponse>, ApiError> {
+    let (date, teacher_id) = teacher_schedule_input(&state, &headers, &query).await?;
+    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Schedule service not initialized".to_string(),
+    })?;
+
+    let week = schedule_service
+        .teacher_week_schedule(teacher_id, date)
+        .await
+        .map_err(teacher_schedule_error)?;
+
+    Ok(Json(week_response(week)))
+}
+
+/// `GET /api/teachers/schedule/day?date=YYYY-MM-DD&teacher_id=<uuid>` — one day.
+pub async fn teacher_schedule_day_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TeacherScheduleQuery>,
+) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
+    let (date, teacher_id) = teacher_schedule_input(&state, &headers, &query).await?;
+    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Schedule service not initialized".to_string(),
+    })?;
+
+    let day = schedule_service
+        .teacher_day_schedule(teacher_id, date)
+        .await
+        .map_err(teacher_schedule_error)?;
+
+    Ok(Json(day_response(day)))
 }

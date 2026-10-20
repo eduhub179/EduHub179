@@ -562,6 +562,14 @@ pub fn create_app_with_auth_and_schedule(
             "/api/classes/schedule/day",
             get(schedule::class_day_schedule_handler),
         )
+        .route(
+            "/api/teachers/schedule/week",
+            get(schedule::teacher_schedule_week_handler),
+        )
+        .route(
+            "/api/teachers/schedule/day",
+            get(schedule::teacher_schedule_day_handler),
+        )
         .route("/api/homework", post(homework::create_homework_handler))
         .route(
             "/api/homework/:homework_id/text",

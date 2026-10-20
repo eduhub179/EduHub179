@@ -107,6 +107,7 @@ async fn main() {
         users,
         cabinets,
         homeworks.clone(),
+        Arc::new(ClassRepositoryPg::new(pool.clone())),
     ));
 
     let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));

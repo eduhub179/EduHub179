@@ -16,6 +16,7 @@ use domain::entities::{
 };
 use domain::errors::DomainError;
 use domain::repositories::cabinet_repository::CabinetRepository;
+use domain::repositories::class_repository::ClassRepository;
 use domain::repositories::homework_repository::HomeworkRepository;
 use domain::repositories::lesson_instance_repository::LessonInstanceRepository;
 use domain::repositories::lesson_repository::LessonRepository;
@@ -24,6 +25,7 @@ use domain::repositories::schedule_week_repository::ScheduleWeekRepository;
 use domain::repositories::student_group_repository::StudentGroupRepository;
 use domain::repositories::subject_repository::SubjectRepository;
 use domain::repositories::user_repository::UserRepository;
+use domain::value_objects::lesson_target::LessonTarget;
 use domain::value_objects::week_status::WeekStatus;
 
 /// Coordinates schedule-week operations for presentation handlers.
@@ -40,6 +42,8 @@ pub struct ScheduleService {
     users: Arc<dyn UserRepository>,
     cabinets: Arc<dyn CabinetRepository>,
     homeworks: Arc<dyn HomeworkRepository>,
+    /// Class names for `ScheduleLesson::target_name`.
+    classes: Arc<dyn ClassRepository>,
 }
 
 /// A complete schedule response for the mobile/web schedule screen.
@@ -80,6 +84,9 @@ pub struct ScheduleLesson {
     pub lesson: Lesson,
     /// Subject shown in the schedule card.
     pub subject: Subject,
+    /// Who the lesson is for: class ("2027б") or group name. A teacher's schedule
+    /// is unreadable without it; for students it names the group of group lessons.
+    pub target_name: String,
     /// All teachers assigned to the lesson.
     pub teachers: Vec<User>,
     /// Cabinet used by this instance, falling back to the template cabinet.
@@ -113,6 +120,7 @@ impl ScheduleService {
         users: Arc<dyn UserRepository>,
         cabinets: Arc<dyn CabinetRepository>,
         homeworks: Arc<dyn HomeworkRepository>,
+        classes: Arc<dyn ClassRepository>,
     ) -> Self {
         Self {
             schedule_weeks,
@@ -124,6 +132,7 @@ impl ScheduleService {
             users,
             cabinets,
             homeworks,
+            classes,
         }
     }
 
@@ -273,6 +282,131 @@ impl ScheduleService {
             .await
     }
 
+    /// Loads the week containing `date` for a teacher: lessons of every course the
+    /// teacher is assigned to (`lesson_teachers`), each with its class/group name.
+    ///
+    /// # Fail-safe поведение
+    /// `UserNotFound` if there is no such user or the user is a student;
+    /// `UserIsInactive` for a deactivated teacher; a missing or draft week returns
+    /// `ScheduleWeekNotFound`, as for students.
+    pub async fn teacher_week_schedule(
+        &self,
+        teacher_id: uuid::Uuid,
+        date: NaiveDate,
+    ) -> Result<WeeklySchedule, DomainError> {
+        let lesson_ids = self.teacher_lesson_ids(teacher_id).await?;
+        let week_start_date = monday_of(date);
+        let week = self.schedule_weeks.get_by_id(week_start_date).await?;
+        if !week.is_published() {
+            return Err(DomainError::ScheduleWeekNotFound);
+        }
+
+        self.build_week_filtered(week_start_date, |lesson| lesson_ids.contains(&lesson.id))
+            .await
+    }
+
+    /// Loads one day for a teacher; same rules as `teacher_week_schedule`.
+    pub async fn teacher_day_schedule(
+        &self,
+        teacher_id: uuid::Uuid,
+        date: NaiveDate,
+    ) -> Result<ScheduleDay, DomainError> {
+        let lesson_ids = self.teacher_lesson_ids(teacher_id).await?;
+        let week = self.schedule_weeks.get_by_id(monday_of(date)).await?;
+        if !week.is_published() {
+            return Err(DomainError::ScheduleWeekNotFound);
+        }
+
+        self.build_day_filtered(date, |lesson| lesson_ids.contains(&lesson.id))
+            .await
+    }
+
+    /// Courses of a teacher. Admins may teach too, so only students are rejected.
+    async fn teacher_lesson_ids(
+        &self,
+        teacher_id: uuid::Uuid,
+    ) -> Result<std::collections::HashSet<uuid::Uuid>, DomainError> {
+        let teacher = self.users.get_by_id(teacher_id).await?;
+        if teacher.role.is_student() {
+            return Err(DomainError::UserNotFound);
+        }
+        if !teacher.is_active {
+            return Err(DomainError::UserIsInactive);
+        }
+        Ok(self
+            .lessons
+            .get_by_teacher(teacher_id)
+            .await?
+            .into_iter()
+            .map(|lesson| lesson.id)
+            .collect())
+    }
+
+    /// Week of all instances whose course passes `include`, Monday to Sunday.
+    async fn build_week_filtered(
+        &self,
+        week_start_date: NaiveDate,
+        include: impl Fn(&Lesson) -> bool,
+    ) -> Result<WeeklySchedule, DomainError> {
+        let mut days = (0..7)
+            .map(|offset| ScheduleDay {
+                date: week_start_date + chrono::Duration::days(offset),
+                lessons: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+
+        for instance in self.instances.get_by_week(week_start_date).await? {
+            let template = self.templates.get_by_id(instance.template_id).await?;
+            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
+            if !include(&lesson) {
+                continue;
+            }
+
+            let schedule_lesson = self.build_schedule_lesson(instance).await?;
+            let day_index = usize::try_from(schedule_lesson.instance.day_of_week())
+                .map_err(|_| DomainError::InvalidLessonInstanceDate)?;
+            days.get_mut(day_index)
+                .ok_or(DomainError::InvalidLessonInstanceDate)?
+                .lessons
+                .push(schedule_lesson);
+        }
+
+        for day in &mut days {
+            day.lessons.sort_by_key(|lesson| lesson.start_time);
+        }
+        Ok(WeeklySchedule {
+            week_start_date,
+            days,
+        })
+    }
+
+    /// One day of all instances whose course passes `include`.
+    async fn build_day_filtered(
+        &self,
+        date: NaiveDate,
+        include: impl Fn(&Lesson) -> bool,
+    ) -> Result<ScheduleDay, DomainError> {
+        let mut lessons = Vec::new();
+        for instance in self.instances.get_by_date(date).await? {
+            let template = self.templates.get_by_id(instance.template_id).await?;
+            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
+            if include(&lesson) {
+                lessons.push(self.build_schedule_lesson(instance).await?);
+            }
+        }
+
+        lessons.sort_by_key(|lesson| lesson.start_time);
+        Ok(ScheduleDay { date, lessons })
+    }
+
+    /// "2027б" for a class lesson, the group name for a group lesson.
+    async fn target_name(&self, lesson: &Lesson) -> Result<String, DomainError> {
+        match lesson.target {
+            LessonTarget::Class(class_id) => Ok(self.classes.get_by_id(class_id).await?.full_name()),
+            LessonTarget::Group(group_id) => Ok(self.student_groups.get_by_id(group_id).await?.name),
+        }
+    }
+
     /// Composes the complete week for a class from the repositories stored in the service.
     async fn build_week_schedule_for_class(
         &self,
@@ -364,12 +498,14 @@ impl ScheduleService {
                 None => None,
             };
             let homework = load_homework(&self.homeworks, instance.id).await?;
+            let target_name = self.target_name(&lesson).await?;
             lessons_for_day.push(ScheduleLesson {
                 instance,
                 start_time: template.start_time,
                 end_time: template.end_time,
                 lesson,
                 subject,
+                target_name,
                 teachers: teacher_list,
                 cabinet,
                 homework,
@@ -455,12 +591,14 @@ impl ScheduleService {
             None => None,
         };
         let homework = load_homework(&self.homeworks, instance.id).await?;
+        let target_name = self.target_name(&lesson).await?;
         Ok(ScheduleLesson {
             instance,
             start_time: template.start_time,
             end_time: template.end_time,
             lesson,
             subject,
+            target_name,
             teachers: teacher_list,
             cabinet,
             homework,
@@ -608,6 +746,32 @@ mod tests {
     use async_trait::async_trait;
     use chrono::NaiveDate;
     use std::sync::Mutex;
+
+    struct DummyClassRepo;
+    #[async_trait]
+    impl ClassRepository for DummyClassRepo {
+        async fn get_by_id(
+            &self,
+            _class_id: uuid::Uuid,
+        ) -> Result<domain::entities::class::Class, DomainError> {
+            Err(DomainError::ClassNotFound)
+        }
+        async fn get_active_by_year(
+            &self,
+            _graduation_year: i32,
+        ) -> Result<Vec<domain::entities::class::Class>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn get_all_active(&self) -> Result<Vec<domain::entities::class::Class>, DomainError> {
+            Ok(Vec::new())
+        }
+        async fn save(
+            &self,
+            class: domain::entities::class::Class,
+        ) -> Result<domain::entities::class::Class, DomainError> {
+            Ok(class)
+        }
+    }
 
     struct DummyStudentGroups;
     #[async_trait]
@@ -969,6 +1133,7 @@ mod tests {
             Arc::new(DummyUserRepo),
             Arc::new(DummyCabinetRepo),
             Arc::new(DummyHomeworkRepo),
+            Arc::new(DummyClassRepo),
         );
 
         let created = service
@@ -1018,6 +1183,7 @@ mod tests {
             Arc::new(DummyUserRepo),
             Arc::new(DummyCabinetRepo),
             Arc::new(DummyHomeworkRepo),
+            Arc::new(DummyClassRepo),
         );
 
         let created = service
