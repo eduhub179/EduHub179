@@ -11,13 +11,14 @@ use application::use_cases::{
         update_homework_text::UpdateHomeworkTextUseCase,
         upload_file::MAX_FILE_SIZE,
     },
+    plusnik::PlusnikService,
     schedule::ScheduleService,
 };
 use axum::{
     extract::DefaultBodyLimit,
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use domain::{
@@ -36,7 +37,7 @@ use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use crate::routes::{auth, classes, files, homework, schedule, telegram};
+use crate::routes::{auth, classes, files, homework, plusnik, schedule, telegram};
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -137,6 +138,55 @@ impl ApiError {
     }
 }
 
+impl ApiError {
+    pub(crate) fn from_plusnik_domain(error: DomainError) -> Self {
+        let (status, message) = match error {
+            DomainError::PlusnikSheetNotFound => (StatusCode::NOT_FOUND, "Sheet not found"),
+            DomainError::PlusnikTaskNotFound => (StatusCode::NOT_FOUND, "Task not found"),
+            DomainError::LessonNotFound => (StatusCode::NOT_FOUND, "Lesson not found"),
+            DomainError::UserNotFound => (StatusCode::NOT_FOUND, "Student not found"),
+            DomainError::InvalidPlusnikSheetName => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Sheet name must be 1-255 characters")
+            }
+            DomainError::InvalidTaskNumber => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Task number must be 1-20 characters")
+            }
+            DomainError::InvalidSheetStatus => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Status must be draft, published or archived",
+            ),
+            DomainError::PlusnikTaskAlreadyExists => {
+                (StatusCode::CONFLICT, "The sheet already has a task with this number")
+            }
+            DomainError::PlusnikSheetHasRecords => (
+                StatusCode::CONFLICT,
+                "The sheet has pluses and cannot be deleted; archive it instead",
+            ),
+            DomainError::PlusnikTaskHasRecords => {
+                (StatusCode::CONFLICT, "The task has pluses and cannot be deleted")
+            }
+            DomainError::PlusnikSheetNotPublished => {
+                (StatusCode::CONFLICT, "Pluses can be given only on a published sheet")
+            }
+            DomainError::StudentNotInLesson => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "The student is not in this lesson")
+            }
+            DomainError::InsufficientPermissions => {
+                (StatusCode::FORBIDDEN, "Insufficient permissions")
+            }
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+            _ => (StatusCode::BAD_REQUEST, "Bad request"),
+        };
+
+        Self {
+            status,
+            message: message.to_string(),
+        }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let body = Json(json!({
@@ -165,6 +215,7 @@ pub struct AppState {
     /// `None` if object storage is not configured (`S3_ENDPOINT` unset): file routes answer 503.
     pub file_use_cases: Option<FileUseCases>,
     pub delete_homework_use_case: Option<Arc<DeleteHomeworkUseCase>>,
+    pub plusnik_service: Option<Arc<PlusnikService>>,
 }
 
 /// Homework file use cases; all of them need object storage.
@@ -224,6 +275,7 @@ fn cors_layer() -> CorsLayer {
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,
+            axum::http::Method::PUT,
             axum::http::Method::PATCH,
             axum::http::Method::DELETE,
         ])
@@ -428,6 +480,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             agent_access: None,
             file_use_cases: None,
             delete_homework_use_case: None,
+            plusnik_service: None,
         })
 }
 
@@ -468,6 +521,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             agent_access: None,
             file_use_cases: None,
             delete_homework_use_case: None,
+            plusnik_service: None,
         })
 }
 
@@ -487,6 +541,7 @@ pub fn create_app_with_auth_and_schedule(
     agent_access: Option<AgentAccess>,
     file_use_cases: Option<FileUseCases>,
     delete_homework_use_case: Arc<DeleteHomeworkUseCase>,
+    plusnik_service: Arc<PlusnikService>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -534,6 +589,7 @@ pub fn create_app_with_auth_and_schedule(
             "/api/homework/files/:file_id",
             delete(files::delete_homework_file_handler),
         )
+        .merge(plusnik_routes())
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -551,7 +607,29 @@ pub fn create_app_with_auth_and_schedule(
             agent_access,
             file_use_cases,
             delete_homework_use_case: Some(delete_homework_use_case),
+            plusnik_service: Some(plusnik_service),
         })
+}
+
+fn plusnik_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/plusnik/me", get(plusnik::student_progress_handler))
+        .route("/api/plusnik/lessons", get(plusnik::teacher_lessons_handler))
+        .route(
+            "/api/plusnik/lessons/:lesson_id/sheets",
+            get(plusnik::lesson_sheets_handler).post(plusnik::create_sheet_handler),
+        )
+        .route(
+            "/api/plusnik/sheets/:sheet_id",
+            patch(plusnik::update_sheet_handler).delete(plusnik::delete_sheet_handler),
+        )
+        .route("/api/plusnik/sheets/:sheet_id/matrix", get(plusnik::sheet_matrix_handler))
+        .route("/api/plusnik/sheets/:sheet_id/tasks", post(plusnik::add_task_handler))
+        .route("/api/plusnik/tasks/:task_id", delete(plusnik::delete_task_handler))
+        .route(
+            "/api/plusnik/tasks/:task_id/pluses/:student_id",
+            put(plusnik::grant_plus_handler).delete(plusnik::revoke_plus_handler),
+        )
 }
 
 async fn health_check() -> Json<Value> {
@@ -744,6 +822,7 @@ mod tests {
             agent_access: AgentAccess::new(AGENT_KEY.to_string(), agent_user_id),
             file_use_cases: None,
             delete_homework_use_case: None,
+            plusnik_service: None,
         }
     }
 
@@ -764,6 +843,12 @@ mod tests {
             .route("/api/homework/:homework_id/text", patch(ok))
             .route("/api/homework/:homework_id/files/:file_id", get(ok))
             .route("/api/homework/files/:file_id", delete(ok));
+    }
+
+    /// Building the router panics on overlapping paths: build the plusnik part in a test.
+    #[test]
+    fn plusnik_routes_do_not_conflict() {
+        let _ = plusnik_routes();
     }
 
     #[test]

@@ -341,11 +341,8 @@ async fn test_delete_sheet_blocked_by_records(pool: PgPool) {
     repo.save_record(record).await.expect("Save record");
 
     let err = repo.delete_sheet(sheet_id).await.unwrap_err();
-    // FK ON DELETE RESTRICT — could map to PlusnikSheetHasRecords
-    assert!(
-        err == DomainError::PlusnikSheetHasRecords || err == DomainError::PlusnikSheetNotFound,
-        "Expected PlusnikSheetHasRecords or restrict-related error, got {err:?}"
-    );
+    // FK ON DELETE RESTRICT (SQLSTATE 23503 on DELETE) must not look like "not found".
+    assert_eq!(err, DomainError::PlusnikSheetHasRecords);
 }
 
 // ============================================================================
@@ -445,10 +442,7 @@ async fn test_delete_task_blocked_by_records(pool: PgPool) {
     repo.save_record(record).await.expect("Save record");
 
     let err = repo.delete_task(task1_id).await.unwrap_err();
-    assert!(
-        err == DomainError::PlusnikTaskHasRecords || err == DomainError::PlusnikTaskNotFound,
-        "Expected PlusnikTaskHasRecords or restrict-related error, got {err:?}"
-    );
+    assert_eq!(err, DomainError::PlusnikTaskHasRecords);
 }
 
 // ============================================================================
