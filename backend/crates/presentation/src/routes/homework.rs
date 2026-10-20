@@ -11,12 +11,12 @@ use uuid::Uuid;
 
 use crate::router::{require_caller, ApiError, AppState, Caller};
 
+/// The author is always the authenticated caller (or `X-Agent-On-Behalf-Of` for the agent),
+/// never taken from the body: older clients may still send `created_by` / `created_by_role`,
+/// unknown fields are ignored.
 #[derive(Debug, Deserialize)]
 pub struct CreateHomeworkRequest {
     pub lesson_instance_id: String,
-    pub created_by: String,
-    #[serde(default)]
-    pub created_by_role: String,
     #[serde(default)]
     pub text_content: Option<String>,
     #[serde(default)]

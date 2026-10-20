@@ -24,6 +24,23 @@ export function requireTeacherUser(): User {
   return user;
 }
 
+export function requireTeacherOrAdminUser(): User {
+  const user = requireAuthenticatedUser();
+  const role = normalizeRole(user.role);
+  if (role !== 'teacher' && role !== 'admin') {
+    throw new Error('Нет доступа. Это действие доступно только учителю.');
+  }
+  return user;
+}
+
+export function requireStudentUser(): User {
+  const user = requireAuthenticatedUser();
+  if (normalizeRole(user.role) !== 'student') {
+    throw new Error('Нет доступа. Этот раздел доступен только ученику.');
+  }
+  return user;
+}
+
 export function assertCanAccessStudentSchedule(studentId: string): User {
   const user = requireAuthenticatedUser();
   const role = normalizeRole(user.role);

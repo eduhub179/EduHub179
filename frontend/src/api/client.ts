@@ -29,14 +29,19 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    let errorMessage = 'Request failed';
+    let errorMessage = `Request failed (${response.status})`;
+    // Our handlers answer {"error": "..."}; axum's own rejections (malformed JSON,
+    // missing fields, too large body) answer plain text — keep that text too.
+    const body = await response.text().catch(() => '');
     try {
-      const payload = await response.json();
+      const payload = JSON.parse(body);
       if (payload && typeof payload.error === 'string') {
         errorMessage = payload.error;
       }
     } catch {
-      // Ignore JSON parse failures and keep generic message.
+      if (body.trim()) {
+        errorMessage = body.trim().slice(0, 300);
+      }
     }
 
     throw new Error(errorMessage);
