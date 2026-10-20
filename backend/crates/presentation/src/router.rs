@@ -28,6 +28,7 @@ use domain::{
 };
 use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
+use uuid::Uuid;
 
 use crate::routes::{auth, classes, homework, schedule, telegram};
 
@@ -147,13 +148,43 @@ pub struct AppState {
     pub session_token_hasher: Option<Arc<dyn SessionTokenHasher>>,
     pub session_token_generator: Option<Arc<dyn SessionTokenGenerator>>,
     pub telegram_lookup: Option<TelegramLookup>,
+    pub agent_access: Option<AgentAccess>,
 }
 
 #[derive(Clone)]
 pub struct TelegramLookup {
     pub bindings: Arc<dyn TelegramBindingRepository>,
     pub users: Arc<dyn UserRepository>,
-    pub agent_key: String,
+}
+
+/// Header with the shared secret of the chat agent (`AGENT_KEY` in backend/.env and agent/.env).
+const AGENT_KEY_HEADER: &str = "x-agent-key";
+/// Optional header: the agent acts as this user (UUID) instead of its own service user,
+/// e.g. for homework a logged-in user sent the bot in DM.
+const AGENT_ON_BEHALF_OF_HEADER: &str = "x-agent-on-behalf-of";
+
+/// Access to the API for the chat agent (Python service in `agent/`), which has no browser session.
+///
+/// Invariant: the key is never empty, so an unset `AGENT_KEY` cannot match a missing header.
+#[derive(Clone)]
+pub struct AgentAccess {
+    key: String,
+    /// Service user the agent acts as by default (created by 0008_create_agent_user.sql).
+    user_id: Uuid,
+}
+
+impl AgentAccess {
+    /// Returns `None` for an empty key: agent access is then off.
+    pub fn new(key: String, user_id: Uuid) -> Option<Self> {
+        (!key.is_empty()).then_some(Self { key, user_id })
+    }
+
+    /// Constant-time comparison, so response timing does not leak the key byte by byte.
+    /// Only the length can leak, which is acceptable for a random secret.
+    fn matches(&self, presented: &str) -> bool {
+        let (a, b) = (self.key.as_bytes(), presented.as_bytes());
+        a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    }
 }
 
 fn cors_layer() -> CorsLayer {
@@ -193,10 +224,95 @@ fn extract_cookie_value(headers: &HeaderMap, cookie_name: &str) -> Option<String
         .next()
 }
 
+fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn unauthorized(message: &str) -> ApiError {
+    ApiError {
+        status: StatusCode::UNAUTHORIZED,
+        message: message.to_string(),
+    }
+}
+
+/// Checks `X-Agent-Key` for agent-only routes.
+///
+/// # Fail-safe поведение
+/// Returns `Err(401)` if agent access is off, the header is missing or the key is wrong.
+pub(crate) fn require_agent<'a>(
+    state: &'a AppState,
+    headers: &HeaderMap,
+) -> Result<&'a AgentAccess, ApiError> {
+    let agent = state
+        .agent_access
+        .as_ref()
+        .ok_or_else(|| unauthorized("Agent key required"))?;
+    match header_value(headers, AGENT_KEY_HEADER) {
+        Some(key) if agent.matches(key) => Ok(agent),
+        _ => Err(unauthorized("Agent key required")),
+    }
+}
+
+/// Resolves the caller: the chat agent by `X-Agent-Key`, otherwise a web user by the `session` cookie.
+///
+/// # Fail-safe поведение
+/// A present but wrong `X-Agent-Key` is rejected with 401 without falling back to the cookie.
+/// Inactive users (including the one in `X-Agent-On-Behalf-Of`) get 403.
 pub(crate) async fn require_authenticated_user(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<User, ApiError> {
+    require_caller(state, headers).await.map(|caller| caller.user)
+}
+
+/// Authenticated caller of a route.
+pub(crate) struct Caller {
+    /// User the request acts as (for the agent: its service user or `X-Agent-On-Behalf-Of`).
+    pub(crate) user: User,
+    /// True only after a valid `X-Agent-Key`: routes may trust the agent beyond the user's role.
+    pub(crate) is_agent: bool,
+}
+
+/// Same as `require_authenticated_user`, but also tells whether the request came from the agent.
+pub(crate) async fn require_caller(state: &AppState, headers: &HeaderMap) -> Result<Caller, ApiError> {
+    if headers.contains_key(AGENT_KEY_HEADER) {
+        let user = authenticate_agent(state, headers).await?;
+        return Ok(Caller { user, is_agent: true });
+    }
+    let user = authenticate_session(state, headers).await?;
+    Ok(Caller { user, is_agent: false })
+}
+
+/// The agent acts as its service user or as the user from `X-Agent-On-Behalf-Of`;
+/// permission checks in handlers then apply to that user as usual.
+async fn authenticate_agent(state: &AppState, headers: &HeaderMap) -> Result<User, ApiError> {
+    let agent = require_agent(state, headers)?;
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+
+    let user_id = match header_value(headers, AGENT_ON_BEHALF_OF_HEADER) {
+        Some(raw) => Uuid::parse_str(raw.trim()).map_err(|_| ApiError {
+            status: StatusCode::BAD_REQUEST,
+            message: "Invalid X-Agent-On-Behalf-Of".to_string(),
+        })?,
+        None => agent.user_id,
+    };
+    let user = match user_repository.get_by_id(user_id).await {
+        Ok(user) => user,
+        Err(DomainError::UserNotFound) => return Err(unauthorized("Unknown agent user")),
+        Err(error) => return Err(ApiError::from_auth_domain(error)),
+    };
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    Ok(user)
+}
+
+async fn authenticate_session(state: &AppState, headers: &HeaderMap) -> Result<User, ApiError> {
     let web_session_repository =
         state
             .web_session_repository
@@ -284,6 +400,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             session_token_hasher: None,
             session_token_generator: None,
             telegram_lookup: None,
+            agent_access: None,
         })
 }
 
@@ -321,6 +438,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             session_token_hasher: None,
             session_token_generator: None,
             telegram_lookup: None,
+            agent_access: None,
         })
 }
 
@@ -337,6 +455,7 @@ pub fn create_app_with_auth_and_schedule(
     session_token_hasher: Arc<dyn SessionTokenHasher>,
     session_token_generator: Arc<dyn SessionTokenGenerator>,
     telegram_lookup: Option<TelegramLookup>,
+    agent_access: Option<AgentAccess>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -378,6 +497,7 @@ pub fn create_app_with_auth_and_schedule(
             session_token_hasher: Some(session_token_hasher),
             session_token_generator: Some(session_token_generator),
             telegram_lookup,
+            agent_access,
         })
 }
 
@@ -523,5 +643,143 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    const AGENT_KEY: &str = "agent-secret";
+
+    /// Returns an active user with exactly the requested id, so tests see whom the agent acts as.
+    struct EchoUserRepository;
+
+    #[async_trait::async_trait]
+    impl UserRepository for EchoUserRepository {
+        async fn get_by_id(&self, user_id: Uuid) -> Result<User, DomainError> {
+            let mut user = create_test_user();
+            user.id = user_id;
+            Ok(user)
+        }
+
+        async fn get_by_login(&self, _login: &str) -> Result<User, DomainError> {
+            Err(DomainError::UserNotFound)
+        }
+
+        async fn get_active_students_by_class(
+            &self,
+            _class_id: Uuid,
+        ) -> Result<Vec<User>, DomainError> {
+            Ok(vec![])
+        }
+
+        async fn save(&self, _user: User) -> Result<User, DomainError> {
+            unimplemented!()
+        }
+    }
+
+    fn agent_state(agent_user_id: Uuid) -> AppState {
+        AppState {
+            login_use_case: None,
+            schedule_service: None,
+            create_homework_use_case: None,
+            update_homework_use_case: None,
+            class_repository: None,
+            user_repository: Some(Arc::new(EchoUserRepository)),
+            one_time_code_service: None,
+            web_session_repository: None,
+            token_issuer: None,
+            session_token_hasher: None,
+            session_token_generator: None,
+            telegram_lookup: None,
+            agent_access: AgentAccess::new(AGENT_KEY.to_string(), agent_user_id),
+        }
+    }
+
+    fn headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(*name, HeaderValue::from_str(value).unwrap());
+        }
+        map
+    }
+
+    #[test]
+    fn empty_agent_key_disables_agent_access() {
+        assert!(AgentAccess::new(String::new(), Uuid::new_v4()).is_none());
+    }
+
+    #[tokio::test]
+    async fn agent_key_authenticates_as_agent_user() {
+        let agent_user_id = Uuid::new_v4();
+        let state = agent_state(agent_user_id);
+
+        let user = require_authenticated_user(&state, &headers(&[("x-agent-key", AGENT_KEY)]))
+            .await
+            .unwrap();
+
+        assert_eq!(user.id, agent_user_id);
+    }
+
+    #[tokio::test]
+    async fn agent_can_act_on_behalf_of_user() {
+        let state = agent_state(Uuid::new_v4());
+        let author_id = Uuid::new_v4();
+
+        let user = require_authenticated_user(
+            &state,
+            &headers(&[
+                ("x-agent-key", AGENT_KEY),
+                ("x-agent-on-behalf-of", &author_id.to_string()),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(user.id, author_id);
+    }
+
+    #[tokio::test]
+    async fn agent_caller_is_marked_as_agent() {
+        let state = agent_state(Uuid::new_v4());
+
+        let caller = require_caller(&state, &headers(&[("x-agent-key", AGENT_KEY)]))
+            .await
+            .unwrap();
+
+        assert!(caller.is_agent);
+    }
+
+    #[tokio::test]
+    async fn wrong_agent_key_is_rejected() {
+        let state = agent_state(Uuid::new_v4());
+
+        let error = require_authenticated_user(&state, &headers(&[("x-agent-key", "wrong")]))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn agent_key_is_rejected_when_agent_access_is_off() {
+        let mut state = agent_state(Uuid::new_v4());
+        state.agent_access = None;
+
+        let error = require_authenticated_user(&state, &headers(&[("x-agent-key", "")]))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn invalid_on_behalf_of_is_bad_request() {
+        let state = agent_state(Uuid::new_v4());
+
+        let error = require_authenticated_user(
+            &state,
+            &headers(&[("x-agent-key", AGENT_KEY), ("x-agent-on-behalf-of", "not-a-uuid")]),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
     }
 }

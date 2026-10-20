@@ -6,7 +6,7 @@ use axum::{
 use domain::errors::DomainError;
 use serde::Serialize;
 
-use crate::router::{ApiError, AppState};
+use crate::router::{require_agent, ApiError, AppState};
 
 #[derive(Debug, Serialize)]
 pub struct TelegramUserResponse {
@@ -25,14 +25,8 @@ pub async fn telegram_user_handler(
         status: StatusCode::NOT_FOUND,
         message: "Telegram account is not linked".to_string(),
     };
+    require_agent(&state, &headers)?;
     let lookup = state.telegram_lookup.as_ref().ok_or_else(not_found)?;
-    let key = headers.get("x-agent-key").and_then(|v| v.to_str().ok()).unwrap_or("");
-    if lookup.agent_key.is_empty() || key != lookup.agent_key {
-        return Err(ApiError {
-            status: StatusCode::UNAUTHORIZED,
-            message: "Agent key required".to_string(),
-        });
-    }
 
     let user_id = match lookup.bindings.get_active_user_by_telegram_id(telegram_id).await {
         Ok(id) => id,
