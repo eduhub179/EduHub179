@@ -355,3 +355,35 @@ async fn student_progress_counts_solved_tasks(pool: PgPool) {
         DomainError::InsufficientPermissions
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_manages_plusnik_of_any_lesson(pool: PgPool) {
+    let w = seed(pool).await;
+    let admin = w.user(w.admin).await;
+
+    // The admin teaches nothing, yet sees every lesson of the school.
+    let lessons = w.service.teacher_lessons(&admin).await.unwrap();
+    let ids: Vec<_> = lessons.iter().map(|l| l.lesson_id).collect();
+    assert!(ids.contains(&w.lesson_id) && ids.contains(&w.group_lesson_id));
+    assert_eq!(ids.len(), 2);
+
+    // Full cycle on a lesson taught by someone else.
+    let sheet = w
+        .service
+        .create_sheet(&admin, sheet_command(w.lesson_id, SheetStatus::Published, &["1"]))
+        .await
+        .unwrap();
+    let task = sheet.tasks[0].id;
+    assert_eq!(w.service.lesson_sheets(&admin, w.lesson_id).await.unwrap().len(), 1);
+    assert!(w.service.grant_plus(&admin, task, w.anna).await.unwrap().created);
+    let matrix = w.service.sheet_matrix(&admin, sheet.sheet.id).await.unwrap();
+    assert_eq!(matrix.pluses.len(), 1);
+    assert_eq!(matrix.pluses[0].granted_by, w.admin);
+    assert!(w.service.revoke_plus(&admin, task, w.anna, None).await.unwrap());
+
+    // Students still get no lesson list.
+    assert_eq!(
+        w.service.teacher_lessons(&w.user(w.anna).await).await.unwrap_err(),
+        DomainError::InsufficientPermissions
+    );
+}

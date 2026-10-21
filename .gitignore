@@ -27,3 +27,5 @@ backend/bin/src/bin/import_timetable_agent.rs
 # Dumps
 project_dump*.txt
 dump*.txt
+# Database dumps contain personal data (names, emails) — never commit them.
+*.dump

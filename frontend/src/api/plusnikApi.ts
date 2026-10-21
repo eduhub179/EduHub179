@@ -100,7 +100,7 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-/** Courses where the current teacher can manage sheets and pluses. */
+/** Courses where the current user can manage sheets and pluses: own courses for a teacher, all for an admin. */
 export async function fetchPlusnikLessons(): Promise<PlusnikLessonDto[]> {
   requireTeacherOrAdminUser();
   return apiFetch<PlusnikLessonDto[]>('/api/plusnik/lessons');
