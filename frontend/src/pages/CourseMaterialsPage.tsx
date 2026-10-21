@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import type {FormEvent} from 'react';
 import {Link, useParams} from 'react-router-dom';
 import {
@@ -19,6 +19,7 @@ import {
     type MaterialTopicsDto,
 } from '../api';
 import {useAuth} from '../auth/AuthProvider';
+import FileDropDialog from '../components/FileDropDialog';
 import Header from '../components/Header';
 import '../css/CourseMaterialsPage.css';
 
@@ -67,7 +68,7 @@ const CourseMaterialsPage: React.FC = () => {
     const [pageError, setPageError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
-    const fileInput = useRef<HTMLInputElement>(null);
+    const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
 
     const [newTopic, setNewTopic] = useState('');
     const [editingTopic, setEditingTopic] = useState<{id: string; name: string} | null>(null);
@@ -172,9 +173,7 @@ const CourseMaterialsPage: React.FC = () => {
         }, 'Не удалось удалить тему.');
     };
 
-    const handleFiles = (files: FileList | null) => {
-        const chosen = Array.from(files ?? []);
-        if (fileInput.current) fileInput.current.value = '';
+    const handleFiles = (chosen: File[]) => {
         if (!chosen.length) return;
         const tooLarge = chosen.find((file) => file.size > MAX_FILE_SIZE_BYTES);
         if (tooLarge) {
@@ -320,10 +319,18 @@ const CourseMaterialsPage: React.FC = () => {
                                 <h2>{topicTitle}</h2>
                                 {canManage && (
                                     <div className="course-materials__toolbar">
-                                        <input ref={fileInput} type="file" multiple hidden
-                                               onChange={(event) => handleFiles(event.currentTarget.files)}/>
+                                        <FileDropDialog
+                                            open={isFileDialogOpen}
+                                            title={`Загрузить в «${topicTitle}»`}
+                                            multiple
+                                            hint={currentTopicId
+                                                ? 'Файлы попадут в эту тему. Каждый до 100 МБ.'
+                                                : 'Файлы попадут в «Без темы». Каждый до 100 МБ.'}
+                                            onClose={() => setIsFileDialogOpen(false)}
+                                            onFiles={handleFiles}
+                                        />
                                         <button type="button" className="is-primary" disabled={busy}
-                                                onClick={() => fileInput.current?.click()}>
+                                                onClick={() => setIsFileDialogOpen(true)}>
                                             {busy ? 'Сохранение…' : 'Загрузить файлы'}
                                         </button>
                                         <button type="button" disabled={busy}

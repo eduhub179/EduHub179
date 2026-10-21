@@ -1,6 +1,6 @@
 import { apiFetch, apiUrl } from './client';
 import type { HomeworkFileDto } from './scheduleApi';
-import { requireTeacherUser } from './access';
+import { requireTeacherOrAdminUser } from './access';
 
 /** The author is the logged-in user: the backend takes it from the session, not from the body. */
 export interface CreateHomeworkRequest {
@@ -28,7 +28,7 @@ export interface HomeworkResponse {
 export async function createHomework(
   payload: CreateHomeworkRequest,
 ): Promise<HomeworkResponse> {
-  requireTeacherUser();
+  requireTeacherOrAdminUser();
   return apiFetch<HomeworkResponse>('/api/homework', {
     method: 'POST',
     headers: {
@@ -42,7 +42,7 @@ export async function updateHomeworkText(
   homeworkId: string,
   payload: UpdateHomeworkTextRequest,
 ): Promise<HomeworkResponse> {
-  requireTeacherUser();
+  requireTeacherOrAdminUser();
   return apiFetch<HomeworkResponse>(`/api/homework/${homeworkId}/text`, {
     method: 'PATCH',
     headers: {
@@ -64,7 +64,7 @@ export async function attachLessonFile(
   lessonInstanceId: string,
   file: File,
 ): Promise<AttachLessonFileResponse> {
-  requireTeacherUser();
+  requireTeacherOrAdminUser();
   const body = new FormData();
   body.append('file', file);
   return apiFetch<AttachLessonFileResponse>(`/api/lessons/${lessonInstanceId}/files`, {
@@ -75,7 +75,7 @@ export async function attachLessonFile(
 
 /** Deletes the homework with its text and all attached files. */
 export async function deleteHomework(homeworkId: string): Promise<void> {
-  requireTeacherUser();
+  requireTeacherOrAdminUser();
   await apiFetch<void>(`/api/homework/${homeworkId}`, { method: 'DELETE' });
 }
 
@@ -85,7 +85,7 @@ export interface DeleteHomeworkFileResponse {
 }
 
 export async function deleteHomeworkFile(fileId: string): Promise<DeleteHomeworkFileResponse> {
-  requireTeacherUser();
+  requireTeacherOrAdminUser();
   return apiFetch<DeleteHomeworkFileResponse>(`/api/homework/files/${fileId}`, {
     method: 'DELETE',
   });

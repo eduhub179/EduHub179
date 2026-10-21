@@ -402,6 +402,12 @@ pub(crate) struct Caller {
     pub(crate) is_agent: bool,
 }
 
+/// Who may create, edit and delete homework and its files: teachers, admins, and the
+/// agent (which acts on behalf of whoever sent the homework to the bot).
+pub(crate) fn can_edit_homework(user: &User, is_agent: bool) -> bool {
+    is_agent || user.is_teacher() || user.is_admin()
+}
+
 /// Same as `require_authenticated_user`, but also tells whether the request came from the agent.
 pub(crate) async fn require_caller(state: &AppState, headers: &HeaderMap) -> Result<Caller, ApiError> {
     if headers.contains_key(AGENT_KEY_HEADER) {
@@ -956,6 +962,21 @@ mod tests {
             .route("/api/homework/files/:file_id", delete(ok))
             .route("/api/classes/schedule/week", get(ok))
             .route("/api/teachers/schedule/week", get(ok));
+    }
+
+    #[test]
+    fn homework_editors_are_teachers_admins_and_the_agent() {
+        let with_role = |role: UserRole| {
+            let mut user = create_test_user();
+            user.role = role;
+            user
+        };
+
+        assert!(can_edit_homework(&with_role(UserRole::Teacher), false));
+        assert!(can_edit_homework(&with_role(UserRole::Admin), false));
+        assert!(!can_edit_homework(&with_role(UserRole::Student), false));
+        // The agent may write on behalf of a student who sent homework to the bot.
+        assert!(can_edit_homework(&with_role(UserRole::Student), true));
     }
 
     #[test]
