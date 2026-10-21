@@ -12,6 +12,12 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path}`;
 }
 
+/**
+ * Dispatched on `window` when the backend answers 401: the session cookie expired or
+ * was revoked. AuthProvider then forgets the stored user and sends them to the login page.
+ */
+export const SESSION_EXPIRED_EVENT = 'eduhub:session-expired';
+
 export async function apiFetch<T>(
   input: string,
   init?: RequestInit,
@@ -29,6 +35,9 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    }
     let errorMessage = `Request failed (${response.status})`;
     // Our handlers answer {"error": "..."}; axum's own rejections (malformed JSON,
     // missing fields, too large body) answer plain text — keep that text too.

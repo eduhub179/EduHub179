@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { SESSION_EXPIRED_EVENT } from '../api/client';
 import { authService } from './authService';
 import type { Credentials, RegistrationData, User } from './authService';
 
@@ -19,6 +21,23 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
+    const navigate = useNavigate();
+
+    // The backend rejected our session (expired or revoked): stop pretending to be logged in.
+    // Only when a user is stored — a 401 for a wrong password or code on the login and
+    // register pages must not navigate anywhere.
+    useEffect(() => {
+        const handleSessionExpired = () => {
+            if (!authService.getCurrentUser()) {
+                return;
+            }
+            authService.forgetCurrentUser();
+            setUser(null);
+            navigate('/login', { replace: true, state: { sessionExpired: true } });
+        };
+        window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+        return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    }, [navigate]);
 
     const register = (data: RegistrationData) => setUser(authService.register(data));
     const login = async (credentials: Credentials) => setUser(await authService.login(credentials));
