@@ -9,6 +9,7 @@ import LoginPage from "./pages/LoginPage.tsx";
 import ProfilePage from "./pages/ProfilePage.tsx";
 import MathPage from "./pages/MathPage.tsx";
 import PlusnikPage from "./pages/PlusnikPage.tsx";
+import CourseMaterialsPage from "./pages/CourseMaterialsPage.tsx";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
 
 const root = ReactDOM.createRoot(
@@ -28,6 +29,7 @@ root.render(
                     <Route path="/math" element={<MathPage />} />
                     <Route path="/math/:schoolClass" element={<MathPage />} />
                     <Route path="/plusnik/:topic" element={<PlusnikPage />} />
+                    <Route path="/courses/:lessonId/materials" element={<CourseMaterialsPage />} />
 
                     {/* Если открыть "/" — отправляем на главную */}
                     <Route path="/" element={<Navigate to="/main" replace />} />

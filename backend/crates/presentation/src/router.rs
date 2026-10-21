@@ -11,6 +11,7 @@ use application::use_cases::{
         update_homework_text::UpdateHomeworkTextUseCase,
         upload_file::MAX_FILE_SIZE,
     },
+    materials::MaterialsService,
     plusnik::PlusnikService,
     schedule::ScheduleService,
 };
@@ -37,7 +38,7 @@ use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use crate::routes::{auth, classes, files, homework, plusnik, schedule, telegram};
+use crate::routes::{auth, classes, files, homework, materials, plusnik, schedule, telegram};
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -188,6 +189,55 @@ impl ApiError {
     }
 }
 
+impl ApiError {
+    pub(crate) fn from_materials_domain(error: DomainError) -> Self {
+        let (status, message) = match error {
+            DomainError::LessonNotFound => (StatusCode::NOT_FOUND, "Course not found"),
+            DomainError::ClassNotFound => (StatusCode::NOT_FOUND, "Class not found"),
+            DomainError::MaterialTopicNotFound => (StatusCode::NOT_FOUND, "Topic not found"),
+            DomainError::MaterialNotFound => (StatusCode::NOT_FOUND, "Material not found"),
+            DomainError::InvalidMaterialTopicName => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Topic name must be 1-255 characters")
+            }
+            DomainError::MaterialTopicAlreadyExists => {
+                (StatusCode::CONFLICT, "The course already has a topic with this name")
+            }
+            DomainError::InvalidMaterialTitle => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Title must be 1-255 characters, description at most 5000",
+            ),
+            DomainError::InvalidMaterialUrl => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Link must be an http(s) URL, at most 2000 characters",
+            ),
+            DomainError::InvalidHomeworkFileFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid file name or type")
+            }
+            DomainError::InvalidHomeworkFileSize => {
+                (StatusCode::PAYLOAD_TOO_LARGE, "File is empty or larger than 100 MB")
+            }
+            DomainError::MaterialIsNotAFile => {
+                (StatusCode::CONFLICT, "This material is a link, there is no file")
+            }
+            DomainError::FileStorageUnavailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, "File storage is not configured")
+            }
+            DomainError::InsufficientPermissions => {
+                (StatusCode::FORBIDDEN, "Insufficient permissions")
+            }
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+            _ => (StatusCode::BAD_REQUEST, "Bad request"),
+        };
+
+        Self {
+            status,
+            message: message.to_string(),
+        }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let body = Json(json!({
@@ -217,6 +267,7 @@ pub struct AppState {
     pub file_use_cases: Option<FileUseCases>,
     pub delete_homework_use_case: Option<Arc<DeleteHomeworkUseCase>>,
     pub plusnik_service: Option<Arc<PlusnikService>>,
+    pub materials_service: Option<Arc<MaterialsService>>,
 }
 
 /// Homework file use cases; all of them need object storage.
@@ -482,6 +533,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             file_use_cases: None,
             delete_homework_use_case: None,
             plusnik_service: None,
+            materials_service: None,
         })
 }
 
@@ -523,6 +575,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             file_use_cases: None,
             delete_homework_use_case: None,
             plusnik_service: None,
+            materials_service: None,
         })
 }
 
@@ -543,6 +596,7 @@ pub fn create_app_with_auth_and_schedule(
     file_use_cases: Option<FileUseCases>,
     delete_homework_use_case: Arc<DeleteHomeworkUseCase>,
     plusnik_service: Arc<PlusnikService>,
+    materials_service: Arc<MaterialsService>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -599,6 +653,7 @@ pub fn create_app_with_auth_and_schedule(
             delete(files::delete_homework_file_handler),
         )
         .merge(plusnik_routes())
+        .merge(materials_routes())
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -617,7 +672,36 @@ pub fn create_app_with_auth_and_schedule(
             file_use_cases,
             delete_homework_use_case: Some(delete_homework_use_case),
             plusnik_service: Some(plusnik_service),
+            materials_service: Some(materials_service),
         })
+}
+
+fn materials_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/courses", get(materials::class_courses_handler))
+        .route("/api/courses/:lesson_id", get(materials::course_handler))
+        .route(
+            "/api/courses/:lesson_id/material-topics",
+            get(materials::topics_handler).post(materials::create_topic_handler),
+        )
+        .route(
+            "/api/material-topics/:topic_id",
+            patch(materials::update_topic_handler).delete(materials::delete_topic_handler),
+        )
+        .route("/api/courses/:lesson_id/materials", get(materials::materials_handler))
+        .route("/api/courses/:lesson_id/materials/links", post(materials::add_link_handler))
+        .route(
+            "/api/courses/:lesson_id/materials/files",
+            // Files up to MAX_FILE_SIZE (+1 MB for multipart headers and text fields).
+            post(materials::upload_file_handler).layer(DefaultBodyLimit::max(
+                usize::try_from(MAX_FILE_SIZE).unwrap_or(usize::MAX).saturating_add(1024 * 1024),
+            )),
+        )
+        .route(
+            "/api/materials/:material_id",
+            patch(materials::update_material_handler).delete(materials::delete_material_handler),
+        )
+        .route("/api/materials/:material_id/file", get(materials::download_material_handler))
 }
 
 fn plusnik_routes() -> Router<AppState> {
@@ -832,6 +916,7 @@ mod tests {
             file_use_cases: None,
             delete_homework_use_case: None,
             plusnik_service: None,
+            materials_service: None,
         }
     }
 
@@ -858,6 +943,19 @@ mod tests {
     #[test]
     fn plusnik_routes_do_not_conflict() {
         let _ = plusnik_routes();
+    }
+
+    /// The whole API in one router: building it panics on any overlapping path.
+    #[test]
+    fn all_feature_routes_do_not_conflict() {
+        async fn ok() {}
+        let _: Router<AppState> = plusnik_routes()
+            .merge(materials_routes())
+            .route("/api/lessons/:lesson_instance_id/files", post(ok))
+            .route("/api/homework/:homework_id/files/:file_id", get(ok))
+            .route("/api/homework/files/:file_id", delete(ok))
+            .route("/api/classes/schedule/week", get(ok))
+            .route("/api/teachers/schedule/week", get(ok));
     }
 
     #[test]

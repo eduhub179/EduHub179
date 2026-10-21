@@ -5,6 +5,7 @@ pub mod device_token_repository;
 pub mod event_repository;
 pub mod homework_repository;
 pub mod lesson_instance_repository;
+pub mod lesson_material_repository;
 pub mod lesson_repository;
 pub mod lesson_template_repository;
 pub mod plusnik_repository;

@@ -170,6 +170,23 @@ pub enum DomainError {
     // The student is not in the lesson's audience (its class or group).
     StudentNotInLesson,
 
+    // Course material topic with the specified ID was not found (or belongs to another course).
+    MaterialTopicNotFound,
+    // Topic name must be non-empty and at most 255 chars.
+    InvalidMaterialTopicName,
+    // The course already has a topic with this name (case-insensitive).
+    MaterialTopicAlreadyExists,
+    // Course material with the specified ID was not found.
+    MaterialNotFound,
+    // Material title must be 1-255 chars, description at most 5000 chars.
+    InvalidMaterialTitle,
+    // Link must be an http(s) URL with a host, at most 2000 chars.
+    InvalidMaterialUrl,
+    // The material is a link: there is no file to download.
+    MaterialIsNotAFile,
+    // File storage (S3/MinIO) is not configured on this server.
+    FileStorageUnavailable,
+
     // Class Settings.rs
     // Invalid OrgEmailDomain
     InvalidOrgEmailDomain,
@@ -292,6 +309,14 @@ impl fmt::Display for DomainError {
             DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
             DomainError::PlusnikSheetNotPublished => write!(f, "Plusnik sheet is not published"),
             DomainError::StudentNotInLesson => write!(f, "Student is not in this lesson"),
+            DomainError::MaterialTopicNotFound => write!(f, "Material topic not found"),
+            DomainError::InvalidMaterialTopicName => write!(f, "Invalid material topic name"),
+            DomainError::MaterialTopicAlreadyExists => write!(f, "Material topic already exists"),
+            DomainError::MaterialNotFound => write!(f, "Material not found"),
+            DomainError::InvalidMaterialTitle => write!(f, "Invalid material title"),
+            DomainError::InvalidMaterialUrl => write!(f, "Invalid material URL"),
+            DomainError::MaterialIsNotAFile => write!(f, "Material is not a file"),
+            DomainError::FileStorageUnavailable => write!(f, "File storage is not configured"),
             DomainError::InvalidOrgEmailDomain => write!(f, "Invalid ORG_EMAIL_DOMAIN"),
             DomainError::InvalidDeviceTokenFormat => write!(f, "Invalid device token format"),
             DomainError::TelegramBindingNotFound => write!(f, "Telegram binding not found"),

@@ -36,6 +36,7 @@ async fn storage() -> S3FileStorage {
 
 fn pdf(bytes: Vec<u8>) -> UploadFileRequest {
     UploadFileRequest {
+        folder: domain::ports::file_storage::StorageFolder::Homeworks,
         file_name: "листок 1.pdf".to_string(),
         mime_type: "application/pdf".to_string(),
         bytes,
