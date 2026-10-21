@@ -100,10 +100,15 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-/** Courses where the current user can manage sheets and pluses: own courses for a teacher, all for an admin. */
-export async function fetchPlusnikLessons(): Promise<PlusnikLessonDto[]> {
+/**
+ * Courses where the current user can manage sheets and pluses: own courses for a teacher,
+ * all for an admin. With `classId`, only courses of that class — whole-class courses and
+ * group courses its students attend.
+ */
+export async function fetchPlusnikLessons(classId?: string): Promise<PlusnikLessonDto[]> {
   requireTeacherOrAdminUser();
-  return apiFetch<PlusnikLessonDto[]>('/api/plusnik/lessons');
+  const query = classId ? `?class_id=${encodeURIComponent(classId)}` : '';
+  return apiFetch<PlusnikLessonDto[]>(`/api/plusnik/lessons${query}`);
 }
 
 /** Sheets of a course, newest first. Students get only published ones. */

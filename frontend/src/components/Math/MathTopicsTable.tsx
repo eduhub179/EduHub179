@@ -18,13 +18,10 @@ interface MathTopic {
 }
 
 const isMathSubject = (subject: string) => /математ|алгебр|геометр/i.test(subject);
-const normalize = (value: string) => value.trim().toLocaleLowerCase('ru-RU');
 const cleanTopicName = (name: string) => name.replace(/^тема\s*:?\s*/i, '');
 const formatDeadline = (deadline: string | null) => deadline
     ? new Date(deadline).toLocaleString('ru-RU')
     : '—';
-const getClassTargetName = (schoolClass: SchoolClassDto) =>
-    `${schoolClass.graduation_year}${schoolClass.letter}`.toLocaleLowerCase('ru-RU');
 
 const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, user}) => {
     const [topics, setTopics] = useState<MathTopic[]>([]);
@@ -62,11 +59,10 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, user}) =>
                 return [];
             }
 
-            const classTargetName = getClassTargetName(schoolClass);
-            const lessons = await fetchPlusnikLessons();
-            const mathLessons = lessons.filter((lesson) =>
-                normalize(lesson.target_name) === classTargetName && isMathSubject(lesson.subject_name),
-            );
+            // The backend picks the class's courses, including group courses (profile groups)
+            // attended by its students; here only math subjects are kept.
+            const lessons = await fetchPlusnikLessons(schoolClass.id);
+            const mathLessons = lessons.filter((lesson) => isMathSubject(lesson.subject_name));
             const sheetsByLesson = await Promise.all(mathLessons.map(async (lesson) => {
                 const sheets = await fetchPlusnikSheets(lesson.lesson_id);
                 return sheets

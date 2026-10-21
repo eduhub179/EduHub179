@@ -27,6 +27,8 @@ struct World {
     users: UserRepositoryPg,
     lesson_id: Uuid,
     group_lesson_id: Uuid,
+    class_id: Uuid,
+    other_class_id: Uuid,
     teacher: Uuid,
     other_teacher: Uuid,
     admin: Uuid,
@@ -103,6 +105,8 @@ async fn seed(pool: PgPool) -> World {
         users: UserRepositoryPg::new(pool),
         lesson_id,
         group_lesson_id,
+        class_id,
+        other_class_id,
         teacher,
         other_teacher,
         admin,
@@ -127,8 +131,8 @@ fn sheet_command(lesson_id: Uuid, status: SheetStatus, tasks: &[&str]) -> Create
 async fn teacher_lessons_lists_only_own_lessons(pool: PgPool) {
     let w = seed(pool).await;
 
-    let lessons = w.service.teacher_lessons(&w.user(w.teacher).await).await.unwrap();
-    let others = w.service.teacher_lessons(&w.user(w.other_teacher).await).await.unwrap();
+    let lessons = w.service.teacher_lessons(&w.user(w.teacher).await, None).await.unwrap();
+    let others = w.service.teacher_lessons(&w.user(w.other_teacher).await, None).await.unwrap();
 
     let names: Vec<_> = lessons.iter().map(|l| l.target_name.as_str()).collect();
     assert_eq!(names, vec!["2027б", "Спецкурс"]);
@@ -362,7 +366,7 @@ async fn admin_manages_plusnik_of_any_lesson(pool: PgPool) {
     let admin = w.user(w.admin).await;
 
     // The admin teaches nothing, yet sees every lesson of the school.
-    let lessons = w.service.teacher_lessons(&admin).await.unwrap();
+    let lessons = w.service.teacher_lessons(&admin, None).await.unwrap();
     let ids: Vec<_> = lessons.iter().map(|l| l.lesson_id).collect();
     assert!(ids.contains(&w.lesson_id) && ids.contains(&w.group_lesson_id));
     assert_eq!(ids.len(), 2);
@@ -383,7 +387,37 @@ async fn admin_manages_plusnik_of_any_lesson(pool: PgPool) {
 
     // Students still get no lesson list.
     assert_eq!(
-        w.service.teacher_lessons(&w.user(w.anna).await).await.unwrap_err(),
+        w.service.teacher_lessons(&w.user(w.anna).await, None).await.unwrap_err(),
         DomainError::InsufficientPermissions
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn lessons_filtered_by_class_include_its_students_groups(pool: PgPool) {
+    let w = seed(pool).await;
+    let teacher = w.user(w.teacher).await;
+    let admin = w.user(w.admin).await;
+    let ids = |lessons: Vec<application::use_cases::plusnik::plusnik_service::LessonSummary>| {
+        lessons.into_iter().map(|l| l.lesson_id).collect::<Vec<_>>()
+    };
+
+    // 2027б: only its whole-class lesson (nobody from it is in the group).
+    let own_class = w.service.teacher_lessons(&teacher, Some(w.class_id)).await.unwrap();
+    // 2027в: no class lessons, but its student attends the group lesson.
+    let other_class = w.service.teacher_lessons(&teacher, Some(w.other_class_id)).await.unwrap();
+    let admin_other = w.service.teacher_lessons(&admin, Some(w.other_class_id)).await.unwrap();
+    let foreign = w
+        .service
+        .teacher_lessons(&w.user(w.other_teacher).await, Some(w.class_id))
+        .await
+        .unwrap();
+
+    assert_eq!(ids(own_class), vec![w.lesson_id]);
+    assert_eq!(ids(other_class), vec![w.group_lesson_id]);
+    assert_eq!(ids(admin_other), vec![w.group_lesson_id]);
+    assert!(foreign.is_empty(), "a teacher sees only own lessons of the class");
+    assert_eq!(
+        w.service.teacher_lessons(&teacher, Some(Uuid::new_v4())).await.unwrap_err(),
+        DomainError::ClassNotFound
     );
 }

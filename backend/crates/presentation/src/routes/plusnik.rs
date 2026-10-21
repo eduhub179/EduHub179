@@ -9,7 +9,7 @@ use application::use_cases::plusnik::plusnik_service::{
     CreateSheetCommand, PlusnikService, SheetWithTasks, UpdateSheetCommand,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
@@ -247,14 +247,29 @@ fn parse_status(raw: &str) -> Result<SheetStatus, ApiError> {
 // Handlers
 // ============================================================================
 
-/// `GET /api/plusnik/lessons` — lessons the teacher teaches; for an admin, all lessons.
+#[derive(Debug, Deserialize)]
+pub struct LessonsQuery {
+    /// Only lessons of this class (its whole-class and group lessons).
+    #[serde(default)]
+    pub class_id: Option<String>,
+}
+
+/// `GET /api/plusnik/lessons[?class_id=<uuid>]` — lessons the teacher teaches; for an
+/// admin, all lessons. With `class_id`, only lessons of that class, group lessons included.
 pub async fn teacher_lessons_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<LessonsQuery>,
 ) -> Result<Json<Vec<LessonResponse>>, ApiError> {
     let (user, service) = caller(&state, &headers).await?;
+    let class_id = query
+        .class_id
+        .as_deref()
+        .filter(|raw| !raw.trim().is_empty())
+        .map(|raw| parse_id(raw.trim(), DomainError::ClassNotFound))
+        .transpose()?;
     let lessons = service
-        .teacher_lessons(&user)
+        .teacher_lessons(&user, class_id)
         .await
         .map_err(ApiError::from_plusnik_domain)?;
 

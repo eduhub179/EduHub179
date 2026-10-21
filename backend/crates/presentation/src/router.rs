@@ -144,6 +144,7 @@ impl ApiError {
             DomainError::PlusnikSheetNotFound => (StatusCode::NOT_FOUND, "Sheet not found"),
             DomainError::PlusnikTaskNotFound => (StatusCode::NOT_FOUND, "Task not found"),
             DomainError::LessonNotFound => (StatusCode::NOT_FOUND, "Lesson not found"),
+            DomainError::ClassNotFound => (StatusCode::NOT_FOUND, "Class not found"),
             DomainError::UserNotFound => (StatusCode::NOT_FOUND, "Student not found"),
             DomainError::InvalidPlusnikSheetName => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "Sheet name must be 1-255 characters")

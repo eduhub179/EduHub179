@@ -146,13 +146,44 @@ impl PlusnikService {
     /// Lessons the user can manage sheets for, sorted by subject and class/group:
     /// a teacher gets the lessons they teach, an admin every active lesson of the school.
     ///
+    /// With `class_id`, only lessons of that class: its whole-class lessons and group
+    /// lessons attended by its students (the same rule as the class schedule), so
+    /// profile groups show up on the class page too.
+    ///
     /// # Fail-safe поведение
-    /// `InsufficientPermissions` for students.
-    pub async fn teacher_lessons(&self, user: &User) -> Result<Vec<LessonSummary>, DomainError> {
-        let candidates = match user.role {
-            UserRole::Teacher => self.lessons.get_by_teacher(user.id).await?,
-            UserRole::Admin => self.all_lessons().await?,
-            UserRole::Student => return Err(DomainError::InsufficientPermissions),
+    /// `InsufficientPermissions` for students; `ClassNotFound` for an unknown class.
+    pub async fn teacher_lessons(
+        &self,
+        user: &User,
+        class_id: Option<Uuid>,
+    ) -> Result<Vec<LessonSummary>, DomainError> {
+        if user.role.is_student() {
+            return Err(DomainError::InsufficientPermissions);
+        }
+        let candidates = match class_id {
+            Some(class_id) => {
+                let class_lessons = self.class_lessons(class_id).await?;
+                match user.role {
+                    UserRole::Admin => class_lessons,
+                    _ => {
+                        let own: HashSet<Uuid> = self
+                            .lessons
+                            .get_by_teacher(user.id)
+                            .await?
+                            .into_iter()
+                            .map(|lesson| lesson.id)
+                            .collect();
+                        class_lessons
+                            .into_iter()
+                            .filter(|lesson| own.contains(&lesson.id))
+                            .collect()
+                    }
+                }
+            }
+            None => match user.role {
+                UserRole::Admin => self.all_lessons().await?,
+                _ => self.lessons.get_by_teacher(user.id).await?,
+            },
         };
         let mut lessons = Vec::new();
         for lesson in candidates {
@@ -527,6 +558,27 @@ impl PlusnikService {
         for group in self.groups.get_all().await? {
             lessons.extend(self.lessons.get_by_group(group.id).await?);
         }
+        lessons.retain(|lesson| seen.insert(lesson.id));
+        Ok(lessons)
+    }
+
+    /// Whole-class lessons of the class plus lessons of every group that has at least
+    /// one active student of the class. Deduplicated by id.
+    async fn class_lessons(&self, class_id: Uuid) -> Result<Vec<Lesson>, DomainError> {
+        self.classes.get_by_id(class_id).await?;
+
+        let mut lessons = self.lessons.get_by_class(class_id).await?;
+        let mut group_ids = HashSet::new();
+        for student in self.users.get_active_students_by_class(class_id).await? {
+            for group in self.groups.get_groups_by_student(student.id).await? {
+                group_ids.insert(group.id);
+            }
+        }
+        for group_id in group_ids {
+            lessons.extend(self.lessons.get_by_group(group_id).await?);
+        }
+
+        let mut seen = HashSet::new();
         lessons.retain(|lesson| seen.insert(lesson.id));
         Ok(lessons)
     }
