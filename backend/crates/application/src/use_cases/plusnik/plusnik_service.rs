@@ -143,16 +143,19 @@ impl PlusnikService {
     // Lessons and sheets
     // ========================================================================
 
-    /// Lessons the teacher teaches, sorted by subject and class/group.
+    /// Lessons the user can manage sheets for, sorted by subject and class/group:
+    /// a teacher gets the lessons they teach, an admin every active lesson of the school.
     ///
     /// # Fail-safe поведение
-    /// `InsufficientPermissions` for non-teachers.
+    /// `InsufficientPermissions` for students.
     pub async fn teacher_lessons(&self, user: &User) -> Result<Vec<LessonSummary>, DomainError> {
-        if !user.role.is_teacher() {
-            return Err(DomainError::InsufficientPermissions);
-        }
+        let candidates = match user.role {
+            UserRole::Teacher => self.lessons.get_by_teacher(user.id).await?,
+            UserRole::Admin => self.all_lessons().await?,
+            UserRole::Student => return Err(DomainError::InsufficientPermissions),
+        };
         let mut lessons = Vec::new();
-        for lesson in self.lessons.get_by_teacher(user.id).await? {
+        for lesson in candidates {
             if lesson.is_active {
                 lessons.push(self.lesson_summary(&lesson).await?);
             }
@@ -512,6 +515,21 @@ impl PlusnikService {
     // ========================================================================
     // Helpers
     // ========================================================================
+
+    /// Lessons of all active classes and all groups (the repository has no "get all";
+    /// every lesson belongs to exactly one class or group). Deduplicated by id.
+    async fn all_lessons(&self) -> Result<Vec<Lesson>, DomainError> {
+        let mut seen = HashSet::new();
+        let mut lessons = Vec::new();
+        for class in self.classes.get_all_active().await? {
+            lessons.extend(self.lessons.get_by_class(class.id).await?);
+        }
+        for group in self.groups.get_all().await? {
+            lessons.extend(self.lessons.get_by_group(group.id).await?);
+        }
+        lessons.retain(|lesson| seen.insert(lesson.id));
+        Ok(lessons)
+    }
 
     /// Admin, or a teacher assigned to the lesson.
     async fn can_manage(&self, user: &User, lesson_id: Uuid) -> Result<bool, DomainError> {

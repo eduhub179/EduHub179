@@ -247,7 +247,7 @@ fn parse_status(raw: &str) -> Result<SheetStatus, ApiError> {
 // Handlers
 // ============================================================================
 
-/// `GET /api/plusnik/lessons` — lessons the teacher teaches.
+/// `GET /api/plusnik/lessons` — lessons the teacher teaches; for an admin, all lessons.
 pub async fn teacher_lessons_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
