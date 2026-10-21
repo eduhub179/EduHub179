@@ -90,7 +90,7 @@ async fn require_file_editor(state: &AppState, headers: &HeaderMap) -> Result<Ca
     Ok(caller)
 }
 
-fn multipart_error(error: MultipartError) -> ApiError {
+pub(crate) fn multipart_error(error: MultipartError) -> ApiError {
     ApiError {
         // 413 when the body limit is hit, 400 for malformed multipart.
         status: error.status(),
@@ -166,29 +166,40 @@ pub async fn download_homework_file_handler(
         .await
         .map_err(ApiError::from_homework_domain)?;
 
-    let inline = INLINE_MIME_TYPES.contains(&downloaded.file.mime_type.as_str());
-    let content_type = HeaderValue::from_str(&downloaded.file.mime_type)
-        .unwrap_or(HeaderValue::from_static("application/octet-stream"));
-    let disposition = content_disposition(&downloaded.file.file_name, inline);
+    Ok(file_response(
+        downloaded.bytes,
+        &downloaded.file.file_name,
+        &downloaded.file.mime_type,
+    ))
+}
 
-    let mut response = Response::new(Body::from(downloaded.bytes));
+/// A stored file as an HTTP response, shared by homework files and course materials.
+///
+/// - PDF and images open in the browser, everything else downloads as an attachment;
+/// - `nosniff`, and `CSP: sandbox` for attachments: an uploaded HTML page cannot run
+///   scripts in the API origin;
+/// - `Cache-Control: private, immutable`: a stored file never changes (a new upload is a
+///   new key and a new id), so the browser keeps it for a year and does not ask again.
+pub(crate) fn file_response(bytes: Vec<u8>, file_name: &str, mime_type: &str) -> Response {
+    let inline = INLINE_MIME_TYPES.contains(&mime_type);
+    let content_type =
+        HeaderValue::from_str(mime_type).unwrap_or(HeaderValue::from_static("application/octet-stream"));
+
+    let mut response = Response::new(Body::from(bytes));
     let response_headers = response.headers_mut();
     response_headers.insert(header::CONTENT_TYPE, content_type);
-    response_headers.insert(header::CONTENT_DISPOSITION, disposition);
+    response_headers.insert(header::CONTENT_DISPOSITION, content_disposition(file_name, inline));
+    response_headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     response_headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, max-age=31536000, immutable"),
     );
     if !inline {
-        // Even if an attachment is opened anyway, it cannot run scripts in the API origin.
         // Not for inline types: `sandbox` blocks the browser's built-in PDF viewer,
         // and PDFs/images cannot run page scripts anyway.
-        response_headers.insert(
-            header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static("sandbox"),
-        );
+        response_headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("sandbox"));
     }
-    Ok(response)
+    response
 }
 
 /// `DELETE /api/homework/files/:file_id` — removes the file from the homework and storage

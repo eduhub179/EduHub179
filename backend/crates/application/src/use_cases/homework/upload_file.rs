@@ -89,6 +89,7 @@ impl UploadHomeworkFileUseCase {
         cmd.validate()?;
 
         let request = UploadFileRequest {
+            folder: domain::ports::file_storage::StorageFolder::Homeworks,
             file_name: cmd.file_name.trim().to_string(),
             mime_type: cmd.mime_type.trim().to_string(),
             bytes: cmd.bytes,

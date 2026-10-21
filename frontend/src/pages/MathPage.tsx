@@ -8,6 +8,7 @@ import AdminMathView from '../components/Math/AdminMathView';
 import GuestMathView from '../components/Math/GuestMathView';
 import type {ClassOption} from '../components/ClassTable';
 import MathTopicsTable from '../components/Math/MathTopicsTable';
+import CourseMaterialsLinks from '../components/Materials/CourseMaterialsLinks';
 import Header from '../components/Header';
 import '../css/MathPage.css';
 
@@ -127,6 +128,13 @@ const MathPage: React.FC = () => {
                     <MathTopicsTable
                         schoolClass={selectedClass}
                         user={user}
+                    />
+                )}
+                {schoolClass && selectedClass && (
+                    <CourseMaterialsLinks
+                        schoolClass={selectedClass}
+                        user={user}
+                        filter={(course) => /математ|алгебр|геометр/i.test(course.subject_name)}
                     />
                 )}
             </main>

@@ -1,6 +1,8 @@
 pub mod auth;
 pub mod device_tokens;
 pub mod homework;
+pub mod lesson_access;
+pub mod materials;
 pub mod notifications;
 pub mod plusnik;
 pub mod schedule;

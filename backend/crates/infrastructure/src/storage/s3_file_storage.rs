@@ -109,7 +109,7 @@ impl FileStorage for S3FileStorage {
             return Err(DomainError::InvalidHomeworkFileFormat);
         }
 
-        let storage_key = object_key(file_name);
+        let storage_key = object_key(request.folder, file_name);
         let size_bytes = i64::try_from(request.bytes.len()).unwrap_or(i64::MAX);
 
         self.client

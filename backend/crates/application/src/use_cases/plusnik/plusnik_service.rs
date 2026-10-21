@@ -32,9 +32,11 @@ use domain::{
         student_group_repository::StudentGroupRepository,
         subject_repository::SubjectRepository, user_repository::UserRepository,
     },
-    value_objects::{lesson_target::LessonTarget, role::UserRole, sheet_status::SheetStatus},
+    value_objects::{role::UserRole, sheet_status::SheetStatus},
 };
 use uuid::Uuid;
+
+use crate::use_cases::lesson_access::LessonAccess;
 
 /// A lesson as shown in a picker: "Алгебра — 2027б".
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,10 +116,9 @@ pub struct GrantedPlus {
 pub struct PlusnikService {
     plusnik: Arc<dyn PlusnikRepository>,
     lessons: Arc<dyn LessonRepository>,
-    users: Arc<dyn UserRepository>,
     groups: Arc<dyn StudentGroupRepository>,
     subjects: Arc<dyn SubjectRepository>,
-    classes: Arc<dyn ClassRepository>,
+    access: LessonAccess,
 }
 
 impl PlusnikService {
@@ -130,12 +131,17 @@ impl PlusnikService {
         classes: Arc<dyn ClassRepository>,
     ) -> Self {
         Self {
+            access: LessonAccess::new(
+                lessons.clone(),
+                users,
+                groups.clone(),
+                subjects.clone(),
+                classes,
+            ),
             plusnik,
             lessons,
-            users,
             groups,
             subjects,
-            classes,
         }
     }
 
@@ -547,89 +553,30 @@ impl PlusnikService {
     // Helpers
     // ========================================================================
 
-    /// Lessons of all active classes and all groups (the repository has no "get all";
-    /// every lesson belongs to exactly one class or group). Deduplicated by id.
+    // Access rules are shared with other course features: see `LessonAccess`.
+
     async fn all_lessons(&self) -> Result<Vec<Lesson>, DomainError> {
-        let mut seen = HashSet::new();
-        let mut lessons = Vec::new();
-        for class in self.classes.get_all_active().await? {
-            lessons.extend(self.lessons.get_by_class(class.id).await?);
-        }
-        for group in self.groups.get_all().await? {
-            lessons.extend(self.lessons.get_by_group(group.id).await?);
-        }
-        lessons.retain(|lesson| seen.insert(lesson.id));
-        Ok(lessons)
+        self.access.all_lessons().await
     }
 
-    /// Whole-class lessons of the class plus lessons of every group that has at least
-    /// one active student of the class. Deduplicated by id.
     async fn class_lessons(&self, class_id: Uuid) -> Result<Vec<Lesson>, DomainError> {
-        self.classes.get_by_id(class_id).await?;
-
-        let mut lessons = self.lessons.get_by_class(class_id).await?;
-        let mut group_ids = HashSet::new();
-        for student in self.users.get_active_students_by_class(class_id).await? {
-            for group in self.groups.get_groups_by_student(student.id).await? {
-                group_ids.insert(group.id);
-            }
-        }
-        for group_id in group_ids {
-            lessons.extend(self.lessons.get_by_group(group_id).await?);
-        }
-
-        let mut seen = HashSet::new();
-        lessons.retain(|lesson| seen.insert(lesson.id));
-        Ok(lessons)
+        self.access.class_lessons(class_id).await
     }
 
-    /// Admin, or a teacher assigned to the lesson.
     async fn can_manage(&self, user: &User, lesson_id: Uuid) -> Result<bool, DomainError> {
-        match user.role {
-            UserRole::Admin => Ok(true),
-            UserRole::Teacher => Ok(self.lessons.get_teacher_ids(lesson_id).await?.contains(&user.id)),
-            UserRole::Student => Ok(false),
-        }
+        self.access.can_manage(user, lesson_id).await
     }
 
     async fn require_manager(&self, user: &User, lesson_id: Uuid) -> Result<(), DomainError> {
-        if self.can_manage(user, lesson_id).await? {
-            Ok(())
-        } else {
-            Err(DomainError::InsufficientPermissions)
-        }
+        self.access.require_manager(user, lesson_id).await
     }
 
-    /// Is the student in the lesson's class or group?
     async fn is_in_audience(&self, student_id: Uuid, lesson: &Lesson) -> Result<bool, DomainError> {
-        match lesson.target {
-            LessonTarget::Class(class_id) => match self.users.get_by_id(student_id).await {
-                Ok(student) => Ok(student.role.is_student()
-                    && student.is_active
-                    && student.class_id == Some(class_id)),
-                Err(DomainError::UserNotFound) => Ok(false),
-                Err(error) => Err(error),
-            },
-            LessonTarget::Group(group_id) => self.groups.has_member(group_id, student_id).await,
-        }
+        self.access.is_in_audience(student_id, lesson).await
     }
 
-    /// Active students of the lesson's class or group.
     async fn lesson_students(&self, lesson: &Lesson) -> Result<Vec<User>, DomainError> {
-        match lesson.target {
-            LessonTarget::Class(class_id) => self.users.get_active_students_by_class(class_id).await,
-            LessonTarget::Group(group_id) => {
-                let mut students = Vec::new();
-                for student_id in self.groups.get_member_ids(group_id).await? {
-                    match self.users.get_by_id(student_id).await {
-                        Ok(user) if user.is_active && user.role.is_student() => students.push(user),
-                        Ok(_) | Err(DomainError::UserNotFound) => {}
-                        Err(error) => return Err(error),
-                    }
-                }
-                Ok(students)
-            }
-        }
+        self.access.lesson_students(lesson).await
     }
 
     async fn active_plus(
@@ -647,15 +594,11 @@ impl PlusnikService {
     }
 
     async fn lesson_summary(&self, lesson: &Lesson) -> Result<LessonSummary, DomainError> {
-        let subject_name = self.subjects.get_by_id(lesson.subject_id).await?.name;
-        let target_name = match lesson.target {
-            LessonTarget::Class(class_id) => self.classes.get_by_id(class_id).await?.full_name(),
-            LessonTarget::Group(group_id) => self.groups.get_by_id(group_id).await?.name,
-        };
+        let names = self.access.names(lesson).await?;
         Ok(LessonSummary {
             lesson_id: lesson.id,
-            subject_name,
-            target_name,
+            subject_name: names.subject_name,
+            target_name: names.target_name,
         })
     }
 }

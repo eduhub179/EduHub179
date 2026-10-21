@@ -34,7 +34,7 @@ impl FileStorage for InMemoryFileStorage {
             return Err(DomainError::InvalidHomeworkFileFormat);
         }
 
-        let storage_key = object_key(file_name);
+        let storage_key = object_key(request.folder, file_name);
         let size_bytes = i64::try_from(request.bytes.len()).unwrap_or(i64::MAX);
 
         self.objects
@@ -78,6 +78,7 @@ mod tests {
 
     fn request(file_name: &str) -> UploadFileRequest {
         UploadFileRequest {
+            folder: domain::ports::file_storage::StorageFolder::Homeworks,
             file_name: file_name.to_string(),
             mime_type: "application/pdf".to_string(),
             bytes: vec![1, 2, 3],

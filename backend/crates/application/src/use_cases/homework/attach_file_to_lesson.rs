@@ -72,6 +72,7 @@ impl AttachFileToLessonUseCase {
         let stored = self
             .storage
             .upload(UploadFileRequest {
+                folder: domain::ports::file_storage::StorageFolder::Homeworks,
                 file_name: cmd.file.file_name.trim().to_string(),
                 mime_type: cmd.file.mime_type.trim().to_string(),
                 bytes: cmd.file.bytes,

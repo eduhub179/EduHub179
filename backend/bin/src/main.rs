@@ -10,6 +10,8 @@ use application::use_cases::{
         download_file::DownloadHomeworkFileUseCase,
         update_homework_text::UpdateHomeworkTextUseCase,
     },
+    lesson_access::LessonAccess,
+    materials::MaterialsService,
     plusnik::PlusnikService,
     schedule::ScheduleService,
 };
@@ -27,7 +29,8 @@ use infrastructure::{
     config::Config,
     postgres::{
         create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg,
-        HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonRepositoryPg, PlusnikRepositoryPg,
+        HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonMaterialRepositoryPg,
+        LessonRepositoryPg, PlusnikRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
         SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
         WebSessionRepositoryPg,
@@ -170,6 +173,19 @@ async fn main() {
         Arc::new(ClassRepositoryPg::new(pool.clone())),
     ));
 
+    // Links work without S3; file uploads/downloads answer 503 then.
+    let materials_service = Arc::new(MaterialsService::new(
+        Arc::new(LessonMaterialRepositoryPg::new(pool.clone())),
+        LessonAccess::new(
+            Arc::new(LessonRepositoryPg::new(pool.clone())),
+            Arc::new(UserRepositoryPg::new(pool.clone())),
+            Arc::new(StudentGroupRepositoryPg::new(pool.clone())),
+            Arc::new(SubjectRepositoryPg::new(pool.clone())),
+            Arc::new(ClassRepositoryPg::new(pool.clone())),
+        ),
+        file_storage_for_cleanup.clone(),
+    ));
+
     let app = create_app_with_auth_and_schedule(
         login_use_case,
         schedule_service,
@@ -187,6 +203,7 @@ async fn main() {
         file_use_cases,
         Arc::new(DeleteHomeworkUseCase::new(homeworks, file_storage_for_cleanup)),
         plusnik_service,
+        materials_service,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
