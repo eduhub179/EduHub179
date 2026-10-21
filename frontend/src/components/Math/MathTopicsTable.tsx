@@ -1,168 +1,148 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
-
-interface TopicFile {
-    id: string;
-    name: string;
-    url: string;
-}
-
-const topics = [
-    { id: 'algebra', title: 'Алгебра' },
-    { id: 'geometry', title: 'Геометрия' },
-    { id: 'other', title: 'Другие материалы' },
-];
+import {fetchMyPlusnikProgress, fetchPlusnikLessons, fetchPlusnikSheets} from '../../api/plusnikApi';
+import type {SchoolClassDto} from '../../api/classApi';
+import type {User} from '../../auth/authService';
 
 interface MathTopicsTableProps {
-    isAdmin: boolean;
+    schoolClass: SchoolClassDto;
+    user: User | null;
 }
 
-const MathTopicsTable: React.FC<MathTopicsTableProps> = ({ isAdmin }) => {
-    const [filesByTopic, setFilesByTopic] = useState<Record<string, TopicFile[]>>({});
-    const [uploadingTopic, setUploadingTopic] = useState<string | null>(null);
-    const [error, setError] = useState('');
-    const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
+interface MathTopic {
+    id: string;
+    name: string;
+    subject: string;
+    deadline: string | null;
+    taskCount: number | null;
+}
 
-    const loadTopicFiles = useCallback(async (topicId: string): Promise<TopicFile[]> => {
-        const response = await fetch(`/api/math/files?topic=${encodeURIComponent(topicId)}`);
-        if (!response.ok) {
-            throw new Error('Не удалось загрузить список файлов.');
-        }
-        return response.json() as Promise<TopicFile[]>;
-    }, []);
+const isMathSubject = (subject: string) => /математ|алгебр|геометр/i.test(subject);
+const normalize = (value: string) => value.trim().toLocaleLowerCase('ru-RU');
+const cleanTopicName = (name: string) => name.replace(/^тема\s*:?\s*/i, '');
+const formatDeadline = (deadline: string | null) => deadline
+    ? new Date(deadline).toLocaleString('ru-RU')
+    : '—';
+const getClassTargetName = (schoolClass: SchoolClassDto) =>
+    `${schoolClass.graduation_year}${schoolClass.letter}`.toLocaleLowerCase('ru-RU');
+
+const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, user}) => {
+    const [topics, setTopics] = useState<MathTopic[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         let isCurrent = true;
-        Promise.all(topics.map(async (topic) => [topic.id, await loadTopicFiles(topic.id)] as const))
-            .then((entries) => {
+        setIsLoading(true);
+        setError(null);
+
+        const loadTopics = async (): Promise<MathTopic[]> => {
+            if (!user?.id) {
+                return [];
+            }
+
+            if (user.role === 'student') {
+                if (user.classId !== schoolClass.id) {
+                    return [];
+                }
+
+                const progress = await fetchMyPlusnikProgress();
+                return progress
+                    .filter(({subject_name}) => isMathSubject(subject_name))
+                    .map(({sheet, subject_name, total_tasks}) => ({
+                        id: sheet.id,
+                        name: cleanTopicName(sheet.name),
+                        subject: subject_name,
+                        deadline: sheet.deadline,
+                        taskCount: total_tasks,
+                    }));
+            }
+
+            if (user.role !== 'teacher' && user.role !== 'admin') {
+                return [];
+            }
+
+            const classTargetName = getClassTargetName(schoolClass);
+            const lessons = await fetchPlusnikLessons();
+            const mathLessons = lessons.filter((lesson) =>
+                normalize(lesson.target_name) === classTargetName && isMathSubject(lesson.subject_name),
+            );
+            const sheetsByLesson = await Promise.all(mathLessons.map(async (lesson) => {
+                const sheets = await fetchPlusnikSheets(lesson.lesson_id);
+                return sheets
+                    .filter((sheet) => sheet.status !== 'archived')
+                    .map((sheet) => ({
+                        id: sheet.id,
+                        name: cleanTopicName(sheet.name),
+                        subject: lesson.subject_name,
+                        deadline: sheet.deadline,
+                        taskCount: sheet.tasks.length,
+                    }));
+            }));
+
+            return sheetsByLesson.flat();
+        };
+
+        void loadTopics()
+            .then((loadedTopics) => {
                 if (isCurrent) {
-                    setFilesByTopic(Object.fromEntries(entries));
-                    setError('');
+                    setTopics(loadedTopics);
                 }
             })
             .catch((loadError: unknown) => {
                 if (isCurrent) {
                     setError(loadError instanceof Error
                         ? loadError.message
-                        : 'Не удалось загрузить список файлов.');
+                        : 'Не удалось загрузить темы по математике.');
+                }
+            })
+            .finally(() => {
+                if (isCurrent) {
+                    setIsLoading(false);
                 }
             });
 
         return () => {
             isCurrent = false;
         };
-    }, [loadTopicFiles]);
-
-    const uploadFiles = async (topicId: string, selectedFiles: FileList | null) => {
-        if (!selectedFiles?.length) {
-            return;
-        }
-
-        setUploadingTopic(topicId);
-        setError('');
-        try {
-            for (const file of Array.from(selectedFiles)) {
-                const params = new URLSearchParams({ filename: file.name });
-                const response = await fetch(
-                    `/api/math/files/${encodeURIComponent(topicId)}?${params.toString()}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-                        body: file,
-                    },
-                );
-                if (!response.ok) {
-                    const result = await response.json() as { error?: string };
-                    throw new Error(result.error || `Не удалось загрузить файл «${file.name}».`);
-                }
-            }
-            const files = await loadTopicFiles(topicId);
-            setFilesByTopic((current) => ({ ...current, [topicId]: files }));
-        } catch (uploadError) {
-            setError(uploadError instanceof Error
-                ? uploadError.message
-                : 'Не удалось загрузить файл.');
-        } finally {
-            setUploadingTopic(null);
-        }
-    };
+    }, [schoolClass, user]);
 
     return (
-        <section className="math-topics" aria-label="Темы и загруженные файлы">
-            {error && <p className="math-topics__error" role="alert">{error}</p>}
-            <div className="math-admin-table-wrap">
-                <table className="math-admin-table">
-                    <thead>
+        <section className="math-topics" aria-label={`Темы по математике для класса ${schoolClass.name}`}>
+            <h2>Темы класса {schoolClass.name}</h2>
+            {isLoading ? (
+                <p className="math-content__description">Загрузка тем...</p>
+            ) : error ? (
+                <p className="math-topics__error" role="alert">{error}</p>
+            ) : !user?.id ? (
+                <p className="math-admin-table__empty">Войдите в аккаунт, чтобы увидеть темы.</p>
+            ) : user.role === 'student' && user.classId !== schoolClass.id ? (
+                <p className="math-admin-table__empty">Темы доступны только для вашего класса.</p>
+            ) : topics.length ? (
+                <div className="math-admin-table-wrap">
+                    <table className="math-admin-table">
+                        <thead>
                         <tr>
                             <th scope="col">Тема</th>
-                            <th scope="col">Загруженные файлы</th>
-                            {isAdmin && (
-                                <th scope="col">
-                                    <span className="visually-hidden">Добавить</span>+
-                                </th>
-                            )}
+                            <th className="math-admin-table__subject" scope="col" title="Предмет">Пр.</th>
+                            <th scope="col">Дедлайн</th>
+                            <th scope="col">Задач</th>
                             <th scope="col">Плюсник</th>
                         </tr>
-                    </thead>
-                    <tbody>
+                        </thead>
+                        <tbody>
                         {topics.map((topic) => (
                             <tr key={topic.id}>
-                                <th scope="row">{topic.title}</th>
-                                <td>
-                                    <div className="math-admin-table__file-cell">
-                                        {filesByTopic[topic.id]?.length ? (
-                                            <ul className="math-admin-table__files">
-                                                {filesByTopic[topic.id].map((file) => (
-                                                    <li key={file.id}>
-                                                        <a href={file.url} download>{file.name}</a>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        ) : (
-                                            <span className="math-admin-table__empty">
-                                                Файлы пока не загружены
-                                            </span>
-                                        )}
-                                        {isAdmin && (
-                                            <>
-                                                <button
-                                                    className="math-admin-table__upload"
-                                                    disabled={uploadingTopic === topic.id}
-                                                    onClick={() => fileInputs.current[topic.id]?.click()}
-                                                    type="button"
-                                                >
-                                                    {uploadingTopic === topic.id
-                                                        ? 'Загрузка...'
-                                                        : 'Загрузить файл'}
-                                                </button>
-                                                <input
-                                                    hidden
-                                                    multiple
-                                                    onChange={(event) => {
-                                                        void uploadFiles(topic.id, event.currentTarget.files);
-                                                        event.currentTarget.value = '';
-                                                    }}
-                                                    ref={(element) => {
-                                                        fileInputs.current[topic.id] = element;
-                                                    }}
-                                                    type="file"
-                                                />
-                                            </>
-                                        )}
-                                    </div>
+                                <th scope="row">{topic.name}</th>
+                                <td
+                                    className="math-admin-table__subject"
+                                    aria-label={topic.subject}
+                                    title={topic.subject}
+                                >
+                                    {topic.subject.charAt(0).toLocaleUpperCase('ru-RU')}
                                 </td>
-                                {isAdmin && (
-                                    <td>
-                                        <a
-                                            aria-label={`Добавить файл: ${topic.title}`}
-                                            className="math-admin-table__add"
-                                            href="#"
-                                            onClick={(event) => event.preventDefault()}
-                                        >
-                                            +
-                                        </a>
-                                    </td>
-                                )}
+                                <td>{formatDeadline(topic.deadline)}</td>
+                                <td>{topic.taskCount ?? '—'}</td>
                                 <td>
                                     <Link
                                         className="math-admin-table__plusnik-link"
@@ -173,9 +153,12 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({ isAdmin }) => {
                                 </td>
                             </tr>
                         ))}
-                    </tbody>
-                </table>
-            </div>
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <p className="math-admin-table__empty">Темы для этого класса пока не добавлены.</p>
+            )}
         </section>
     );
 };

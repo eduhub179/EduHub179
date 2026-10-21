@@ -96,6 +96,15 @@
     font-weight: 600;
 }
 
+.math-admin-table__subject {
+    width: 42px;
+    min-width: 42px;
+    padding-right: 6px !important;
+    padding-left: 6px !important;
+    text-align: center;
+    white-space: nowrap;
+}
+
 .math-admin-table__files {
     padding-left: 18px;
 }

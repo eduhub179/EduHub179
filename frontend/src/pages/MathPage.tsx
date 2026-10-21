@@ -1,8 +1,8 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import {useNavigate, useParams} from 'react-router-dom';
 import {fetchSchoolClasses} from '../api/classApi';
-import type {SchoolClassDto} from '../api/classApi';
-import { useAuth } from '../auth/AuthProvider';
+import type {SchoolClassDto} from '../api';
+import {useAuth} from '../auth/AuthProvider';
 import AuthenticatedMathView from '../components/Math/AuthenticatedMathView';
 import AdminMathView from '../components/Math/AdminMathView';
 import GuestMathView from '../components/Math/GuestMathView';
@@ -22,8 +22,8 @@ const getClassLabel = (schoolClass: SchoolClassDto) => {
 };
 
 const MathPage: React.FC = () => {
-    const { user } = useAuth();
-    const { schoolClass: routeClass } = useParams<{ schoolClass: string }>();
+    const {user} = useAuth();
+    const {schoolClass: routeClass} = useParams<{ schoolClass: string }>();
     const navigate = useNavigate();
     const [classes, setClasses] = useState<SchoolClassDto[] | null>(null);
     const [classLoadError, setClassLoadError] = useState<string | null>(null);
@@ -115,16 +115,19 @@ const MathPage: React.FC = () => {
             user={user}
         />
     ) : (
-        <GuestMathView classOptions={classOptions} onSelectClass={selectClass} schoolClass={schoolClass} />
+        <GuestMathView classOptions={classOptions} onSelectClass={selectClass} schoolClass={schoolClass}/>
     );
 
     return (
         <>
-            <Header />
+            <Header/>
             <main className="math-page">
                 {mathView}
-                {schoolClass && (
-                    <MathTopicsTable isAdmin={user?.name.trim().toLowerCase() === 'admin'} />
+                {schoolClass && selectedClass && (
+                    <MathTopicsTable
+                        schoolClass={selectedClass}
+                        user={user}
+                    />
                 )}
             </main>
         </>

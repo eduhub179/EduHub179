@@ -54,9 +54,41 @@
     font-weight: 600;
 }
 
+.plusnik-page__cell {
+    text-align: center;
+}
+
+.plusnik-page__solved {
+    color: var(--color-text-muted);
+}
+
+.plusnik-page__solved.is-solved {
+    color: var(--color-accent);
+    font-size: 18px;
+    font-weight: 700;
+}
+
 .plusnik-page__empty {
     color: var(--color-text-muted);
     text-align: center;
+}
+
+.plusnik-page__message,
+.plusnik-page__error,
+.plusnik-page__progress {
+    color: var(--color-text-muted);
+}
+
+.plusnik-page__error {
+    color: #b42318;
+}
+
+.plusnik-page__progress {
+    max-width: 520px;
+}
+
+.plusnik-page__progress progress {
+    width: 100%;
 }
 
 @media (max-width: 600px) {
