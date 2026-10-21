@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import type { Credentials } from '../auth/authService';
 import Header from '../components/Header';
@@ -12,6 +12,8 @@ import '../css/AuthPage.css';
 const LoginPage: React.FC = () => {
     const { login } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
+    const sessionExpired = (location.state as { sessionExpired?: boolean } | null)?.sessionExpired === true;
     const [error, setError] = useState('');
 
     const handleLogin = async (credentials: Credentials) => {
@@ -29,6 +31,11 @@ const LoginPage: React.FC = () => {
                     <p className="register-card__description">
                         Войдите в свой аккаунт EduHub.
                     </p>
+                    {sessionExpired && !error && (
+                        <p className="register-card__error" role="status">
+                            Сессия истекла. Войдите снова.
+                        </p>
+                    )}
                     {error && <p className="register-card__error" role="alert">{error}</p>}
                     <LoginForm onError={setError} onLogin={handleLogin} />
                     <p className="register-card__signin">

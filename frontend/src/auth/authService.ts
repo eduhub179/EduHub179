@@ -31,6 +31,8 @@ export interface AuthService {
     login(credentials: Credentials): Promise<User>;
     updateSchoolClass(schoolClass: string): Promise<User>;
     logout(): Promise<void>;
+    /** Drops the locally stored user without calling the backend (the session is already gone). */
+    forgetCurrentUser(): void;
 }
 
 const CURRENT_USER_KEY = 'eduhub.demo.currentUser';
@@ -108,6 +110,10 @@ class LocalStorageAuthService implements AuthService {
         } finally {
             localStorage.removeItem(CURRENT_USER_KEY);
         }
+    }
+
+    forgetCurrentUser(): void {
+        localStorage.removeItem(CURRENT_USER_KEY);
     }
 
     private parseUser(value: string): User {
