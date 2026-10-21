@@ -20,7 +20,7 @@ use domain::{entities::homework::HomeworkFile, errors::DomainError};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::router::{require_authenticated_user, require_caller, ApiError, AppState, Caller, FileUseCases};
+use crate::router::{can_edit_homework, require_authenticated_user, require_caller, ApiError, AppState, Caller, FileUseCases};
 
 /// Multipart field with the file.
 const FILE_FIELD: &str = "file";
@@ -81,10 +81,10 @@ fn parse_id(raw: &str, not_found: DomainError) -> Result<Uuid, ApiError> {
     Uuid::parse_str(raw).map_err(|_| ApiError::from_homework_domain(not_found))
 }
 
-/// Teachers and the agent manage homework files, the same rule as for homework text.
+/// Teachers, admins and the agent manage homework files, the same rule as for homework text.
 async fn require_file_editor(state: &AppState, headers: &HeaderMap) -> Result<Caller, ApiError> {
     let caller = require_caller(state, headers).await?;
-    if !caller.user.is_teacher() && !caller.is_agent {
+    if !can_edit_homework(&caller.user, caller.is_agent) {
         return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
     }
     Ok(caller)

@@ -1,8 +1,9 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {useLocation} from 'react-router-dom';
 import {attachLessonFile, deleteHomework, deleteHomeworkFile, homeworkFileUrl} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import {SCHEDULE_CHANGED_EVENT} from '../hooks/useSchedule';
+import FileDropDialog from './FileDropDialog';
 import type {HomeworkFile, ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/MainContent.css';
 
@@ -48,9 +49,9 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
     const {user} = useAuth();
-    const canAttachFiles = user?.role === 'teacher';
+    const canAttachFiles = user?.role === 'teacher' || user?.role === 'admin';
 
     let fileName = path.split('/').pop();
     if (path == "/main")
@@ -132,11 +133,10 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
         }
     };
 
-    const handleFilesChosen = async (fileList: FileList | null) => {
-        if (!selectedLesson || !fileList?.length) {
+    const handleFilesChosen = async (files: File[]) => {
+        if (!selectedLesson || !files.length) {
             return;
         }
-        const files = Array.from(fileList);
         const tooLarge = files.find((file) => file.size > MAX_FILE_SIZE_BYTES);
         if (tooLarge) {
             setUploadError(`Файл «${tooLarge.name}» больше 100 МБ.`);
@@ -172,9 +172,6 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
             setUploadError(error instanceof Error ? error.message : 'Не удалось загрузить файл.');
         } finally {
             setIsUploading(false);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
             // Schedule lists reload to show the homework badge.
             window.dispatchEvent(new Event(SCHEDULE_CHANGED_EVENT));
         }
@@ -206,18 +203,19 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
 
                     {canAttachFiles && (
                         <div className="homework-view__actions">
-                            <input
-                                ref={fileInputRef}
-                                type="file"
+                            <FileDropDialog
+                                open={isFileDialogOpen}
+                                title="Добавить файлы к ДЗ"
                                 multiple
-                                hidden
-                                onChange={(event) => void handleFilesChosen(event.currentTarget.files)}
+                                hint="PDF, фото и другие файлы, каждый до 100 МБ"
+                                onClose={() => setIsFileDialogOpen(false)}
+                                onFiles={(files) => void handleFilesChosen(files)}
                             />
                             <button
                                 className="homework-view__attach"
                                 type="button"
                                 disabled={isUploading || isDeleting}
-                                onClick={() => fileInputRef.current?.click()}
+                                onClick={() => setIsFileDialogOpen(true)}
                             >
                                 {isUploading ? 'Загрузка…' : 'Добавить файл'}
                             </button>
