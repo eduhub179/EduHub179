@@ -4,8 +4,12 @@ declare global {
   }
 }
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
+/**
+ * API origin. Default: the site's own origin (relative /api/... URLs): in development
+ * Vite proxies them to the backend (vite.config.ts), in production a reverse proxy does.
+ * Set VITE_API_BASE_URL only if the API lives on another host.
+ */
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 /** Absolute URL of an API path, for links the browser opens itself (e.g. file downloads). */
 export function apiUrl(path: string): string {

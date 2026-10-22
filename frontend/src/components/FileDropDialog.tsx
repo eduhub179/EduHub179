@@ -21,6 +21,7 @@ interface FileDropDialogProps {
  */
 const FileDropDialog: React.FC<FileDropDialogProps> = ({open, title, multiple = false, hint, onClose, onFiles}) => {
     const inputRef = useRef<HTMLInputElement>(null);
+    const cameraRef = useRef<HTMLInputElement>(null);
     const zoneRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const titleId = useId();
@@ -64,6 +65,8 @@ const FileDropDialog: React.FC<FileDropDialogProps> = ({open, title, multiple = 
     };
 
     const openPicker = () => inputRef.current?.click();
+    // Phones and tablets: `capture` opens the camera directly instead of the gallery.
+    const hasCamera = window.matchMedia('(pointer: coarse)').matches;
 
     // Portal to <body>: always above every page modal, independent of parent styles.
     return createPortal(
@@ -119,7 +122,28 @@ const FileDropDialog: React.FC<FileDropDialogProps> = ({open, title, multiple = 
                     <strong>{isDragging ? 'Отпустите, чтобы добавить' : multiple ? 'Перетащите файлы сюда' : 'Перетащите файл сюда'}</strong>
                     <span>или нажмите, чтобы выбрать на компьютере</span>
                 </div>
+                {hasCamera && (
+                    <button
+                        type="button"
+                        className="file-drop-dialog__camera"
+                        onClick={() => cameraRef.current?.click()}
+                    >
+                        <span aria-hidden="true">📷</span> Сфотографировать
+                    </button>
+                )}
                 {hint && <p className="file-drop-dialog__hint">{hint}</p>}
+
+                <input
+                    ref={cameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    hidden
+                    onChange={(event) => {
+                        submit(event.currentTarget.files);
+                        event.currentTarget.value = '';
+                    }}
+                />
 
                 <input
                     ref={inputRef}
