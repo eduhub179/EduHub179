@@ -22,6 +22,8 @@ use uuid::Uuid;
 /// Result of a successful delete.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletedHomework {
+    /// Lesson the homework belonged to (to notify its students after the delete).
+    pub lesson_instance_id: Uuid,
     /// Storage keys of files whose objects stayed in storage (storage failure or not configured).
     /// The application layer has no logger: the caller must log them for cleanup.
     pub orphaned_storage_keys: Vec<String>,
@@ -47,6 +49,7 @@ impl DeleteHomeworkUseCase {
     /// A storage failure after the DB delete does not fail the operation: for the user the
     /// homework is gone, the leftovers are listed in `orphaned_storage_keys`.
     pub async fn execute(&self, homework_id: Uuid) -> Result<DeletedHomework, DomainError> {
+        let homework = self.homeworks.get_by_id(homework_id).await?;
         let files = self.homeworks.get_files(homework_id).await?;
         self.homeworks.delete(homework_id).await?;
 
@@ -62,6 +65,7 @@ impl DeleteHomeworkUseCase {
         }
 
         Ok(DeletedHomework {
+            lesson_instance_id: homework.lesson_instance_id,
             orphaned_storage_keys,
         })
     }
@@ -108,8 +112,21 @@ mod tests {
 
     #[async_trait::async_trait]
     impl HomeworkRepository for MockHomeworkRepository {
-        async fn get_by_id(&self, _: Uuid) -> Result<Homework, DomainError> {
-            unimplemented!()
+        async fn get_by_id(&self, homework_id: Uuid) -> Result<Homework, DomainError> {
+            if !self.exists {
+                return Err(DomainError::HomeworkNotFound);
+            }
+            Homework::try_new(
+                homework_id,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                domain::value_objects::role::UserRole::Teacher,
+                None,
+                domain::value_objects::homework_status::HomeworkStatus::Published,
+                false,
+                None,
+                chrono::Utc::now(),
+            )
         }
 
         async fn get_by_lesson_instance(&self, _: Uuid) -> Result<Homework, DomainError> {
@@ -191,6 +208,7 @@ mod tests {
 
         assert!(*repo.deleted.lock().unwrap());
         assert!(result.orphaned_storage_keys.is_empty());
+        assert_ne!(result.lesson_instance_id, Uuid::nil());
         assert_eq!(*storage.deleted.lock().unwrap(), vec!["homeworks/a", "homeworks/b"]);
     }
 

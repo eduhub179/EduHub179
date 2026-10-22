@@ -11,6 +11,7 @@
 use dotenvy::dotenv;
 use std::env;
 
+use crate::notifications::WebPushSettings;
 use crate::storage::S3Settings;
 
 /// Application configuration derived from environment variables.
@@ -52,6 +53,9 @@ pub struct Config {
     /// Object storage for homework files (MinIO / Yandex Object Storage).
     /// `None` if `S3_ENDPOINT` is not set: file storage is off.
     pub s3: Option<S3Settings>,
+
+    /// Browser push notifications (VAPID). `None` if `VAPID_PRIVATE_KEY` is not set.
+    pub web_push: Option<WebPushSettings>,
 }
 
 impl Config {
@@ -92,6 +96,7 @@ impl Config {
         let smtp_password = env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set in .env");
         let smtp_from_email = env::var("SMTP_FROM_EMAIL").unwrap_or_else(|_| smtp_user.clone());
         let s3 = Self::load_s3();
+        let web_push = Self::load_web_push();
         Self {
             database_url,
             jwt_secret,
@@ -110,7 +115,22 @@ impl Config {
             smtp_password,
             smtp_from_email,
             s3,
+            web_push,
         }
+    }
+
+    /// `VAPID_PRIVATE_KEY` turns browser push on; then `VAPID_SUBJECT` (a contact for push
+    /// services, `mailto:...` or `https://...`) is required — fail fast at startup.
+    fn load_web_push() -> Option<WebPushSettings> {
+        let private_key = env::var("VAPID_PRIVATE_KEY").ok().filter(|v| !v.trim().is_empty())?;
+        let subject = env::var("VAPID_SUBJECT")
+            .ok()
+            .filter(|v| v.starts_with("mailto:") || v.starts_with("https://"))
+            .expect("VAPID_SUBJECT (mailto:... or https://...) must be set when VAPID_PRIVATE_KEY is set");
+        Some(WebPushSettings {
+            private_key,
+            subject,
+        })
     }
 
     /// `S3_ENDPOINT` turns file storage on; then the keys and the bucket are required
@@ -155,6 +175,7 @@ impl Config {
             smtp_password: "smtp_password".to_string(),
             smtp_from_email: "noreply@179.ru".to_string(),
             s3: None,
+            web_push: None,
         }
     }
 }

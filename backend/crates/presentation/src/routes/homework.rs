@@ -9,7 +9,10 @@ use domain::{errors::DomainError, value_objects::homework_status::HomeworkStatus
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use application::use_cases::notifications::notify_homework_changed::HomeworkChange;
+
 use crate::router::{can_edit_homework, require_caller, ApiError, AppState, Caller};
+use crate::routes::notifications::{notify_homework_change_for_lesson, notify_homework_changed};
 
 /// The author is always the authenticated caller (or `X-Agent-On-Behalf-Of` for the agent),
 /// never taken from the body: older clients may still send `created_by` / `created_by_role`,
@@ -86,6 +89,8 @@ pub async fn create_homework_handler(
         .await
         .map_err(ApiError::from_homework_domain)?;
 
+    notify_homework_changed(&state, homework.id, HomeworkChange::Created, user.id);
+
     Ok(Json(CreateHomeworkResponse {
         id: homework.id.to_string(),
         lesson_instance_id: homework.lesson_instance_id.to_string(),
@@ -122,6 +127,8 @@ pub async fn update_homework_text_handler(
         .execute(application::use_cases::homework::update_homework_text::UpdateHomeworkTextCommand::new(homework_uuid, payload.text_content))
         .await
         .map_err(ApiError::from_homework_domain)?;
+
+    notify_homework_changed(&state, homework.id, HomeworkChange::TextUpdated, user.id);
 
     Ok(Json(UpdateHomeworkResponse {
         id: homework.id.to_string(),
@@ -163,6 +170,13 @@ pub async fn delete_homework_handler(
         // The homework is gone, the object stayed: leave a trace for manual cleanup.
         eprintln!("file storage: could not delete object '{key}' (homework {homework_uuid} removed)");
     }
+    notify_homework_change_for_lesson(
+        &state,
+        deleted.lesson_instance_id,
+        homework_uuid,
+        HomeworkChange::Deleted,
+        user.id,
+    );
 
     Ok(StatusCode::NO_CONTENT)
 }

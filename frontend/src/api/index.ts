@@ -5,3 +5,4 @@ export * from './homeworkApi';
 export * from './classApi';
 export * from './plusnikApi';
 export * from './materialsApi';
+export * from './notificationsApi';

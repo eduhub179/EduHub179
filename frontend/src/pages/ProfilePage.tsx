@@ -6,6 +6,7 @@ import {fetchSchoolClasses} from '../api';
 import type {SchoolClassDto} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
+import NotificationsSettings from '../components/NotificationsSettings';
 import '../css/index.css';
 import '../css/RegisterPage.css';
 
@@ -117,6 +118,7 @@ const ProfilePage: React.FC = () => {
                                     Сохранить класс
                                 </button>
                             </form>
+                            <NotificationsSettings/>
                             <button className="register-form__submit" onClick={handleLogout} type="button">
                                 Выйти
                             </button>

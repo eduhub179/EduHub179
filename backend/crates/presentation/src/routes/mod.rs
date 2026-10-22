@@ -3,6 +3,7 @@ pub mod classes;
 pub mod files;
 pub mod homework;
 pub mod materials;
+pub mod notifications;
 pub mod plusnik;
 pub mod schedule;
 pub mod telegram;

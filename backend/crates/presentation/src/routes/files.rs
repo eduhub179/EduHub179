@@ -16,10 +16,12 @@ use application::use_cases::homework::{
     attach_file_to_lesson::AttachFileToLessonCommand, delete_file::DeleteHomeworkFileCommand,
     upload_file::UploadHomeworkFileCommand,
 };
+use application::use_cases::notifications::notify_homework_changed::HomeworkChange;
 use domain::{entities::homework::HomeworkFile, errors::DomainError};
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::routes::notifications::{notify_homework_change_for_lesson, notify_homework_changed};
 use crate::router::{can_edit_homework, require_authenticated_user, require_caller, ApiError, AppState, Caller, FileUseCases};
 
 /// Multipart field with the file.
@@ -141,6 +143,15 @@ pub async fn attach_file_to_lesson_handler(
         .await
         .map_err(ApiError::from_homework_domain)?;
 
+    let change = if attached.homework_created {
+        HomeworkChange::Created
+    } else {
+        HomeworkChange::FileAdded {
+            file_name: attached.file.file_name.clone(),
+        }
+    };
+    notify_homework_changed(&state, attached.homework_id, change, user.id);
+
     Ok(Json(AttachFileResponse {
         homework_id: attached.homework_id.to_string(),
         homework_created: attached.homework_created,
@@ -209,7 +220,7 @@ pub async fn delete_homework_file_handler(
     Path(file_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<DeleteFileResponse>, ApiError> {
-    require_file_editor(&state, &headers).await?;
+    let Caller { user, .. } = require_file_editor(&state, &headers).await?;
     let use_cases = file_use_cases(&state)?;
     let file_id = parse_id(&file_id, DomainError::HomeworkFileNotFound)?;
 
@@ -221,6 +232,16 @@ pub async fn delete_homework_file_handler(
     if let Some(key) = deleted.orphaned_storage_key {
         // The record is gone, the object stayed: leave a trace for manual cleanup.
         eprintln!("file storage: could not delete object '{key}' (record {file_id} removed)");
+    }
+    if let Some(lesson_instance_id) = deleted.lesson_instance_id {
+        let change = if deleted.homework_deleted {
+            HomeworkChange::Deleted
+        } else {
+            HomeworkChange::FileRemoved {
+                file_name: deleted.file.file_name.clone(),
+            }
+        };
+        notify_homework_change_for_lesson(&state, lesson_instance_id, deleted.file.homework_id, change, user.id);
     }
 
     Ok(Json(DeleteFileResponse {

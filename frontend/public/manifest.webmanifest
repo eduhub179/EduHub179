@@ -1,0 +1,15 @@
+{
+  "name": "EduHub 179",
+  "short_name": "EduHub",
+  "description": "Расписание, домашние задания, плюсник и материалы Школы 179",
+  "lang": "ru",
+  "start_url": "/main",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
