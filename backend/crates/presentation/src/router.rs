@@ -38,7 +38,10 @@ use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use crate::routes::{auth, classes, files, homework, materials, plusnik, schedule, telegram};
+use crate::routes::notifications::PushNotifications;
+use crate::routes::{
+    auth, classes, files, homework, materials, notifications, plusnik, schedule, telegram,
+};
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -268,6 +271,8 @@ pub struct AppState {
     pub delete_homework_use_case: Option<Arc<DeleteHomeworkUseCase>>,
     pub plusnik_service: Option<Arc<PlusnikService>>,
     pub materials_service: Option<Arc<MaterialsService>>,
+    /// `None` if browser push is not configured (`VAPID_PRIVATE_KEY` unset).
+    pub push: Option<PushNotifications>,
 }
 
 /// Homework file use cases; all of them need object storage.
@@ -540,6 +545,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             delete_homework_use_case: None,
             plusnik_service: None,
             materials_service: None,
+            push: None,
         })
 }
 
@@ -582,6 +588,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             delete_homework_use_case: None,
             plusnik_service: None,
             materials_service: None,
+            push: None,
         })
 }
 
@@ -603,6 +610,7 @@ pub fn create_app_with_auth_and_schedule(
     delete_homework_use_case: Arc<DeleteHomeworkUseCase>,
     plusnik_service: Arc<PlusnikService>,
     materials_service: Arc<MaterialsService>,
+    push: Option<PushNotifications>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -660,6 +668,7 @@ pub fn create_app_with_auth_and_schedule(
         )
         .merge(plusnik_routes())
         .merge(materials_routes())
+        .merge(notification_routes())
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -679,7 +688,20 @@ pub fn create_app_with_auth_and_schedule(
             delete_homework_use_case: Some(delete_homework_use_case),
             plusnik_service: Some(plusnik_service),
             materials_service: Some(materials_service),
+            push,
         })
+}
+
+fn notification_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/notifications/vapid-public-key",
+            get(notifications::vapid_public_key_handler),
+        )
+        .route(
+            "/api/notifications/subscriptions",
+            post(notifications::subscribe_handler).delete(notifications::unsubscribe_handler),
+        )
 }
 
 fn materials_routes() -> Router<AppState> {
@@ -923,6 +945,7 @@ mod tests {
             delete_homework_use_case: None,
             plusnik_service: None,
             materials_service: None,
+            push: None,
         }
     }
 
@@ -957,6 +980,7 @@ mod tests {
         async fn ok() {}
         let _: Router<AppState> = plusnik_routes()
             .merge(materials_routes())
+            .merge(notification_routes())
             .route("/api/lessons/:lesson_instance_id/files", post(ok))
             .route("/api/homework/:homework_id/files/:file_id", get(ok))
             .route("/api/homework/files/:file_id", delete(ok))

@@ -53,4 +53,16 @@ pub trait DeviceTokenRepository: Send + Sync {
     ///
     /// Useful when the user logs out everywhere or explicitly clears devices.
     async fn deactivate_all_for_user(&self, user_id: Uuid) -> Result<(), DomainError>;
+
+    /// Deactivates the same device token for every user except `keep_user_id`.
+    ///
+    /// A device (one browser subscription) belongs to whoever linked it last. Without this,
+    /// a browser whose session expired (no logout, so no unlinking) and where another
+    /// person then logs in would get notifications of both users.
+    async fn deactivate_token_for_other_users(
+        &self,
+        platform: NotificationPlatform,
+        token: &str,
+        keep_user_id: Uuid,
+    ) -> Result<(), DomainError>;
 }

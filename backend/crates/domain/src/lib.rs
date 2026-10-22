@@ -37,6 +37,7 @@ pub mod value_objects {
     pub mod sheet_status;
     pub mod telegram_session_state;
     pub mod week_parity;
+    pub mod web_push_subscription;
     pub mod week_status;
 }
 

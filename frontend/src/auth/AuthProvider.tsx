@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SESSION_EXPIRED_EVENT } from '../api/client';
+import { detachPushOnLogout, syncPushOnStartup } from '../notifications/push';
 import { authService } from './authService';
 import type { Credentials, RegistrationData, User } from './authService';
 
@@ -36,14 +37,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             navigate('/login', { replace: true, state: { sessionExpired: true } });
         };
         window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+        // Keeps the service worker fresh and re-sends an existing push subscription.
+        if (authService.getCurrentUser()) {
+            void syncPushOnStartup().catch(() => undefined);
+        }
         return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
     }, [navigate]);
 
     const register = (data: RegistrationData) => setUser(authService.register(data));
-    const login = async (credentials: Credentials) => setUser(await authService.login(credentials));
+    const login = async (credentials: Credentials) => {
+        setUser(await authService.login(credentials));
+        // This browser already has notifications on: link them to the user who just logged in.
+        void syncPushOnStartup().catch(() => undefined);
+    };
     const updateSchoolClass = async (schoolClass: string) =>
         setUser(await authService.updateSchoolClass(schoolClass));
     const logout = async () => {
+        // Unlink this browser from the user (the subscription itself stays for the next login):
+        // the next person on a shared computer must not get this user's homework.
+        await detachPushOnLogout();
         await authService.logout();
         setUser(null);
     };

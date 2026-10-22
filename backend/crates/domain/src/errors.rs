@@ -186,6 +186,8 @@ pub enum DomainError {
     MaterialIsNotAFile,
     // File storage (S3/MinIO) is not configured on this server.
     FileStorageUnavailable,
+    // The push service says the browser subscription is gone (HTTP 404/410): stop using it.
+    PushSubscriptionExpired,
 
     // Class Settings.rs
     // Invalid OrgEmailDomain
@@ -317,6 +319,7 @@ impl fmt::Display for DomainError {
             DomainError::InvalidMaterialUrl => write!(f, "Invalid material URL"),
             DomainError::MaterialIsNotAFile => write!(f, "Material is not a file"),
             DomainError::FileStorageUnavailable => write!(f, "File storage is not configured"),
+            DomainError::PushSubscriptionExpired => write!(f, "Push subscription expired"),
             DomainError::InvalidOrgEmailDomain => write!(f, "Invalid ORG_EMAIL_DOMAIN"),
             DomainError::InvalidDeviceTokenFormat => write!(f, "Invalid device token format"),
             DomainError::TelegramBindingNotFound => write!(f, "Telegram binding not found"),

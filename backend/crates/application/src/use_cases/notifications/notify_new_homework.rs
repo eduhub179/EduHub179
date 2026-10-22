@@ -166,6 +166,15 @@ mod tests {
             Ok(())
         }
 
+        async fn deactivate_token_for_other_users(
+            &self,
+            _: NotificationPlatform,
+            _: &str,
+            _: Uuid,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+
         async fn deactivate_all_for_user(&self, _user_id: Uuid) -> Result<(), DomainError> {
             Ok(())
         }

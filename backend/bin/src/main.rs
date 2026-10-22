@@ -12,6 +12,11 @@ use application::use_cases::{
     },
     lesson_access::LessonAccess,
     materials::MaterialsService,
+    notifications::{
+        notify_homework_changed::NotifyHomeworkChangedUseCase,
+        push_subscriptions::PushSubscriptionsUseCase,
+        resolve_homework_recipients::ResolveHomeworkRecipientsUseCase,
+    },
     plusnik::PlusnikService,
     schedule::ScheduleService,
 };
@@ -28,7 +33,7 @@ use infrastructure::{
     },
     config::Config,
     postgres::{
-        create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg,
+        create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg, DeviceTokenRepositoryPg,
         HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonMaterialRepositoryPg,
         LessonRepositoryPg, PlusnikRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
@@ -36,9 +41,12 @@ use infrastructure::{
         WebSessionRepositoryPg,
     },
     redis::AuthCodeStoreRedis,
+    notifications::WebPushSender,
     storage::S3FileStorage,
 };
-use presentation::{create_app_with_auth_and_schedule, AgentAccess, FileUseCases, TelegramLookup};
+use presentation::{
+    create_app_with_auth_and_schedule, AgentAccess, FileUseCases, PushNotifications, TelegramLookup,
+};
 use uuid::Uuid;
 
 #[tokio::main]
@@ -186,6 +194,47 @@ async fn main() {
         file_storage_for_cleanup.clone(),
     ));
 
+    // Browser push for homework changes. Without VAPID_PRIVATE_KEY it is off and the
+    // notification routes answer 503; everything else works.
+    let push = match &config.web_push {
+        Some(settings) => {
+            let device_tokens = Arc::new(DeviceTokenRepositoryPg::new(pool.clone()));
+            let sender = WebPushSender::new(device_tokens.clone(), settings)
+                .expect("VAPID_PRIVATE_KEY must be a base64url P-256 private key");
+            let public_key = sender.public_key().to_string();
+            let homework_repo = Arc::new(HomeworkRepositoryPg::new(pool.clone()));
+            let instance_repo = Arc::new(LessonInstanceRepositoryPg::new(pool.clone()));
+            let template_repo = Arc::new(LessonTemplateRepositoryPg::new(pool.clone()));
+            let lesson_repo = Arc::new(LessonRepositoryPg::new(pool.clone()));
+            let notifier = NotifyHomeworkChangedUseCase::new(
+                homework_repo.clone(),
+                instance_repo.clone(),
+                template_repo.clone(),
+                lesson_repo.clone(),
+                Arc::new(SubjectRepositoryPg::new(pool.clone())),
+                ResolveHomeworkRecipientsUseCase::new(
+                    homework_repo,
+                    instance_repo,
+                    template_repo,
+                    lesson_repo,
+                    Arc::new(StudentGroupRepositoryPg::new(pool.clone())),
+                    Arc::new(UserRepositoryPg::new(pool.clone())),
+                ),
+                Arc::new(sender),
+            );
+            println!("push notifications: on");
+            Some(PushNotifications {
+                public_key,
+                subscriptions: Arc::new(PushSubscriptionsUseCase::new(device_tokens)),
+                notifier: Arc::new(notifier),
+            })
+        }
+        None => {
+            println!("push notifications: off (VAPID_PRIVATE_KEY is not set)");
+            None
+        }
+    };
+
     let app = create_app_with_auth_and_schedule(
         login_use_case,
         schedule_service,
@@ -204,6 +253,7 @@ async fn main() {
         Arc::new(DeleteHomeworkUseCase::new(homeworks, file_storage_for_cleanup)),
         plusnik_service,
         materials_service,
+        push,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);

@@ -39,6 +39,9 @@ pub struct DeletedHomeworkFile {
     pub orphaned_storage_key: Option<String>,
     /// True if the homework had no text and this was its last file, so it was deleted too.
     pub homework_deleted: bool,
+    /// Lesson of the homework, read before it may be deleted: lets the caller notify the
+    /// lesson's students even when the homework is gone. `None` if it could not be read.
+    pub lesson_instance_id: Option<Uuid>,
 }
 
 /// Use case that removes a file from homework (both DB and storage).
@@ -71,24 +74,26 @@ impl DeleteHomeworkFileUseCase {
             Ok(()) => None,
             Err(_) => Some(file.storage_key.clone()),
         };
-        let homework_deleted = self.delete_homework_if_empty(file.homework_id).await;
+        let homework = self.homeworks.get_by_id(file.homework_id).await.ok();
+        let lesson_instance_id = homework.as_ref().map(|homework| homework.lesson_instance_id);
+        let homework_deleted = match homework {
+            Some(homework) if homework.text_content.is_none() => {
+                self.delete_homework_if_no_files(homework.id).await
+            }
+            _ => false,
+        };
 
         Ok(DeletedHomeworkFile {
             file,
             orphaned_storage_key,
             homework_deleted,
+            lesson_instance_id,
         })
     }
 
+    /// Deletes a text-less homework that has no files left.
     /// Best effort: any error leaves the homework in place and returns false.
-    async fn delete_homework_if_empty(&self, homework_id: Uuid) -> bool {
-        let has_text = match self.homeworks.get_by_id(homework_id).await {
-            Ok(homework) => homework.text_content.is_some(),
-            Err(_) => return false,
-        };
-        if has_text {
-            return false;
-        }
+    async fn delete_homework_if_no_files(&self, homework_id: Uuid) -> bool {
         match self.homeworks.get_files(homework_id).await {
             Ok(files) if files.is_empty() => self.homeworks.delete(homework_id).await.is_ok(),
             _ => false,
@@ -271,6 +276,7 @@ mod tests {
 
         assert!(result.homework_deleted);
         assert!(*repo.homework_deleted.lock().unwrap());
+        assert!(result.lesson_instance_id.is_some(), "lesson is known even though the homework is gone");
     }
 
     #[tokio::test]
