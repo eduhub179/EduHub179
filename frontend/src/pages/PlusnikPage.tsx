@@ -50,12 +50,22 @@ const PlusnikPage: React.FC = () => {
             }
 
             if (hasStudentRole(user)) {
+                // The dashboard tells whether the sheet is one of the student's; the table
+                // of the whole lesson is loaded only then.
                 const sheets = await fetchMyPlusnikProgress();
                 const studentSheet = sheets.find(({sheet}) => sheet.id === sheetId);
-                if (isCurrent && studentSheet) {
+                if (!studentSheet) {
+                    if (isCurrent) {
+                        setError('Этот плюсник недоступен вашему аккаунту.');
+                    }
+                    return;
+                }
+                if (isCurrent) {
                     setProgress(studentSheet);
-                } else if (isCurrent) {
-                    setError('Этот плюсник недоступен вашему аккаунту.');
+                }
+                const loadedMatrix = await fetchPlusnikMatrix(sheetId);
+                if (isCurrent) {
+                    setMatrix(loadedMatrix);
                 }
                 return;
             }
@@ -95,18 +105,18 @@ const PlusnikPage: React.FC = () => {
 
     return (
         <>
-            <Header/>
-            <main className="plusnik-page">
-                <div className="plusnik-page__heading">
-                    <div>
-                        <h1>{sheet ? cleanSheetName(sheet.name) : 'Плюсник'}</h1>
-                        {sheet && (
-                            <p>
-                                Выдано: {formatDate(sheet.issue_date, true)}
-                                {' · '}Дедлайн: {formatDate(sheet.deadline)}
-                                {' · '}Статус: {sheet.status}
-                            </p>
-                        )}
+                <Header/>
+                <main className="plusnik-page">
+                    <div className="plusnik-page__heading">
+                        <div>
+                            <h1>{sheet ? cleanSheetName(sheet.name) : 'Плюсник'}</h1>
+                            {sheet && (
+                                <p>
+                                    Выдано: {formatDate(sheet.issue_date, true)}
+                                    {' · '}Дедлайн: {formatDate(sheet.deadline)}
+                                    {' · '}Статус: {sheet.status}
+                                </p>
+                            )}
                     </div>
                     <Link to="/math">Назад к математике</Link>
                 </div>
@@ -119,64 +129,72 @@ const PlusnikPage: React.FC = () => {
                     <p className="plusnik-page__message">Загрузка плюсника...</p>
                 ) : error ? (
                     <p className="plusnik-page__error" role="alert">{error}</p>
-                ) : progress ? (
-                    <section className="plusnik-page__progress" aria-label="Прогресс по плюснику">
-                        <p>Предмет: {progress.subject_name}</p>
-                        <p>
-                            Решено заданий: {progress.solved_tasks} из {progress.total_tasks}
-                        </p>
-                        <progress
-                            value={progress.solved_tasks}
-                            max={Math.max(progress.total_tasks, 1)}
-                            aria-label={`${progress.solved_tasks} из ${progress.total_tasks} заданий решено`}
-                        />
-                    </section>
-                ) : matrix ? (
-                    <div className="plusnik-page__table-wrap">
-                        <table className="plusnik-page__table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Ученик</th>
-                                    {[...matrix.sheet.tasks]
-                                        .sort((first, second) => first.sort_order - second.sort_order)
-                                        .map((task) => (
-                                            <th scope="col" key={task.id}>Задача {task.number}</th>
+                ) : progress || matrix ? (
+                    <>
+                        {progress && (
+                            <section className="plusnik-page__progress" aria-label="Прогресс по плюснику">
+                                <p>Предмет: {progress.subject_name}</p>
+                                <p>
+                                    Решено заданий: {progress.solved_tasks} из {progress.total_tasks}
+                                </p>
+                                <progress
+                                    value={progress.solved_tasks}
+                                    max={Math.max(progress.total_tasks, 1)}
+                                    aria-label={`${progress.solved_tasks} из ${progress.total_tasks} заданий решено`}
+                                />
+                            </section>
+                        )}
+                        {matrix && (
+                            <div className="plusnik-page__table-wrap">
+                                <table className="plusnik-page__table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Ученик</th>
+                                            {[...matrix.sheet.tasks]
+                                                .sort((first, second) => first.sort_order - second.sort_order)
+                                                .map((task) => (
+                                                    <th scope="col" key={task.id}>Задача {task.number}</th>
+                                                ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {matrix.students.map((student) => (
+                                            <tr
+                                                key={student.id}
+                                                className={student.id === user?.id ? 'is-current-user' : undefined}
+                                            >
+                                                <th scope="row">{student.name}</th>
+                                                {[...matrix.sheet.tasks]
+                                                    .sort((first, second) => first.sort_order - second.sort_order)
+                                                    .map((task) => {
+                                                        const hasPlus = matrix.pluses.some((plus) =>
+                                                            plus.task_id === task.id && plus.student_id === student.id,
+                                                        );
+                                                        return (
+                                                            <td key={task.id} className="plusnik-page__cell">
+                                                                <span
+                                                                    className={`plusnik-page__solved${hasPlus ? ' is-solved' : ''}`}
+                                                                    aria-label={hasPlus ? 'Решена' : 'Не решена'}
+                                                                >
+                                                                    {hasPlus ? '✓' : '—'}
+                                                                </span>
+                                                            </td>
+                                                        );
+                                                    })}
+                                            </tr>
                                         ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {matrix.students.map((student) => (
-                                    <tr key={student.id}>
-                                        <th scope="row">{student.name}</th>
-                                        {[...matrix.sheet.tasks]
-                                            .sort((first, second) => first.sort_order - second.sort_order)
-                                            .map((task) => {
-                                                const hasPlus = matrix.pluses.some((plus) =>
-                                                    plus.task_id === task.id && plus.student_id === student.id,
-                                                );
-                                                return (
-                                                    <td key={task.id} className="plusnik-page__cell">
-                                                        <span
-                                                            className={`plusnik-page__solved${hasPlus ? ' is-solved' : ''}`}
-                                                            aria-label={hasPlus ? 'Решена' : 'Не решена'}
-                                                        >
-                                                            {hasPlus ? '✓' : '—'}
-                                                        </span>
-                                                    </td>
-                                                );
-                                            })}
-                                    </tr>
-                                ))}
-                                {matrix.students.length === 0 && (
-                                    <tr>
-                                        <td className="plusnik-page__empty" colSpan={matrix.sheet.tasks.length + 1}>
-                                            Для этого урока пока нет учеников.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                        {matrix.students.length === 0 && (
+                                            <tr>
+                                                <td className="plusnik-page__empty" colSpan={matrix.sheet.tasks.length + 1}>
+                                                    Для этого урока пока нет учеников.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </>
                 ) : (
                     <p className="plusnik-page__message">Информация о плюснике не найдена.</p>
                 )}

@@ -96,3 +96,13 @@
         flex-direction: column;
     }
 }
+
+/* A student sees the whole lesson: their own row stands out. */
+.plusnik-page__table tr.is-current-user th,
+.plusnik-page__table tr.is-current-user td {
+    background: #eff6ff;
+}
+
+.plusnik-page__progress + .plusnik-page__table-wrap {
+    margin-top: 16px;
+}
