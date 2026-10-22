@@ -1,7 +1,13 @@
 import React, {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
-import {fetchMyPlusnikProgress, fetchPlusnikLessons, fetchPlusnikSheets} from '../../api/plusnikApi';
-import type {SchoolClassDto} from '../../api/classApi';
+import {
+    fetchMyPlusnikProgress,
+    fetchPlusnikLessons,
+    fetchPlusnikSheets,
+    hasStudentRole,
+    hasTeacherOrAdminRole,
+    type SchoolClassDto,
+} from '../../api';
 import type {User} from '../../auth/authService';
 
 interface MathTopicsTableProps {
@@ -27,7 +33,6 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, user}) =>
     const [topics, setTopics] = useState<MathTopic[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
     useEffect(() => {
         let isCurrent = true;
         setIsLoading(true);
@@ -38,7 +43,7 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, user}) =>
                 return [];
             }
 
-            if (user.role === 'student') {
+            if (hasStudentRole(user)) {
                 if (user.classId !== schoolClass.id) {
                     return [];
                 }
@@ -55,7 +60,7 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, user}) =>
                     }));
             }
 
-            if (user.role !== 'teacher' && user.role !== 'admin') {
+            if (!hasTeacherOrAdminRole(user)) {
                 return [];
             }
 
@@ -112,7 +117,7 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, user}) =>
                 <p className="math-topics__error" role="alert">{error}</p>
             ) : !user?.id ? (
                 <p className="math-admin-table__empty">Войдите в аккаунт, чтобы увидеть темы.</p>
-            ) : user.role === 'student' && user.classId !== schoolClass.id ? (
+            ) : hasStudentRole(user) && user.classId !== schoolClass.id ? (
                 <p className="math-admin-table__empty">Темы доступны только для вашего класса.</p>
             ) : topics.length ? (
                 <div className="math-admin-table-wrap">

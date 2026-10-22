@@ -1,7 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
-import {fetchSchoolClasses} from '../api/classApi';
-import type {SchoolClassDto} from '../api';
+import {fetchSchoolClasses, hasAdminRole, type SchoolClassDto} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import AuthenticatedMathView from '../components/Math/AuthenticatedMathView';
 import AdminMathView from '../components/Math/AdminMathView';
@@ -102,7 +101,7 @@ const MathPage: React.FC = () => {
         <p className="math-topics__error" role="alert">{classLoadError}</p>
     ) : classes.length === 0 ? (
         <p className="math-content__description">В базе данных пока нет доступных классов.</p>
-    ) : user?.name.trim().toLowerCase() === 'admin' ? (
+    ) : hasAdminRole(user) ? (
         <AdminMathView
             classOptions={classOptions}
             onSelectClass={selectClass}
