@@ -201,6 +201,30 @@ async fn students_see_only_published_sheets_of_their_lessons(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn students_of_lesson_see_matrix_of_published_sheet(pool: PgPool) {
+    let w = seed(pool).await;
+    let teacher = w.user(w.teacher).await;
+    let draft = w.service.create_sheet(&teacher, sheet_command(w.lesson_id, SheetStatus::Draft, &["1"])).await.unwrap();
+    let published = w.service.create_sheet(&teacher, sheet_command(w.lesson_id, SheetStatus::Published, &["1"])).await.unwrap();
+    let task = published.tasks[0].id;
+    w.service.grant_plus(&teacher, task, w.boris).await.unwrap();
+
+    let anna = w.user(w.anna).await;
+    let matrix = w.service.sheet_matrix(&anna, published.sheet.id).await.unwrap();
+    let hidden = w.service.sheet_matrix(&anna, draft.sheet.id).await;
+    let outsider = w.service.sheet_matrix(&w.user(w.outsider).await, published.sheet.id).await;
+    let other_teacher = w.service.sheet_matrix(&w.user(w.other_teacher).await, published.sheet.id).await;
+
+    // The whole lesson is visible, including other students' pluses.
+    assert_eq!(matrix.students.len(), 2);
+    assert_eq!(matrix.pluses.len(), 1);
+    assert_eq!(matrix.pluses[0].student_id, w.boris);
+    assert_eq!(hidden.unwrap_err(), DomainError::PlusnikSheetNotFound);
+    assert_eq!(outsider.unwrap_err(), DomainError::InsufficientPermissions);
+    assert_eq!(other_teacher.unwrap_err(), DomainError::InsufficientPermissions);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn grant_and_revoke_plus_roundtrip(pool: PgPool) {
     let w = seed(pool).await;
     let teacher = w.user(w.teacher).await;

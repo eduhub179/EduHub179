@@ -142,9 +142,12 @@ export async function deletePlusnikSheet(sheetId: string): Promise<void> {
   await apiFetch<void>(`/api/plusnik/sheets/${sheetId}`, { method: 'DELETE' });
 }
 
-/** The teacher's screen: tasks × students with active pluses. */
+/**
+ * The plus table: tasks × students with active pluses. Teachers of the course and admins
+ * get any sheet, students of the course only published ones (read-only).
+ */
 export async function fetchPlusnikMatrix(sheetId: string): Promise<PlusnikMatrixDto> {
-  requireTeacherOrAdminUser();
+  requireAuthenticatedUser();
   return apiFetch<PlusnikMatrixDto>(`/api/plusnik/sheets/${sheetId}/matrix`);
 }
 

@@ -6,7 +6,8 @@
 //! Access rules:
 //! - a teacher manages sheets and pluses only of lessons they teach (`lesson_teachers`);
 //!   an admin manages any lesson;
-//! - a student sees published sheets of their lessons (their class or their groups);
+//! - a student sees published sheets of their lessons (their class or their groups)
+//!   and the plus table of such a sheet (the whole lesson, read-only);
 //! - pluses are granted only on published sheets and only to students of the lesson.
 //!
 //! Revoking keeps the record (`revoked_at` / `revoked_by` / comment) — the audit trail
@@ -62,7 +63,8 @@ pub struct MatrixStudent {
     pub name: String,
 }
 
-/// The teacher's screen: tasks × students with active pluses.
+/// The plus table: tasks × students with active pluses (teacher's screen, read-only
+/// for students).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SheetMatrix {
     pub sheet: PlusnikSheet,
@@ -359,11 +361,24 @@ impl PlusnikService {
     // Matrix and pluses
     // ========================================================================
 
-    /// The teacher's matrix: tasks × students of the lesson with active pluses.
+    /// The plus table: tasks × students of the lesson with active pluses.
+    /// A teacher of the lesson (or admin) sees it for any status, a student of the lesson
+    /// only for a published sheet (the same sheets `lesson_sheets` shows them).
+    ///
+    /// # Fail-safe поведение
+    /// `PlusnikSheetNotFound` for a student and a draft/archived sheet (drafts are not
+    /// revealed); `InsufficientPermissions` for anyone outside the lesson.
     pub async fn sheet_matrix(&self, user: &User, sheet_id: Uuid) -> Result<SheetMatrix, DomainError> {
         let sheet = self.plusnik.get_sheet_by_id(sheet_id).await?;
-        self.require_manager(user, sheet.lesson_id).await?;
         let lesson = self.lessons.get_by_id(sheet.lesson_id).await?;
+        if !self.can_manage(user, lesson.id).await? {
+            if !user.role.is_student() || !self.is_in_audience(user.id, &lesson).await? {
+                return Err(DomainError::InsufficientPermissions);
+            }
+            if sheet.status != SheetStatus::Published {
+                return Err(DomainError::PlusnikSheetNotFound);
+            }
+        }
 
         let mut students: Vec<MatrixStudent> = self
             .lesson_students(&lesson)
