@@ -129,5 +129,12 @@ export default defineConfig({
   plugins: [react(), mathFilesApi()],
   server: {
     host: '0.0.0.0',
+    // The site calls the API on its own origin (/api/...): Vite forwards it to the backend.
+    // Works from a phone in the same Wi-Fi (http://<computer-ip>:5173) without opening the
+    // backend port, and needs no CORS. /api/math/* is still served by the plugin above.
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8080', changeOrigin: false },
+      '/health': { target: 'http://127.0.0.1:8080', changeOrigin: false },
+    },
   },
 })
