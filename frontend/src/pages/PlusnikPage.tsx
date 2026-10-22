@@ -3,6 +3,8 @@ import {Link, useParams} from 'react-router-dom';
 import {
     fetchMyPlusnikProgress,
     fetchPlusnikMatrix,
+    hasStudentRole,
+    hasTeacherOrAdminRole,
     type PlusnikMatrixDto,
     type PlusnikSheetProgressDto,
 } from '../api';
@@ -47,7 +49,7 @@ const PlusnikPage: React.FC = () => {
                 return;
             }
 
-            if (user.role === 'student') {
+            if (hasStudentRole(user)) {
                 const sheets = await fetchMyPlusnikProgress();
                 const studentSheet = sheets.find(({sheet}) => sheet.id === sheetId);
                 if (isCurrent && studentSheet) {
@@ -58,7 +60,7 @@ const PlusnikPage: React.FC = () => {
                 return;
             }
 
-            if (user.role === 'teacher' || user.role === 'admin') {
+            if (hasTeacherOrAdminRole(user)) {
                 const loadedMatrix = await fetchPlusnikMatrix(sheetId);
                 if (isCurrent) {
                     setMatrix(loadedMatrix);
@@ -89,7 +91,7 @@ const PlusnikPage: React.FC = () => {
     }, [sheetId, user]);
 
     const sheet = matrix?.sheet ?? progress?.sheet;
-    const isAuthorizedRole = user?.role === 'student' || user?.role === 'teacher' || user?.role === 'admin';
+    const isAuthorizedRole = hasStudentRole(user) || hasTeacherOrAdminRole(user);
 
     return (
         <>

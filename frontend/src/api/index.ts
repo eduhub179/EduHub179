@@ -1,4 +1,5 @@
 export * from './client';
+export * from './access';
 export * from './authApi';
 export * from './scheduleApi';
 export * from './homeworkApi';

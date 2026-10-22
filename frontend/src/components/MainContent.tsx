@@ -1,6 +1,12 @@
 import React, {useEffect, useState} from 'react';
 import {useLocation} from 'react-router-dom';
-import {attachLessonFile, deleteHomework, deleteHomeworkFile, homeworkFileUrl} from '../api';
+import {
+    attachLessonFile,
+    deleteHomework,
+    deleteHomeworkFile,
+    hasTeacherOrAdminRole,
+    homeworkFileUrl,
+} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import {SCHEDULE_CHANGED_EVENT} from '../hooks/useSchedule';
 import FileDropDialog from './FileDropDialog';
@@ -51,7 +57,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
     const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
     const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
     const {user} = useAuth();
-    const canAttachFiles = user?.role === 'teacher' || user?.role === 'admin';
+    const canAttachFiles = hasTeacherOrAdminRole(user);
 
     let fileName = path.split('/').pop();
     if (path == "/main")
