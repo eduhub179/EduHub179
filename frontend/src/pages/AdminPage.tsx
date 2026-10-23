@@ -5,12 +5,14 @@ import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
 import AnnouncementsTab from '../components/Admin/AnnouncementsTab';
 import LessonsTab from '../components/Admin/LessonsTab';
+import TimetableTab from '../components/Admin/TimetableTab';
 import UsersTab from '../components/Admin/UsersTab';
 import WeeksTab from '../components/Admin/WeeksTab';
 import '../css/AdminPage.css';
 
 const tabs = [
     {path: 'lessons', title: 'Замены и отмены'},
+    {path: 'timetable', title: 'Расписание'},
     {path: 'users', title: 'Пользователи'},
     {path: 'announcements', title: 'Объявления'},
     {path: 'weeks', title: 'Недели расписания'},
@@ -46,6 +48,7 @@ const AdminPage: React.FC = () => {
                         </nav>
                         <Routes>
                             <Route path="lessons" element={<LessonsTab />} />
+                            <Route path="timetable" element={<TimetableTab />} />
                             <Route path="users" element={<UsersTab currentUserId={user.id} />} />
                             <Route path="announcements" element={<AnnouncementsTab />} />
                             <Route path="weeks" element={<WeeksTab />} />

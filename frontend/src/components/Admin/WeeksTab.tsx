@@ -15,7 +15,7 @@ const WeeksTab: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [form, setForm] = useState<{monday: string; source: WeekSource; copyFrom: string}>({
         monday: nextMonday(),
-        source: 'copy',
+        source: 'templates',
         copyFrom: '',
     });
     const [message, setMessage] = useState<string | null>(null);
@@ -66,8 +66,8 @@ const WeeksTab: React.FC = () => {
                 <label>
                     Заполнить
                     <select value={form.source} onChange={(event) => setForm({...form, source: event.target.value as WeekSource})}>
+                        <option value="templates">по постоянному расписанию</option>
                         <option value="copy">копией другой недели</option>
-                        <option value="templates">из шаблонов (обычное расписание)</option>
                         <option value="empty">пустая</option>
                     </select>
                 </label>
@@ -83,7 +83,10 @@ const WeeksTab: React.FC = () => {
                         </select>
                     </label>
                 )}
-                <p className="admin__muted">Копия берёт только уроки по расписанию: отмены и замены не копируются.</p>
+                <p className="admin__muted">
+                    Постоянное расписание редактируется во вкладке «Расписание». Копия недели берёт только обычные
+                    уроки: отмены, замены и разовые уроки не копируются.
+                </p>
                 <div className="admin__actions">
                     <button type="submit">Создать черновик</button>
                 </div>

@@ -265,3 +265,110 @@
 .admin__card > .admin__muted + .admin__actions {
     margin-top: 8px;
 }
+
+.admin__success {
+    margin: 8px 0;
+    color: #15803d;
+}
+
+.admin__spaced {
+    margin-bottom: 16px;
+}
+
+/* Regular timetable: days side by side on wide screens, one under another on phones. */
+.admin__week {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 0 16px;
+}
+
+.admin__day h3 {
+    margin-bottom: 4px;
+}
+
+.admin__slot {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.admin__slot:last-child {
+    border-bottom: none;
+}
+
+.admin__slot-time {
+    min-width: 92px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin__slot-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.admin .admin__slot-actions button {
+    padding: 2px 8px;
+    font-size: 0.85rem;
+}
+
+.admin__slot-editor {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 8px 0;
+    padding: 10px;
+    border-radius: 6px;
+    background: var(--color-bg-secondary);
+}
+
+.admin__slot-editor label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.85rem;
+}
+
+.admin__slot-editor label:first-child,
+.admin__slot-editor .admin__actions {
+    grid-column: 1 / -1;
+}
+
+.admin__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.admin__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 2px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-bg-secondary);
+    font-size: 0.9rem;
+}
+
+.admin .admin__chip button {
+    padding: 0 6px;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    line-height: 1.2;
+}
+
+.admin__editor .admin__wide {
+    flex-basis: 100%;
+}
+
+.admin__below {
+    display: block;
+    margin-top: 4px;
+    margin-left: auto;
+}

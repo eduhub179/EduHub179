@@ -234,3 +234,143 @@ export async function fetchMyAnnouncements(): Promise<AnnouncementDto[]> {
   const response = await apiFetch<{ announcements: AnnouncementDto[] }>('/api/announcements');
   return response.announcements;
 }
+
+// ---------------------------------------------------------------------------
+// Timetable: courses, regular slots, one-off and moved lessons
+// ---------------------------------------------------------------------------
+
+export type DayCode = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
+export type Parity = 'every' | 'odd' | 'even';
+
+export interface NamedDto {
+  id: string;
+  name: string;
+}
+
+/** A course: class or group + subject, with its usual teachers. */
+export interface TimetableCourseDto {
+  id: string;
+  subject: NamedDto;
+  class_id: string | null;
+  group_id: string | null;
+  target_name: string;
+  teachers: PersonDto[];
+}
+
+/** A slot of the regular timetable. */
+export interface SlotDto {
+  id: string;
+  course_id: string;
+  subject_name: string;
+  target_name: string;
+  teachers: PersonDto[];
+  day: DayCode;
+  start_time: string;
+  end_time: string;
+  parity: Parity;
+  cabinet_id: string | null;
+  cabinet_number: number | null;
+}
+
+export interface ClassTimetableDto {
+  courses: TimetableCourseDto[];
+  slots: SlotDto[];
+}
+
+export interface SlotInput {
+  course_id: string;
+  day: DayCode;
+  start_time: string;
+  end_time: string;
+  parity: Parity;
+  cabinet_id: string | null;
+  /** Also change already created weeks from this date on. */
+  apply_from: string | null;
+}
+
+/** What a timetable change did to already created weeks. */
+export interface TimetableChangeDto {
+  changed: number;
+  /** Left as they were because they have homework. */
+  kept: number;
+}
+
+export interface LessonPlaceInput {
+  date: string;
+  start_time: string;
+  end_time: string;
+  cabinet_id: string | null;
+}
+
+export async function fetchSubjects(): Promise<NamedDto[]> {
+  const response = await apiFetch<{ subjects: NamedDto[] }>('/api/admin/subjects');
+  return response.subjects;
+}
+
+export async function createSubject(name: string): Promise<NamedDto> {
+  return apiFetch<NamedDto>('/api/admin/subjects', { method: 'POST', body: json({ name }) });
+}
+
+export async function fetchGroups(): Promise<NamedDto[]> {
+  const response = await apiFetch<{ groups: NamedDto[] }>('/api/admin/groups');
+  return response.groups;
+}
+
+export async function fetchClassTimetable(classId: string): Promise<ClassTimetableDto> {
+  return apiFetch<ClassTimetableDto>(
+    `/api/admin/classes/${encodeURIComponent(classId)}/timetable`,
+  );
+}
+
+export async function createCourse(input: {
+  class_id: string | null;
+  group_id: string | null;
+  subject_id: string;
+  teacher_ids: string[];
+}): Promise<TimetableCourseDto> {
+  return apiFetch<TimetableCourseDto>('/api/admin/courses', { method: 'POST', body: json(input) });
+}
+
+export async function setCourseTeachers(courseId: string, teacherIds: string[]): Promise<TimetableCourseDto> {
+  return apiFetch<TimetableCourseDto>(`/api/admin/courses/${encodeURIComponent(courseId)}/teachers`, {
+    method: 'PUT',
+    body: json({ teacher_ids: teacherIds }),
+  });
+}
+
+export async function addSlot(input: SlotInput): Promise<TimetableChangeDto> {
+  return apiFetch<TimetableChangeDto>('/api/admin/slots', { method: 'POST', body: json(input) });
+}
+
+export async function updateSlot(slotId: string, input: SlotInput): Promise<TimetableChangeDto> {
+  return apiFetch<TimetableChangeDto>(`/api/admin/slots/${encodeURIComponent(slotId)}`, {
+    method: 'PUT',
+    body: json(input),
+  });
+}
+
+export async function removeSlot(slotId: string, applyFrom: string | null): Promise<TimetableChangeDto> {
+  const query = applyFrom ? `?apply_from=${encodeURIComponent(applyFrom)}` : '';
+  return apiFetch<TimetableChangeDto>(`/api/admin/slots/${encodeURIComponent(slotId)}${query}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Adds a lesson of `courseId` to one date only. */
+export async function addOneOffLesson(
+  courseId: string,
+  place: LessonPlaceInput,
+): Promise<AdminLessonDto> {
+  return apiFetch<AdminLessonDto>('/api/admin/lessons', {
+    method: 'POST',
+    body: json({ course_id: courseId, ...place }),
+  });
+}
+
+/** Moves one lesson (with its homework); answers with the lesson at its new place. */
+export async function moveLesson(instanceId: string, place: LessonPlaceInput): Promise<AdminLessonDto> {
+  return apiFetch<AdminLessonDto>(`/api/admin/lessons/${encodeURIComponent(instanceId)}/move`, {
+    method: 'POST',
+    body: json(place),
+  });
+}
