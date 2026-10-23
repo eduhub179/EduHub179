@@ -202,3 +202,8 @@
         min-width: 1080px;
     }
 }
+
+.schedule__title--cancelled {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+}

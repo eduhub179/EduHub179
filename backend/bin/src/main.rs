@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use application::use_cases::{
+    admin::AdminService,
     auth::OneTimeCodeService,
     homework::{
         attach_file_to_lesson::AttachFileToLessonUseCase,
@@ -33,9 +34,9 @@ use infrastructure::{
     },
     config::Config,
     postgres::{
-        create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg, DeviceTokenRepositoryPg,
+        create_pool, AdminRepositoryPg, AnnouncementRepositoryPg, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg, DeviceTokenRepositoryPg,
         HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonMaterialRepositoryPg,
-        LessonRepositoryPg, PlusnikRepositoryPg,
+        LessonRepositoryPg, LessonSubstitutionRepositoryPg, PlusnikRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
         SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
         WebSessionRepositoryPg,
@@ -108,6 +109,7 @@ async fn main() {
     let cabinets = Arc::new(CabinetRepositoryPg::new(pool.clone()));
     let homeworks = Arc::new(HomeworkRepositoryPg::new(pool.clone()));
 
+    let substitutions = Arc::new(LessonSubstitutionRepositoryPg::new(pool.clone()));
     let schedule_service = Arc::new(ScheduleService::new(
         schedule_weeks,
         student_groups,
@@ -119,6 +121,18 @@ async fn main() {
         cabinets,
         homeworks.clone(),
         Arc::new(ClassRepositoryPg::new(pool.clone())),
+    )
+    .with_substitutions(substitutions.clone()));
+
+    let admin_service = Arc::new(AdminService::new(
+        Arc::new(AdminRepositoryPg::new(pool.clone())),
+        Arc::new(UserRepositoryPg::new(pool.clone())),
+        Arc::new(ClassRepositoryPg::new(pool.clone())),
+        Arc::new(CabinetRepositoryPg::new(pool.clone())),
+        Arc::new(LessonInstanceRepositoryPg::new(pool.clone())),
+        substitutions,
+        Arc::new(AnnouncementRepositoryPg::new(pool.clone())),
+        schedule_service.clone(),
     ));
 
     let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));
@@ -254,6 +268,7 @@ async fn main() {
         plusnik_service,
         materials_service,
         push,
+        admin_service,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
