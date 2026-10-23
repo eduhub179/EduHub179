@@ -73,10 +73,13 @@ export async function attachLessonFile(
   });
 }
 
-/** Deletes the homework with its text and all attached files. */
+/**
+ * Deletes the homework with its text and all attached files, and the homework of the
+ * other lessons of a double lesson (the chat agent puts one homework on both).
+ */
 export async function deleteHomework(homeworkId: string): Promise<void> {
   requireTeacherOrAdminUser();
-  await apiFetch<void>(`/api/homework/${homeworkId}`, { method: 'DELETE' });
+  await apiFetch<void>(`/api/homework/${homeworkId}?with_double=true`, { method: 'DELETE' });
 }
 
 export interface DeleteHomeworkFileResponse {

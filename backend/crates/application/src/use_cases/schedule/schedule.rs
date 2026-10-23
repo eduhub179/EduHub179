@@ -459,6 +459,43 @@ impl ScheduleService {
         Ok(ScheduleDay { date, lessons })
     }
 
+    /// The other lessons of a double lesson: the same course right before and after
+    /// `instance_id` in that class's (or group's) day, cancelled lessons skipped.
+    /// Same rule as the chat agent, which puts one homework on both lessons of a pair.
+    pub async fn double_lesson_partners(
+        &self,
+        instance_id: uuid::Uuid,
+    ) -> Result<Vec<ScheduleLesson>, DomainError> {
+        let lesson = self.schedule_lesson(instance_id).await?;
+        let mut day: Vec<ScheduleLesson> = self
+            .all_lessons_for_date(lesson.instance.lesson_date)
+            .await?
+            .lessons
+            .into_iter()
+            .filter(|other| {
+                other.lesson.target == lesson.lesson.target
+                    && (other.instance.id == instance_id || !other.instance.status.is_cancelled())
+            })
+            .collect();
+        day.sort_by_key(|other| other.start_time);
+        let Some(position) = day.iter().position(|other| other.instance.id == instance_id) else {
+            return Ok(Vec::new());
+        };
+        let same_course = |other: &ScheduleLesson| other.lesson.id == lesson.lesson.id;
+        let mut first = position;
+        while first > 0 && same_course(&day[first - 1]) {
+            first -= 1;
+        }
+        let mut last = position;
+        while last + 1 < day.len() && same_course(&day[last + 1]) {
+            last += 1;
+        }
+        Ok(day
+            .drain(first..=last)
+            .filter(|other| other.instance.id != instance_id)
+            .collect())
+    }
+
     /// "2027б" for a class lesson, the group name for a group lesson.
     pub async fn target_name_of(&self, lesson: &Lesson) -> Result<String, DomainError> {
         self.target_name(lesson).await
