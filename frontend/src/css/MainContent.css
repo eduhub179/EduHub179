@@ -360,6 +360,7 @@
     margin-top: 0;
 }
 
-.homework-view__title .schedule__cancelled-badge {
+.homework-view__title .schedule__cancelled-badge,
+.homework-view__title .schedule__changed-badge {
     font-size: 0.4em;
 }

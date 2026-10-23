@@ -91,6 +91,10 @@
     background: rgba(239, 68, 68, 0.08);
 }
 
+.admin__row--changed td {
+    background: rgba(59, 130, 246, 0.08);
+}
+
 .admin__row--cancelled strong {
     text-decoration: line-through;
 }
@@ -134,6 +138,12 @@
     background: #fee2e2;
     border-color: #fecaca;
     color: #b91c1c;
+}
+
+.admin__badge--blue {
+    background: #dbeafe;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
 }
 
 .admin__badge--green {

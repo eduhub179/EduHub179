@@ -423,6 +423,8 @@ pub struct AdminLessonResponse {
     /// scheduled | completed | cancelled.
     pub status: String,
     pub has_homework: bool,
+    /// Added by an admin to this date only (one-off or moved lesson).
+    pub is_extra: bool,
 }
 
 impl From<ScheduleLesson> for AdminLessonResponse {
@@ -453,6 +455,7 @@ impl From<ScheduleLesson> for AdminLessonResponse {
             }),
             status: lesson.instance.status.to_string(),
             has_homework: lesson.homework.is_some(),
+            is_extra: lesson.is_extra,
         }
     }
 }

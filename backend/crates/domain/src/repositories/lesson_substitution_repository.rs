@@ -1,4 +1,5 @@
-//! Repository trait for lesson substitutions (substitute teacher, note).
+//! Repository trait for lesson substitutions (substitute teacher, note) and the
+//! "added by an admin" mark of a lesson.
 //!
 //! Implementation of this trait is located in the `infrastructure` crate.
 
@@ -12,6 +13,9 @@ use crate::errors::DomainError;
 pub trait LessonSubstitutionRepository: Send + Sync {
     /// Substitution of one lesson instance; `None` if the lesson is unchanged.
     async fn get(&self, instance_id: Uuid) -> Result<Option<LessonSubstitution>, DomainError>;
+
+    /// Whether an admin added this lesson to one date (one-off or moved lesson).
+    async fn is_extra(&self, instance_id: Uuid) -> Result<bool, DomainError>;
 
     /// Instances in `[from, to]` where the teacher substitutes (for the teacher's schedule).
     async fn instance_ids_for_teacher(

@@ -68,6 +68,8 @@ export interface AdminLessonDto {
   cabinet: { id: string; number: number } | null;
   status: LessonStatus;
   has_homework: boolean;
+  /** Added by an admin to this date only (one-off or moved lesson). */
+  is_extra: boolean;
 }
 
 /** Only the fields that change; `null` clears a cabinet override, substitute or note. */

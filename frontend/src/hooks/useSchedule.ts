@@ -65,6 +65,8 @@ const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>
                 cabinet: lesson.cabinet,
                 cancelled: lesson.status === 'cancelled',
                 note: lesson.note ?? null,
+                substituted: Boolean(lesson.usual_teachers?.length),
+                extra: Boolean(lesson.is_extra),
                 homework: lesson.homework
                     ? {
                         id: lesson.homework.id,

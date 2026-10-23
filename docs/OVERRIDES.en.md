@@ -177,6 +177,10 @@ lessons. Code: `application/src/use_cases/admin/timetable_service.rs`, routes
   one-off lesson at the new place and moves the homework with it (the section 4 process,
   done automatically).
 - `copy_week` now skips lessons of inactive templates (one-off and removed slots).
+- One-off and moved lessons get `lesson_instances.is_extra = TRUE` (migration 0013; a
+  lesson moved back to its regular slot is `FALSE` again). The schedule API returns
+  `is_extra`; the site shows such lessons and lessons with a substitute
+  (`usual_teachers`) in pale blue, labelled «новый урок» / «замена».
 
 Known gaps: no check that the class, teacher or cabinet is free at that time (overlap is
 checked only within one course); week parity is still ignored when generating weeks (as

@@ -154,6 +154,16 @@ impl TimetableRepository for TimetableRepositoryPg {
         Ok(())
     }
 
+    async fn set_extra(&self, instance_id: Uuid, is_extra: bool) -> Result<(), DomainError> {
+        sqlx::query("UPDATE lesson_instances SET is_extra = $2 WHERE instance_id = $1")
+            .bind(instance_id)
+            .bind(is_extra)
+            .execute(&self.pool)
+            .await
+            .map_err(Self::map_db_error)?;
+        Ok(())
+    }
+
     async fn delete_instance(&self, instance_id: Uuid) -> Result<(), DomainError> {
         sqlx::query("DELETE FROM lesson_instances WHERE instance_id = $1")
             .bind(instance_id)

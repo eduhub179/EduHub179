@@ -34,6 +34,8 @@ export interface ScheduleLessonDto {
   cabinet?: string | null;
   status?: 'scheduled' | 'completed' | 'cancelled';
   note?: string | null;
+  /** Added by an admin to this date only (one-off or moved lesson). */
+  is_extra?: boolean;
   homework?: HomeworkDto | null;
 }
 
