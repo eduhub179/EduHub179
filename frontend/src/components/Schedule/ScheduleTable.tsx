@@ -154,7 +154,7 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                 const left = width * slotIndex;
                                                 return (
                                                     <button
-                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}`}
+                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}${lesson.cancelled ? ' schedule-grid__lesson--cancelled' : ''}`}
                                                         style={{
                                                             top,
                                                             left: `${left}%`,
@@ -169,8 +169,8 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                         <span className="schedule-grid__lesson-content">
                                                             <strong className={lesson.cancelled ? 'schedule__title--cancelled' : undefined}>
                                                                 {lesson.title}
-                                                                {lesson.cancelled && ' (отменён)'}
                                                             </strong>
+                                                            {lesson.cancelled && <small className="schedule__cancelled-badge">урок отменён</small>}
                                                             {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                                 <small className="schedule-grid__lesson-meta">
                                                                     {[
