@@ -197,3 +197,23 @@
     color: var(--color-text-muted);
     text-decoration: line-through;
 }
+
+/* Cancelled lesson: pale red card, crossed-out title, a small "отменён" badge. */
+.schedule__lesson-button.schedule__lesson-button--cancelled {
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.13);
+    box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.schedule__cancelled-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #b91c1c;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-decoration: none;
+    vertical-align: middle;
+}

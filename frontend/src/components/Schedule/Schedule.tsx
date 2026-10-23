@@ -106,7 +106,7 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                     <div className="schedule__lesson-group">
                                         {group.map((lesson, lessonIndex) => (
                                             <button
-                                                className={`schedule__lesson-button${group.length > 1 && lessonIndex > 0 ? ' schedule__lesson-button--split' : ''}`}
+                                                className={`schedule__lesson-button${group.length > 1 && lessonIndex > 0 ? ' schedule__lesson-button--split' : ''}${lesson.cancelled ? ' schedule__lesson-button--cancelled' : ''}`}
                                                 type="button"
                                                 key={lesson.id}
                                                 onClick={() => onLessonSelect(lesson)}
@@ -120,7 +120,7 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
 
                                                         <div className={`schedule__title${lesson.cancelled ? ' schedule__title--cancelled' : ''}`}>
                                                             {lesson.title || '—'}
-                                                            {lesson.cancelled && ' (отменён)'}
+                                                            {lesson.cancelled && <span className="schedule__cancelled-badge">отменён</span>}
                                                         </div>
                                                         {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                             <div className="schedule__lesson-meta">

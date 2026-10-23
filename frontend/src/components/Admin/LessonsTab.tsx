@@ -260,6 +260,23 @@ const LessonsTab: React.FC = () => {
         }
     };
 
+    /** One click: cancel a lesson or bring it back, nothing else changes. */
+    const toggleCancelled = async (lesson: AdminLessonDto) => {
+        setBusy(true);
+        setSaveError(null);
+        try {
+            const updated = await updateAdminLesson(lesson.id, {
+                status: lesson.status === 'cancelled' ? 'scheduled' : 'cancelled',
+            });
+            setLessons((current) => (current ?? []).map((item) => (item.id === updated.id ? updated : item)));
+        } catch (error) {
+            setMessage(null);
+            setLoadError(`${lesson.subject_name}: ${errorText(error)}`);
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const move = async (lesson: AdminLessonDto, place: Place) => {
         setBusy(true);
         setSaveError(null);
@@ -433,6 +450,16 @@ const LessonsTab: React.FC = () => {
                                             )}
                                         </td>
                                         <td className="admin__nowrap">
+                                            {!isEditing && moving?.id !== lesson.id && (
+                                                <button
+                                                    type="button"
+                                                    className={`admin__below ${lesson.status === 'cancelled' ? 'admin__secondary' : 'admin__danger-outline'}`}
+                                                    disabled={busy}
+                                                    onClick={() => void toggleCancelled(lesson)}
+                                                >
+                                                    {lesson.status === 'cancelled' ? 'Вернуть урок' : 'Отменить'}
+                                                </button>
+                                            )}
                                             {!isEditing && moving?.id !== lesson.id && (
                                                 <button
                                                     type="button"
