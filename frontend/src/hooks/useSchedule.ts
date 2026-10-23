@@ -56,6 +56,7 @@ const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>
             shortName: shortWeekday.charAt(0).toLocaleUpperCase('ru-RU') + shortWeekday.slice(1),
             items: withoutReplacedLessons(day.lessons).map((lesson, index): ScheduleItem => ({
                 id: lesson.id,
+                date: day.date,
                 startTime: lesson.start_time,
                 endTime: lesson.end_time,
                 lessonNumber: index + 1,

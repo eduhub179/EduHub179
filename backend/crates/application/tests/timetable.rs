@@ -449,3 +449,27 @@ async fn moved_lesson_takes_its_homework(pool: PgPool) {
     );
     assert_eq!(student_lessons(&w, MONDAY).await[0].2, LessonInstanceStatus::Scheduled);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn double_lesson_partners_are_the_same_course_next_to_each_other(pool: PgPool) {
+    let w = seed(pool).await;
+    // Monday: algebra 09:00 (seed), algebra 09:55, physics 11:00, algebra 11:55.
+    for (course, start, end) in [
+        (w.algebra, "09:55", "10:40"),
+        (w.physics, "11:00", "11:45"),
+        (w.algebra, "11:55", "12:40"),
+    ] {
+        w.service
+            .add_slot(&w.admin, slot(course, DayOfWeek::Mon, start, end), Some(day(MONDAY)))
+            .await
+            .unwrap();
+    }
+
+    let partners = w.schedule.double_lesson_partners(w.instance).await.unwrap();
+
+    let times: Vec<String> = partners
+        .iter()
+        .map(|l| l.start_time.format("%H:%M").to_string())
+        .collect();
+    assert_eq!(times, vec!["09:55"], "the 11:55 algebra is not part of the pair");
+}

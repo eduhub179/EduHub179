@@ -16,6 +16,8 @@ export interface Homework {
 
 export interface ScheduleItem {
     id: string | number;
+    /** `YYYY-MM-DD` of the lesson. */
+    date?: string;
     startTime: string;
     endTime: string;
     lessonNumber: number;

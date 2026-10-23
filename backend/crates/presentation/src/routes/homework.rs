@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
@@ -143,11 +143,21 @@ pub async fn update_homework_text_handler(
     }))
 }
 
-/// `DELETE /api/homework/:homework_id` — removes the homework with its text and all files.
+#[derive(Debug, Default, Deserialize)]
+pub struct DeleteHomeworkQuery {
+    /// Also delete the homework of the other lessons of a double lesson (the site does;
+    /// the agent does not: it tracks both copies itself).
+    #[serde(default)]
+    pub with_double: bool,
+}
+
+/// `DELETE /api/homework/:homework_id[?with_double=true]` — removes the homework with its
+/// text and all files.
 pub async fn delete_homework_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(homework_id): Path<String>,
+    Query(query): Query<DeleteHomeworkQuery>,
 ) -> Result<StatusCode, ApiError> {
     let Caller { user, is_agent } = require_caller(&state, &headers).await?;
     if !can_edit_homework(&user, is_agent) {
@@ -166,17 +176,44 @@ pub async fn delete_homework_handler(
         .execute(homework_uuid)
         .await
         .map_err(ApiError::from_homework_domain)?;
-    for key in deleted.orphaned_storage_keys {
-        // The homework is gone, the object stayed: leave a trace for manual cleanup.
-        eprintln!("file storage: could not delete object '{key}' (homework {homework_uuid} removed)");
+    let mut removed = vec![(deleted, homework_uuid)];
+
+    if query.with_double {
+        // Best effort: the homework asked for is already gone, a failure here leaves the
+        // partner's copy in place and is only logged.
+        let partners = match &state.schedule_service {
+            Some(schedule) => schedule
+                .double_lesson_partners(removed[0].0.lesson_instance_id)
+                .await
+                .unwrap_or_else(|error| {
+                    eprintln!("double lesson of homework {homework_uuid}: {error}");
+                    Vec::new()
+                }),
+            None => Vec::new(),
+        };
+        for partner in partners {
+            let Some(details) = partner.homework else { continue };
+            let partner_id = details.homework.id;
+            match delete_homework_use_case.execute(partner_id).await {
+                Ok(deleted) => removed.push((deleted, partner_id)),
+                Err(error) => eprintln!("double lesson: could not delete homework {partner_id}: {error}"),
+            }
+        }
     }
-    notify_homework_change_for_lesson(
-        &state,
-        deleted.lesson_instance_id,
-        homework_uuid,
-        HomeworkChange::Deleted,
-        user.id,
-    );
+
+    for (deleted, id) in removed {
+        for key in deleted.orphaned_storage_keys {
+            // The homework is gone, the object stayed: leave a trace for manual cleanup.
+            eprintln!("file storage: could not delete object '{key}' (homework {id} removed)");
+        }
+        notify_homework_change_for_lesson(
+            &state,
+            deleted.lesson_instance_id,
+            id,
+            HomeworkChange::Deleted,
+            user.id,
+        );
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -4,12 +4,15 @@ import {
     attachLessonFile,
     deleteHomework,
     deleteHomeworkFile,
+    hasAdminRole,
     hasTeacherOrAdminRole,
     homeworkFileUrl,
 } from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import {SCHEDULE_CHANGED_EVENT} from '../hooks/useSchedule';
 import FileDropDialog from './FileDropDialog';
+import HomeworkTextEditor from './LessonCard/HomeworkTextEditor';
+import LessonAdminControls from './LessonCard/LessonAdminControls';
 import type {HomeworkFile, ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/MainContent.css';
 
@@ -199,16 +202,23 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                         ×
                     </button>
                     <span className="homework-view__subject">Урок {selectedLesson.lessonNumber}</span>
-                    <h1 className="homework-view__title">{selectedLesson.title || 'Урок без названия'}</h1>
+                    <h1 className="homework-view__title">
+                        {selectedLesson.title || 'Урок без названия'}
+                        {selectedLesson.cancelled && <span className="schedule__cancelled-badge">урок отменён</span>}
+                    </h1>
                     <p className="homework-view__description">
                         Время: {selectedLesson.startTime} – {selectedLesson.endTime}
                     </p>
+                    {selectedLesson.note && (
+                        <p className="homework-view__note">{selectedLesson.note}</p>
+                    )}
                     <p className="homework-view__description">
                         ДЗ: {homework?.description || (homework ? 'см. файлы.' : 'Домашнего задания нет.')}
                     </p>
 
                     {canAttachFiles && (
                         <div className="homework-view__actions">
+                            <HomeworkTextEditor lesson={selectedLesson} onLessonUpdated={onLessonUpdated} />
                             <FileDropDialog
                                 open={isFileDialogOpen}
                                 title="Добавить файлы к ДЗ"
@@ -237,7 +247,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                             )}
                             {homework && isConfirmingDelete && (
                                 <span className="homework-view__confirm" role="group" aria-label="Подтверждение удаления">
-                                    Удалить ДЗ вместе со всеми файлами?
+                                    Удалить ДЗ вместе со всеми файлами (и у второго урока, если урок сдвоенный)?
                                     <button
                                         className="homework-view__delete"
                                         type="button"
@@ -260,6 +270,10 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                                 <p className="homework-view__upload-error" role="alert">{uploadError}</p>
                             )}
                         </div>
+                    )}
+
+                    {hasAdminRole(user) && (
+                        <LessonAdminControls lesson={selectedLesson} onLessonUpdated={onLessonUpdated} />
                     )}
 
                     {homework && homework.files.length > 0 && (
