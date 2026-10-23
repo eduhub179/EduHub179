@@ -26,6 +26,25 @@ const getLocalDate = (date: Date): string => {
     return `${year}-${month}-${day}`;
 };
 
+type ApiLesson = Awaited<ReturnType<typeof fetchClassWeekSchedule>>['days'][number]['lessons'][number];
+
+/**
+ * Hides a cancelled lesson when a lesson that takes place overlaps it in time
+ * (something was put in its place), unless it still has homework to show.
+ */
+const withoutReplacedLessons = (lessons: ApiLesson[]): ApiLesson[] =>
+    lessons.filter(
+        (lesson) =>
+            lesson.status !== 'cancelled' ||
+            lesson.homework ||
+            !lessons.some(
+                (other) =>
+                    other.status !== 'cancelled' &&
+                    other.start_time < lesson.end_time &&
+                    lesson.start_time < other.end_time,
+            ),
+    );
+
 const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>>): DaySchedule[] =>
     week.days.map((day) => {
         const date = new Date(`${day.date}T00:00:00`);
@@ -35,7 +54,7 @@ const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>
         return {
             name: weekday.charAt(0).toLocaleUpperCase('ru-RU') + weekday.slice(1),
             shortName: shortWeekday.charAt(0).toLocaleUpperCase('ru-RU') + shortWeekday.slice(1),
-            items: day.lessons.map((lesson, index): ScheduleItem => ({
+            items: withoutReplacedLessons(day.lessons).map((lesson, index): ScheduleItem => ({
                 id: lesson.id,
                 startTime: lesson.start_time,
                 endTime: lesson.end_time,
