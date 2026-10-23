@@ -4,8 +4,8 @@
 //! tap a cell → plus. Student workflow: dashboard "how many tasks are solved".
 //!
 //! Access rules:
-//! - a teacher manages sheets and pluses only of lessons they teach (`lesson_teachers`);
-//!   an admin manages any lesson;
+//! - any teacher and any admin manage sheets and pluses of every lesson
+//!   (`LessonAccess::can_manage`);
 //! - a student sees published sheets of their lessons (their class or their groups)
 //!   and the plus table of such a sheet (the whole lesson, read-only);
 //! - pluses are granted only on published sheets and only to students of the lesson.
@@ -33,7 +33,7 @@ use domain::{
         student_group_repository::StudentGroupRepository,
         subject_repository::SubjectRepository, user_repository::UserRepository,
     },
-    value_objects::{role::UserRole, sheet_status::SheetStatus},
+    value_objects::sheet_status::SheetStatus,
 };
 use uuid::Uuid;
 
@@ -152,7 +152,7 @@ impl PlusnikService {
     // ========================================================================
 
     /// Lessons the user can manage sheets for, sorted by subject and class/group:
-    /// a teacher gets the lessons they teach, an admin every active lesson of the school.
+    /// every active lesson of the school for teachers and admins alike.
     ///
     /// With `class_id`, only lessons of that class: its whole-class lessons and group
     /// lessons attended by its students (the same rule as the class schedule), so
@@ -169,29 +169,8 @@ impl PlusnikService {
             return Err(DomainError::InsufficientPermissions);
         }
         let candidates = match class_id {
-            Some(class_id) => {
-                let class_lessons = self.class_lessons(class_id).await?;
-                match user.role {
-                    UserRole::Admin => class_lessons,
-                    _ => {
-                        let own: HashSet<Uuid> = self
-                            .lessons
-                            .get_by_teacher(user.id)
-                            .await?
-                            .into_iter()
-                            .map(|lesson| lesson.id)
-                            .collect();
-                        class_lessons
-                            .into_iter()
-                            .filter(|lesson| own.contains(&lesson.id))
-                            .collect()
-                    }
-                }
-            }
-            None => match user.role {
-                UserRole::Admin => self.all_lessons().await?,
-                _ => self.lessons.get_by_teacher(user.id).await?,
-            },
+            Some(class_id) => self.class_lessons(class_id).await?,
+            None => self.all_lessons().await?,
         };
         let mut lessons = Vec::new();
         for lesson in candidates {
@@ -206,7 +185,7 @@ impl PlusnikService {
     }
 
     /// Sheets of a lesson with their tasks, newest first.
-    /// A teacher of the lesson (or admin) sees all statuses, a student of the lesson
+    /// Any teacher or admin sees all statuses, a student of the lesson
     /// only published sheets.
     ///
     /// # Fail-safe поведение
@@ -362,7 +341,7 @@ impl PlusnikService {
     // ========================================================================
 
     /// The plus table: tasks × students of the lesson with active pluses.
-    /// A teacher of the lesson (or admin) sees it for any status, a student of the lesson
+    /// Any teacher or admin sees it for any status, a student of the lesson
     /// only for a published sheet (the same sheets `lesson_sheets` shows them).
     ///
     /// # Fail-safe поведение

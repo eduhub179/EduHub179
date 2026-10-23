@@ -2,7 +2,7 @@
 //!
 //! Access (see `LessonAccess`):
 //! - view: staff (teachers, admins) — any course; students — courses they attend;
-//! - manage (topics, upload, edit, delete): admin or a teacher of the course.
+//! - manage (topics, upload, edit, delete): any teacher or admin, any course.
 //!
 //! Materials are visible right after they are added (no drafts).
 //!

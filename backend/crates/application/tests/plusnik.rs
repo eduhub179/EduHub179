@@ -128,16 +128,19 @@ fn sheet_command(lesson_id: Uuid, status: SheetStatus, tasks: &[&str]) -> Create
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn teacher_lessons_lists_only_own_lessons(pool: PgPool) {
+async fn every_teacher_lists_all_lessons(pool: PgPool) {
     let w = seed(pool).await;
 
     let lessons = w.service.teacher_lessons(&w.user(w.teacher).await, None).await.unwrap();
+    // Not a teacher of any lesson, still sees (and manages) all of them.
     let others = w.service.teacher_lessons(&w.user(w.other_teacher).await, None).await.unwrap();
+    let student = w.service.teacher_lessons(&w.user(w.anna).await, None).await;
 
     let names: Vec<_> = lessons.iter().map(|l| l.target_name.as_str()).collect();
     assert_eq!(names, vec!["2027б", "Спецкурс"]);
     assert_eq!(lessons[0].subject_name, "Матанализ");
-    assert!(others.is_empty());
+    assert_eq!(others, lessons);
+    assert_eq!(student.unwrap_err(), DomainError::InsufficientPermissions);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -170,17 +173,25 @@ async fn create_sheet_rejects_duplicates_before_saving(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn only_lesson_teacher_or_admin_manages_sheets(pool: PgPool) {
+async fn any_teacher_or_admin_manages_sheets(pool: PgPool) {
     let w = seed(pool).await;
-    let command = sheet_command(w.lesson_id, SheetStatus::Draft, &["1"]);
+    let command = sheet_command(w.lesson_id, SheetStatus::Published, &["1"]);
+    let other_teacher = w.user(w.other_teacher).await;
 
-    let foreign = w.service.create_sheet(&w.user(w.other_teacher).await, command.clone()).await;
+    // A teacher who does not teach the lesson.
+    let foreign = w.service.create_sheet(&other_teacher, command.clone()).await.unwrap();
+    let plus = w.service.grant_plus(&other_teacher, foreign.tasks[0].id, w.anna).await;
     let student = w.service.create_sheet(&w.user(w.anna).await, command.clone()).await;
     let admin = w.service.create_sheet(&w.user(w.admin).await, command).await;
+    let unknown = w
+        .service
+        .create_sheet(&other_teacher, sheet_command(Uuid::new_v4(), SheetStatus::Draft, &["1"]))
+        .await;
 
-    assert_eq!(foreign.unwrap_err(), DomainError::InsufficientPermissions);
+    assert!(plus.is_ok());
     assert_eq!(student.unwrap_err(), DomainError::InsufficientPermissions);
     assert!(admin.is_ok());
+    assert_eq!(unknown.unwrap_err(), DomainError::LessonNotFound);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -213,7 +224,7 @@ async fn students_of_lesson_see_matrix_of_published_sheet(pool: PgPool) {
     let matrix = w.service.sheet_matrix(&anna, published.sheet.id).await.unwrap();
     let hidden = w.service.sheet_matrix(&anna, draft.sheet.id).await;
     let outsider = w.service.sheet_matrix(&w.user(w.outsider).await, published.sheet.id).await;
-    let other_teacher = w.service.sheet_matrix(&w.user(w.other_teacher).await, published.sheet.id).await;
+    let other_teacher = w.service.sheet_matrix(&w.user(w.other_teacher).await, draft.sheet.id).await;
 
     // The whole lesson is visible, including other students' pluses.
     assert_eq!(matrix.students.len(), 2);
@@ -221,7 +232,8 @@ async fn students_of_lesson_see_matrix_of_published_sheet(pool: PgPool) {
     assert_eq!(matrix.pluses[0].student_id, w.boris);
     assert_eq!(hidden.unwrap_err(), DomainError::PlusnikSheetNotFound);
     assert_eq!(outsider.unwrap_err(), DomainError::InsufficientPermissions);
-    assert_eq!(other_teacher.unwrap_err(), DomainError::InsufficientPermissions);
+    // Any teacher sees any sheet, drafts included.
+    assert!(other_teacher.is_ok());
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -273,14 +285,14 @@ async fn grant_requires_published_sheet_and_lesson_student(pool: PgPool) {
 
     let on_draft = w.service.grant_plus(&teacher, draft.tasks[0].id, w.anna).await;
     let to_outsider = w.service.grant_plus(&teacher, published.tasks[0].id, w.outsider).await;
-    let by_foreign = w
+    let by_student = w
         .service
-        .grant_plus(&w.user(w.other_teacher).await, published.tasks[0].id, w.anna)
+        .grant_plus(&w.user(w.boris).await, published.tasks[0].id, w.anna)
         .await;
 
     assert_eq!(on_draft.unwrap_err(), DomainError::PlusnikSheetNotPublished);
     assert_eq!(to_outsider.unwrap_err(), DomainError::StudentNotInLesson);
-    assert_eq!(by_foreign.unwrap_err(), DomainError::InsufficientPermissions);
+    assert_eq!(by_student.unwrap_err(), DomainError::InsufficientPermissions);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -430,7 +442,7 @@ async fn lessons_filtered_by_class_include_its_students_groups(pool: PgPool) {
     // 2027в: no class lessons, but its student attends the group lesson.
     let other_class = w.service.teacher_lessons(&teacher, Some(w.other_class_id)).await.unwrap();
     let admin_other = w.service.teacher_lessons(&admin, Some(w.other_class_id)).await.unwrap();
-    let foreign = w
+    let other_teacher = w
         .service
         .teacher_lessons(&w.user(w.other_teacher).await, Some(w.class_id))
         .await
@@ -439,7 +451,7 @@ async fn lessons_filtered_by_class_include_its_students_groups(pool: PgPool) {
     assert_eq!(ids(own_class), vec![w.lesson_id]);
     assert_eq!(ids(other_class), vec![w.group_lesson_id]);
     assert_eq!(ids(admin_other), vec![w.group_lesson_id]);
-    assert!(foreign.is_empty(), "a teacher sees only own lessons of the class");
+    assert_eq!(ids(other_teacher), vec![w.lesson_id], "any teacher sees every lesson of the class");
     assert_eq!(
         w.service.teacher_lessons(&teacher, Some(Uuid::new_v4())).await.unwrap_err(),
         DomainError::ClassNotFound

@@ -157,8 +157,9 @@ async fn class_courses_depend_on_role(pool: PgPool) {
     let view = |courses: Vec<application::use_cases::materials::materials_service::CourseSummary>| {
         courses.into_iter().map(|c| (c.subject_name, c.can_manage)).collect::<Vec<_>>()
     };
-    assert_eq!(view(for_teacher), vec![("Матанализ".into(), true), ("Спецкурс".into(), false)]);
-    assert_eq!(view(for_other), vec![("Матанализ".into(), false), ("Спецкурс".into(), false)]);
+    assert_eq!(view(for_teacher), vec![("Матанализ".into(), true), ("Спецкурс".into(), true)]);
+    // Not a teacher of these courses, still manages them.
+    assert_eq!(view(for_other), vec![("Матанализ".into(), true), ("Спецкурс".into(), true)]);
     assert_eq!(view(for_student), vec![("Матанализ".into(), false), ("Спецкурс".into(), false)]);
     assert_eq!(
         service.class_courses(&w.user(w.teacher).await, Uuid::new_v4()).await.unwrap_err(),
@@ -234,11 +235,10 @@ async fn who_may_view_and_manage(pool: PgPool) {
         DomainError::InsufficientPermissions
     );
 
-    // Managing: course teachers and admins only.
-    for intruder in [w.student, w.other_teacher] {
-        let result = service.add_link(&w.user(intruder).await, link(w.lesson, None, "x")).await;
-        assert_eq!(result.unwrap_err(), DomainError::InsufficientPermissions);
-    }
+    // Managing: any teacher (not only of this course) and admins; never students.
+    let result = service.add_link(&w.user(w.student).await, link(w.lesson, None, "x")).await;
+    assert_eq!(result.unwrap_err(), DomainError::InsufficientPermissions);
+    assert!(service.add_link(&w.user(w.other_teacher).await, link(w.lesson, None, "Чужой учитель")).await.is_ok());
     assert!(service.create_topic(&w.user(w.admin).await, w.lesson, "Админская").await.is_ok());
 
     // The group course is visible to its member from another class.

@@ -2,7 +2,8 @@
 //!
 //! Shared by features attached to courses (plusnik, course materials), so the access
 //! rules live in one place:
-//! - manage: an admin, or a teacher assigned to the course (`lesson_teachers`);
+//! - manage: any teacher or admin, for every course (teachers substitute each other,
+//!   so access is not limited to `lesson_teachers`);
 //! - audience: active students of the course's class, or members of its group;
 //! - courses of a class: its whole-class courses plus group courses attended by its
 //!   students (the same rule as the class schedule).
@@ -58,13 +59,13 @@ impl LessonAccess {
         }
     }
 
-    /// Admin, or a teacher assigned to the course.
+    /// Any teacher or admin. The course must exist.
+    ///
+    /// # Fail-safe поведение
+    /// `LessonNotFound` for an unknown course, whatever the role.
     pub async fn can_manage(&self, user: &User, lesson_id: Uuid) -> Result<bool, DomainError> {
-        match user.role {
-            UserRole::Admin => Ok(true),
-            UserRole::Teacher => Ok(self.lessons.get_teacher_ids(lesson_id).await?.contains(&user.id)),
-            UserRole::Student => Ok(false),
-        }
+        self.lessons.get_by_id(lesson_id).await?;
+        Ok(matches!(user.role, UserRole::Teacher | UserRole::Admin))
     }
 
     /// `InsufficientPermissions` unless `can_manage`.
