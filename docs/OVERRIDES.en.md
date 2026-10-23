@@ -154,3 +154,31 @@ So the admin panel (`PATCH /api/admin/lessons/{instance_id}`) does this:
 The section 4 flow remains for **subject changes** (swapping subjects between slots).
 Known gap: `check_teacher_available` doesn't consider `lesson_substitutions` yet, and the
 admin panel doesn't check that the substitute is free.
+
+## 10. Timetable editor in the admin panel (`TimetableService`, 2026-10-23)
+
+The «Расписание» tab edits the **regular** timetable; «Замены и отмены» edits single
+lessons. Code: `application/src/use_cases/admin/timetable_service.rs`, routes
+`presentation/src/routes/timetable.rs`.
+
+- **Courses** (`lessons`) and their teachers: `POST /api/admin/courses`,
+  `PUT /api/admin/courses/{id}/teachers`. A course teacher changes for every week, past
+  ones included; a one-day change is a substitution (section 9).
+- **Slots** (`lesson_templates`): `POST /api/admin/slots`, `PUT|DELETE /api/admin/slots/{id}`.
+  History is never rewritten: a changed slot becomes a new template and the old one is
+  deactivated (`is_active = FALSE`). Already created weeks change only with `apply_from`:
+  from that date their lessons move to the new template. A lesson with homework never
+  changes its subject (left as is, counted in `kept`); a removed slot's lesson with
+  homework becomes `cancelled`, without homework it is deleted.
+- **One-off lesson**: `POST /api/admin/lessons` adds a lesson to one date. It gets an
+  **inactive** template, so `generate_from_templates` and `copy_week` never carry it to
+  other weeks. A cancelled lesson in the same slot is restored instead of duplicated.
+- **Moving a lesson**: `POST /api/admin/lessons/{id}/move` cancels the original, adds a
+  one-off lesson at the new place and moves the homework with it (the section 4 process,
+  done automatically).
+- `copy_week` now skips lessons of inactive templates (one-off and removed slots).
+
+Known gaps: no check that the class, teacher or cabinet is free at that time (overlap is
+checked only within one course); week parity is still ignored when generating weeks (as
+before in `generate_from_templates`); a group course shows in a class timetable only if
+the group has students of that class.

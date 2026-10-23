@@ -8,3 +8,4 @@ pub mod notifications;
 pub mod plusnik;
 pub mod schedule;
 pub mod telegram;
+pub mod timetable;

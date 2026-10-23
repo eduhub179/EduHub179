@@ -23,6 +23,7 @@ pub mod schedule_week_repository_pg;
 pub mod student_group_repository_pg;
 pub mod subject_repository_pg;
 pub mod telegram_bindigs_repository_pg;
+pub mod timetable_repository_pg;
 pub mod user_repository_pg;
 pub mod web_session_repository_pg;
 
@@ -46,5 +47,6 @@ pub use schedule_week_repository_pg::ScheduleWeekRepositoryPg;
 pub use student_group_repository_pg::StudentGroupRepositoryPg;
 pub use subject_repository_pg::SubjectRepositoryPg;
 pub use telegram_bindigs_repository_pg::TelegramBindingRepositoryPg;
+pub use timetable_repository_pg::TimetableRepositoryPg;
 pub use user_repository_pg::UserRepositoryPg;
 pub use web_session_repository_pg::WebSessionRepositoryPg;

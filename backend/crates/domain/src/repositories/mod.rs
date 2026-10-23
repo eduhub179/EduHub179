@@ -16,5 +16,6 @@ pub mod student_group_repository;
 pub mod subject_repository;
 pub mod telegram_bindigs_repository;
 pub mod telegram_session_repository;
+pub mod timetable_repository;
 pub mod user_repository;
 pub mod web_session_repository;

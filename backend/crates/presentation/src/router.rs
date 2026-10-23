@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use application::use_cases::{
-    admin::AdminService,
+    admin::{AdminService, TimetableService},
     auth::{login::LoginUseCase, OneTimeCodeService},
     homework::{
         attach_file_to_lesson::AttachFileToLessonUseCase,
@@ -42,6 +42,7 @@ use uuid::Uuid;
 use crate::routes::notifications::PushNotifications;
 use crate::routes::{
     admin, auth, classes, files, homework, materials, notifications, plusnik, schedule, telegram,
+    timetable,
 };
 
 #[derive(Debug)]
@@ -275,6 +276,7 @@ pub struct AppState {
     /// `None` if browser push is not configured (`VAPID_PRIVATE_KEY` unset).
     pub push: Option<PushNotifications>,
     pub admin_service: Option<Arc<AdminService>>,
+    pub timetable_service: Option<Arc<TimetableService>>,
 }
 
 /// Homework file use cases; all of them need object storage.
@@ -549,6 +551,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             materials_service: None,
             push: None,
             admin_service: None,
+            timetable_service: None,
         })
 }
 
@@ -593,6 +596,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             materials_service: None,
             push: None,
             admin_service: None,
+            timetable_service: None,
         })
 }
 
@@ -616,6 +620,7 @@ pub fn create_app_with_auth_and_schedule(
     materials_service: Arc<MaterialsService>,
     push: Option<PushNotifications>,
     admin_service: Arc<AdminService>,
+    timetable_service: Arc<TimetableService>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -696,6 +701,7 @@ pub fn create_app_with_auth_and_schedule(
             materials_service: Some(materials_service),
             push,
             admin_service: Some(admin_service),
+            timetable_service: Some(timetable_service),
         })
 }
 
@@ -723,7 +729,6 @@ fn admin_routes() -> Router<AppState> {
             "/api/admin/cabinets",
             get(admin::cabinets_handler).post(admin::create_cabinet_handler),
         )
-        .route("/api/admin/lessons", get(admin::lessons_handler))
         .route("/api/admin/lessons/:instance_id", patch(admin::update_lesson_handler))
         .route(
             "/api/admin/weeks",
@@ -737,6 +742,33 @@ fn admin_routes() -> Router<AppState> {
         .route(
             "/api/admin/announcements/:announcement_id",
             put(admin::update_announcement_handler).delete(admin::delete_announcement_handler),
+        )
+        .route(
+            "/api/admin/subjects",
+            get(timetable::subjects_handler).post(timetable::create_subject_handler),
+        )
+        .route("/api/admin/groups", get(timetable::groups_handler))
+        .route(
+            "/api/admin/classes/:class_id/timetable",
+            get(timetable::class_timetable_handler),
+        )
+        .route("/api/admin/courses", post(timetable::create_course_handler))
+        .route(
+            "/api/admin/courses/:course_id/teachers",
+            put(timetable::set_course_teachers_handler),
+        )
+        .route("/api/admin/slots", post(timetable::add_slot_handler))
+        .route(
+            "/api/admin/slots/:slot_id",
+            put(timetable::update_slot_handler).delete(timetable::remove_slot_handler),
+        )
+        .route(
+            "/api/admin/lessons",
+            get(admin::lessons_handler).post(timetable::add_one_off_handler),
+        )
+        .route(
+            "/api/admin/lessons/:instance_id/move",
+            post(timetable::move_lesson_handler),
         )
 }
 
@@ -983,6 +1015,7 @@ mod tests {
             materials_service: None,
             push: None,
             admin_service: None,
+            timetable_service: None,
         }
     }
 

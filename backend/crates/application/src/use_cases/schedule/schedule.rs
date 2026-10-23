@@ -460,6 +460,10 @@ impl ScheduleService {
     }
 
     /// "2027б" for a class lesson, the group name for a group lesson.
+    pub async fn target_name_of(&self, lesson: &Lesson) -> Result<String, DomainError> {
+        self.target_name(lesson).await
+    }
+
     async fn target_name(&self, lesson: &Lesson) -> Result<String, DomainError> {
         match lesson.target {
             LessonTarget::Class(class_id) => Ok(self.classes.get_by_id(class_id).await?.full_name()),
@@ -738,6 +742,11 @@ impl ScheduleService {
         for inst in source_instances.into_iter() {
             if !inst.status.is_scheduled() {
                 continue; // skip cancelled/completed (do not copy replacements)
+            }
+            // Inactive templates are one-off lessons and slots removed from the regular
+            // timetable: they belong to the source week only.
+            if !self.templates.get_by_id(inst.template_id).await?.is_active {
+                continue;
             }
 
             let new_lesson_date = inst.lesson_date + chrono::Duration::days(offset.num_days());
@@ -1068,9 +1077,13 @@ mod tests {
     impl LessonTemplateRepository for MockTemplateRepo {
         async fn get_by_id(
             &self,
-            _template_id: uuid::Uuid,
+            template_id: uuid::Uuid,
         ) -> Result<domain::entities::lesson_template::LessonTemplate, DomainError> {
-            Err(DomainError::LessonTemplateNotFound)
+            self.templates
+                .iter()
+                .find(|t| t.id == template_id)
+                .cloned()
+                .ok_or(DomainError::LessonTemplateNotFound)
         }
         async fn get_by_lesson(
             &self,
@@ -1140,7 +1153,7 @@ mod tests {
     #[tokio::test]
     async fn test_generate_from_templates_creates_instances() {
         use chrono::NaiveTime;
-        use domain::value_objects::day_of_week::DayOfWeek;
+
 
         let week_date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
         let week = ScheduleWeek::new(week_date, WeekStatus::Draft, None);
@@ -1152,7 +1165,7 @@ mod tests {
         let template = domain::entities::lesson_template::LessonTemplate::try_new(
             uuid::Uuid::new_v4(),
             uuid::Uuid::new_v4(),
-            DayOfWeek::Mon,
+            domain::value_objects::day_of_week::DayOfWeek::Mon,
             NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
             NaiveTime::from_hms_opt(9, 45, 0).unwrap(),
             domain::value_objects::week_parity::WeekParity::Every,
@@ -1190,40 +1203,37 @@ mod tests {
         assert_eq!(created[0].week_start_date, week_date);
     }
 
-    #[tokio::test]
-    async fn test_copy_week_copies_scheduled_instances_and_sets_copied_from() {
-        use domain::value_objects::lesson_instance_status::LessonInstanceStatus;
-        // source week
-        let source_date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
-        let target_date = NaiveDate::from_ymd_opt(2026, 9, 14).unwrap();
-
-        let inst = LessonInstance::try_new(
+    fn copy_week_template(is_active: bool) -> domain::entities::lesson_template::LessonTemplate {
+        domain::entities::lesson_template::LessonTemplate::try_new(
             uuid::Uuid::new_v4(),
             uuid::Uuid::new_v4(),
-            source_date,
-            source_date,
-            LessonInstanceStatus::Scheduled,
+            domain::value_objects::day_of_week::DayOfWeek::Mon,
+            NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            NaiveTime::from_hms_opt(9, 45, 0).unwrap(),
+            domain::value_objects::week_parity::WeekParity::Every,
             None,
+            is_active,
         )
-        .unwrap();
+        .unwrap()
+    }
 
-        let schedule_repo = MockScheduleWeekRepo {
-            week: ScheduleWeek::new(source_date, WeekStatus::Draft, None),
-            saved: Mutex::new(None),
-        };
-        let template_repo = MockTemplateRepo {
-            templates: Vec::new(),
-        };
-        let instance_repo = MockInstanceRepo {
-            saved: Mutex::new(Vec::new()),
-            week_instances: vec![inst.clone()],
-        };
-
+    async fn run_copy_week(
+        templates: Vec<domain::entities::lesson_template::LessonTemplate>,
+        instances: Vec<LessonInstance>,
+        source_date: NaiveDate,
+        target_date: NaiveDate,
+    ) -> Vec<LessonInstance> {
         let service = ScheduleService::new(
-            Arc::new(schedule_repo),
+            Arc::new(MockScheduleWeekRepo {
+                week: ScheduleWeek::new(source_date, WeekStatus::Draft, None),
+                saved: Mutex::new(None),
+            }),
             Arc::new(DummyStudentGroups),
-            Arc::new(instance_repo),
-            Arc::new(template_repo),
+            Arc::new(MockInstanceRepo {
+                saved: Mutex::new(Vec::new()),
+                week_instances: instances,
+            }),
+            Arc::new(MockTemplateRepo { templates }),
             Arc::new(DummyLessonRepo),
             Arc::new(DummySubjectRepo),
             Arc::new(DummyUserRepo),
@@ -1231,11 +1241,31 @@ mod tests {
             Arc::new(DummyHomeworkRepo),
             Arc::new(DummyClassRepo),
         );
-
-        let created = service
+        service
             .copy_week(source_date, target_date)
             .await
-            .expect("copy ok");
+            .expect("copy ok")
+    }
+
+    #[tokio::test]
+    async fn test_copy_week_copies_scheduled_instances_and_sets_copied_from() {
+        use domain::value_objects::lesson_instance_status::LessonInstanceStatus;
+        let source_date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        let target_date = NaiveDate::from_ymd_opt(2026, 9, 14).unwrap();
+
+        let template = copy_week_template(true);
+        let inst = LessonInstance::try_new(
+            uuid::Uuid::new_v4(),
+            template.id,
+            source_date,
+            source_date,
+            LessonInstanceStatus::Scheduled,
+            None,
+        )
+        .unwrap();
+
+        let created =
+            run_copy_week(vec![template], vec![inst.clone()], source_date, target_date).await;
         assert_eq!(created.len(), 1);
         assert_eq!(created[0].week_start_date, target_date);
         // lesson_date should be shifted by one week
@@ -1243,5 +1273,39 @@ mod tests {
             created[0].lesson_date,
             inst.lesson_date + chrono::Duration::days(7)
         );
+    }
+
+    #[tokio::test]
+    async fn test_copy_week_skips_inactive_templates() {
+        use domain::value_objects::lesson_instance_status::LessonInstanceStatus;
+        let source_date = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        let target_date = NaiveDate::from_ymd_opt(2026, 9, 14).unwrap();
+
+        let regular = copy_week_template(true);
+        let one_off = copy_week_template(false);
+        let instances = [&regular, &one_off]
+            .iter()
+            .map(|t| {
+                LessonInstance::try_new(
+                    uuid::Uuid::new_v4(),
+                    t.id,
+                    source_date,
+                    source_date,
+                    LessonInstanceStatus::Scheduled,
+                    None,
+                )
+                .unwrap()
+            })
+            .collect();
+
+        let created = run_copy_week(
+            vec![regular.clone(), one_off],
+            instances,
+            source_date,
+            target_date,
+        )
+        .await;
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].template_id, regular.id);
     }
 }

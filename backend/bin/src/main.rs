@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use application::use_cases::{
-    admin::AdminService,
+    admin::{AdminService, TimetableService},
     auth::OneTimeCodeService,
     homework::{
         attach_file_to_lesson::AttachFileToLessonUseCase,
@@ -36,7 +36,7 @@ use infrastructure::{
     postgres::{
         create_pool, AdminRepositoryPg, AnnouncementRepositoryPg, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg, DeviceTokenRepositoryPg,
         HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonMaterialRepositoryPg,
-        LessonRepositoryPg, LessonSubstitutionRepositoryPg, PlusnikRepositoryPg,
+        LessonRepositoryPg, LessonSubstitutionRepositoryPg, TimetableRepositoryPg, PlusnikRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
         SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
         WebSessionRepositoryPg,
@@ -111,14 +111,14 @@ async fn main() {
 
     let substitutions = Arc::new(LessonSubstitutionRepositoryPg::new(pool.clone()));
     let schedule_service = Arc::new(ScheduleService::new(
-        schedule_weeks,
-        student_groups,
-        instances,
-        templates,
-        lessons,
-        subjects,
-        users,
-        cabinets,
+        schedule_weeks.clone(),
+        student_groups.clone(),
+        instances.clone(),
+        templates.clone(),
+        lessons.clone(),
+        subjects.clone(),
+        users.clone(),
+        cabinets.clone(),
         homeworks.clone(),
         Arc::new(ClassRepositoryPg::new(pool.clone())),
     )
@@ -132,6 +132,18 @@ async fn main() {
         Arc::new(LessonInstanceRepositoryPg::new(pool.clone())),
         substitutions,
         Arc::new(AnnouncementRepositoryPg::new(pool.clone())),
+        schedule_service.clone(),
+    ));
+    let timetable_service = Arc::new(TimetableService::new(
+        lessons,
+        templates,
+        instances,
+        schedule_weeks,
+        subjects,
+        student_groups,
+        users,
+        cabinets,
+        Arc::new(TimetableRepositoryPg::new(pool.clone())),
         schedule_service.clone(),
     ));
 
@@ -269,6 +281,7 @@ async fn main() {
         materials_service,
         push,
         admin_service,
+        timetable_service,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);
