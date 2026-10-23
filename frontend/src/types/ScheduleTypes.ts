@@ -28,6 +28,10 @@ export interface ScheduleItem {
     cancelled?: boolean;
     /** Admin's note ("в актовом зале"); `teachers` already show a substitute. */
     note?: string | null;
+    /** Another teacher gives the lesson: shown in pale blue. */
+    substituted?: boolean;
+    /** Added by an admin to this date only (one-off or moved): shown in pale blue. */
+    extra?: boolean;
     homework?: Homework;
 }
 
@@ -36,3 +40,10 @@ export interface DaySchedule {
     shortName: string;
     items: ScheduleItem[];
 }
+/** Badge for a lesson that differs from the regular timetable; `null` for a usual or cancelled one. */
+export const changeLabel = (lesson: ScheduleItem): string | null => {
+    if (lesson.cancelled) return null;
+    if (lesson.extra) return 'новый урок';
+    if (lesson.substituted) return 'замена';
+    return null;
+};

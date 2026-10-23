@@ -50,6 +50,9 @@ pub trait TimetableRepository: Send + Sync {
         cabinet_id: Option<Uuid>,
     ) -> Result<(), DomainError>;
 
+    /// Marks an instance as added by an admin to one date (one-off or moved lesson).
+    async fn set_extra(&self, instance_id: Uuid, is_extra: bool) -> Result<(), DomainError>;
+
     /// Deletes an instance without homework (its substitution goes with it).
     async fn delete_instance(&self, instance_id: Uuid) -> Result<(), DomainError>;
 

@@ -642,6 +642,8 @@ impl TimetableService {
             )?,
         };
         let saved = self.instances.save(instance).await?;
+        // A lesson restored in its regular slot is not new; anything else is.
+        self.timetable.set_extra(saved.id, !template.is_active).await?;
         self.schedule.schedule_lesson(saved.id).await
     }
 

@@ -74,6 +74,17 @@ impl LessonSubstitutionRepository for LessonSubstitutionRepositoryPg {
         row.map(SubstitutionRow::into_domain).transpose()
     }
 
+    async fn is_extra(&self, instance_id: Uuid) -> Result<bool, DomainError> {
+        let is_extra = sqlx::query_scalar::<_, bool>(
+            "SELECT is_extra FROM lesson_instances WHERE instance_id = $1",
+        )
+        .bind(instance_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
+        Ok(is_extra.unwrap_or(false))
+    }
+
     async fn instance_ids_for_teacher(
         &self,
         teacher_id: Uuid,

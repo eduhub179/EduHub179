@@ -414,6 +414,7 @@ async fn one_off_lesson_stays_in_its_week(pool: PgPool) {
     let timetable = w.service.class_timetable(&w.admin, w.class_id).await.unwrap();
 
     assert_eq!(lesson.subject.name, "Физика");
+    assert!(lesson.is_extra, "a one-off lesson is marked as added");
     assert_eq!(student_lessons(&w, TUESDAY).await.len(), 1);
     assert_eq!(twice.unwrap_err(), DomainError::LessonInstanceAlreadyExists);
     assert_eq!(sunday.unwrap_err(), DomainError::InvalidLessonInstanceDate);
@@ -440,9 +441,11 @@ async fn moved_lesson_takes_its_homework(pool: PgPool) {
 
     assert_eq!(moved.instance.lesson_date, day(TUESDAY));
     assert!(moved.homework.is_some(), "homework moves with the lesson");
+    assert!(moved.is_extra, "a moved lesson is marked as added");
     // Moving back restores the cancelled original instead of adding a duplicate.
     assert_eq!(moved_back.instance.id, w.instance);
     assert!(moved_back.homework.is_some());
+    assert!(!moved_back.is_extra, "back in its regular slot it is a usual lesson");
     assert_eq!(
         student_lessons(&w, TUESDAY).await[0].2,
         LessonInstanceStatus::Cancelled

@@ -352,16 +352,26 @@ const LessonsTab: React.FC = () => {
                                 const setDraft = (patch: Partial<Draft>) =>
                                     setEditing({id: lesson.id, draft: {...(draft ?? draftOf(lesson)), ...patch}});
                                 return (
-                                    <tr key={lesson.id} className={lesson.status === 'cancelled' ? 'admin__row--cancelled' : ''}>
+                                    <tr
+                                        key={lesson.id}
+                                        className={
+                                            lesson.status === 'cancelled'
+                                                ? 'admin__row--cancelled'
+                                                : lesson.is_extra || lesson.substitute_teacher
+                                                    ? 'admin__row--changed'
+                                                    : ''
+                                        }
+                                    >
                                         <td className="admin__nowrap">{lesson.start_time}–{lesson.end_time}</td>
                                         <td>
                                             <strong>{lesson.subject_name}</strong>
                                             {lesson.status === 'cancelled' && <span className="admin__badge admin__badge--red">отменён</span>}
+                                            {lesson.is_extra && <span className="admin__badge admin__badge--blue">новый урок</span>}
                                             <div className="admin__muted">
                                                 {lesson.substitute_teacher ? (
                                                     <>
                                                         <s>{lesson.teachers.map((t) => t.name).join(', ')}</s>{' '}
-                                                        → <span className="admin__badge">замена: {lesson.substitute_teacher.name}</span>
+                                                        → <span className="admin__badge admin__badge--blue">замена: {lesson.substitute_teacher.name}</span>
                                                     </>
                                                 ) : (
                                                     lesson.teachers.map((t) => t.name).join(', ') || 'учитель не указан'

@@ -13,7 +13,7 @@ import {SCHEDULE_CHANGED_EVENT} from '../hooks/useSchedule';
 import FileDropDialog from './FileDropDialog';
 import HomeworkTextEditor from './LessonCard/HomeworkTextEditor';
 import LessonAdminControls from './LessonCard/LessonAdminControls';
-import type {HomeworkFile, ScheduleItem} from '../types/ScheduleTypes.ts';
+import {changeLabel, type HomeworkFile, type ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/MainContent.css';
 
 interface MainContentProps {
@@ -205,6 +205,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                     <h1 className="homework-view__title">
                         {selectedLesson.title || 'Урок без названия'}
                         {selectedLesson.cancelled && <span className="schedule__cancelled-badge">урок отменён</span>}
+                        {changeLabel(selectedLesson) && <span className="schedule__changed-badge">{changeLabel(selectedLesson)}</span>}
                     </h1>
                     <p className="homework-view__description">
                         Время: {selectedLesson.startTime} – {selectedLesson.endTime}

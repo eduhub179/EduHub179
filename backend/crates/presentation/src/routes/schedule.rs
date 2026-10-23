@@ -52,6 +52,8 @@ pub struct ScheduleLessonResponse {
     pub status: String,
     /// Admin's note for this lesson ("в актовом зале").
     pub note: Option<String>,
+    /// Added by an admin to this date only (one-off or moved lesson).
+    pub is_extra: bool,
     pub homework: Option<HomeworkResponse>,
 }
 
@@ -75,6 +77,7 @@ fn lesson_response(lesson: ScheduleLesson) -> ScheduleLessonResponse {
         cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
         status: lesson.instance.status.to_string(),
         note: lesson.substitution.and_then(|substitution| substitution.note),
+        is_extra: lesson.is_extra,
         homework: lesson.homework.map(homework_response),
     }
 }

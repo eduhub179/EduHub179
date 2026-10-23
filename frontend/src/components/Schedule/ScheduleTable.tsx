@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {useSchedule} from '../../hooks/useSchedule';
-import type {ScheduleItem} from '../../types/ScheduleTypes.ts';
+import {changeLabel, type ScheduleItem} from '../../types/ScheduleTypes.ts';
 import '../../css/ScheduleTable.css';
 
 interface FullScheduleTableProps {
@@ -154,7 +154,7 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                 const left = width * slotIndex;
                                                 return (
                                                     <button
-                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}${lesson.cancelled ? ' schedule-grid__lesson--cancelled' : ''}`}
+                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}${lesson.cancelled ? ' schedule-grid__lesson--cancelled' : ''}${changeLabel(lesson) ? ' schedule-grid__lesson--changed' : ''}`}
                                                         style={{
                                                             top,
                                                             left: `${left}%`,
@@ -171,6 +171,7 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                                 {lesson.title}
                                                             </strong>
                                                             {lesson.cancelled && <small className="schedule__cancelled-badge">урок отменён</small>}
+                                                            {changeLabel(lesson) && <small className="schedule__changed-badge">{changeLabel(lesson)}</small>}
                                                             {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                                 <small className="schedule-grid__lesson-meta">
                                                                     {[

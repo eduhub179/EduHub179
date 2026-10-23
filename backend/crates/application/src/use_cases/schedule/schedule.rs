@@ -101,6 +101,8 @@ pub struct ScheduleLesson {
     pub substitution: Option<LessonSubstitution>,
     /// The substitute teacher from `substitution`, loaded for display.
     pub substitute_teacher: Option<User>,
+    /// Added by an admin to this date only (one-off or moved lesson).
+    pub is_extra: bool,
 }
 
 /// Homework data needed by a schedule card and its details screen.
@@ -669,9 +671,9 @@ impl ScheduleService {
         };
         let homework = load_homework(&self.homeworks, instance.id).await?;
         let target_name = self.target_name(&lesson).await?;
-        let substitution = match &self.substitutions {
-            Some(repo) => repo.get(instance.id).await?,
-            None => None,
+        let (substitution, is_extra) = match &self.substitutions {
+            Some(repo) => (repo.get(instance.id).await?, repo.is_extra(instance.id).await?),
+            None => (None, false),
         };
         let substitute_teacher = match substitution.as_ref().and_then(|s| s.substitute_teacher_id) {
             Some(id) => Some(self.users.get_by_id(id).await?),
@@ -689,6 +691,7 @@ impl ScheduleService {
             homework,
             substitution,
             substitute_teacher,
+            is_extra,
         })
     }
 
