@@ -14,7 +14,11 @@
    (роль student), а ученику приходит «записал». Без бота-модератора (--no-moderator) — сразу.
 5. Кнопки внизу (для учеников): «ДЗ на завтра» (ближайший учебный день), «Расписание на сегодня»,
    «Где следующий урок» (предмет, время, кабинет), «Добавить ДЗ» (подсказка). Всё из расписания бэкенда.
-6. Вопросы своими словами («что задали по химии?», «расписание на среду», «где алгебра?»): questions.py понимает,
+6. Файлы и фото. С подписью («физика к пятнице») — черновик ДЗ, файл прикладывается к нему. Без подписи — бот
+   ждёт следующее сообщение с заданием (10 минут) и прикладывает файл к нему. Альбом (несколько фото одним
+   сообщением) приходит по одному фото: остальные фото альбома добавляются к черновику первого. После «Записать»
+   файлы уходят в бэкенд к тому же уроку, что и текст (backend_api.attach_files). Лежат в chats/files/ЛС/<id чата>/.
+7. Вопросы своими словами («что задали по химии?», «расписание на среду», «где алгебра?»): questions.py понимает,
    о чём спросили (правила, потом модель), а ответ собирается из расписания бэкенда, как у кнопок.
 Черновики лежат в chats/dm_drafts.json (там тексты учеников, папка chats/ не коммитится).
 
@@ -30,12 +34,15 @@ import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from eduhub_agent.media import files as attachments
 from eduhub_agent.server import backend_api
 from eduhub_agent.telegram import chat_moderation, questions
 from eduhub_agent.server import timetable
 from eduhub_agent.config import env
 
 DRAFTS = "chats/dm_drafts.json"
+FILES_DIR = "chats/files/ЛС"  # вложения из лички: chats/ не коммитится
+PENDING = 600  # сколько секунд файл без подписи ждёт сообщения с заданием
 HORIZON = 14  # на сколько дней вперёд ищем уроки предмета
 MAX_ITEMS = 3  # больше находок из одного сообщения не показываем
 WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
@@ -49,6 +56,7 @@ WORTH = None  # text -> похоже ли на ДЗ (фильтр болтовн
 _users = {}  # telegram id -> (пользователь или None, когда спросили)
 _days = {}  # (class_id, дата) -> (уроки, когда спросили)
 _menu_shown = set()  # кому уже показали кнопки внизу
+_pending = {}  # chat_id -> {"files", "names", "at", "group"}: файлы без подписи, ждут задания
 
 B_HW, B_TODAY, B_NEXT, B_ADD = "📚 ДЗ на завтра", "📅 Расписание на сегодня", "🚪 Где следующий урок", "➕ Добавить ДЗ"
 MENU = {"keyboard": [[{"text": B_HW}, {"text": B_TODAY}], [{"text": B_NEXT}, {"text": B_ADD}]],
@@ -341,6 +349,8 @@ def preview(d):
             if it.get("date_source"):
                 head += " (ближайший)"
         lines += [head, f"   {it['summary']}"]
+        if i == 0 and d.get("names"):
+            lines.append("   📎 " + ", ".join(d["names"]))
         if it.get("problem") == "date":
             if it.get("date"):
                 lines.append(f"   ⚠️ {day_label(it['date'])} нет урока «{it['subject']}». Выбери день:")
@@ -461,20 +471,73 @@ def on_message(msg):
         tg("sendMessage", chat_id=msg["chat"]["id"], text="Сервер сейчас недоступен, пришли задание чуть позже.")
 
 
+def files_of(msg):
+    """[(file_id, имя)] вложений сообщения: документ или самое крупное фото."""
+    if msg.get("document"):
+        return [(msg["document"]["file_id"], msg["document"].get("file_name") or "файл")]
+    if msg.get("photo"):
+        return [(msg["photo"][-1]["file_id"], "фото.jpg")]
+    return []
+
+
+def fetch_files(msg):
+    """Скачивает вложения сообщения. -> ([пути], [имена для черновика])."""
+    paths, names = [], []
+    for fid, name in files_of(msg):
+        p = attachments.download(API, fid, Path(FILES_DIR) / str(msg["chat"]["id"]), f"{msg['message_id']}_{name}")
+        if p:
+            paths.append(str(p))
+            names.append(name)
+    return paths, names
+
+
+def _on_file(msg, chat_id):
+    """Файл или фото без подписи: добавить к черновику того же альбома или ждать сообщения с заданием."""
+    paths, names = fetch_files(msg)
+    if not paths:
+        tg("sendMessage", chat_id=chat_id, text="Не смог скачать файл (Telegram отдаёт ботам файлы до 20 МБ).")
+        return
+    group = msg.get("media_group_id")
+    drafts = load()
+    d = next((x for x in reversed(list(drafts.values())) if group and x.get("group") == group and x["tg"] == chat_id), None)
+    if d and d["status"] == "draft":  # остальные фото альбома, подпись была у первого
+        d["files"] = d.get("files", []) + paths
+        d["names"] = d.get("names", []) + names
+        body, kb = preview(d)
+        tg("editMessageText", chat_id=chat_id, message_id=d["preview"], text=body, reply_markup=kb)
+        save(drafts)
+        return
+    if d:
+        print(f"ЛС: фото альбома пришло после «{d['status']}», не прикладываю")
+        return
+    p = _pending.get(chat_id)
+    fresh = p and time.time() - p["at"] < PENDING
+    _pending[chat_id] = {"files": (p["files"] if fresh else []) + paths, "names": (p["names"] if fresh else []) + names,
+                         "at": time.time(), "group": group}
+    if fresh and group and p.get("group") == group:
+        return  # про этот альбом уже ответили
+    tg("sendMessage", chat_id=chat_id, text="📎 Файл получил. Теперь напиши, что это за задание: предмет и к какому дню,"
+       " например «физика к пятнице». Приложу файл к этому ДЗ.")
+
+
 def _on_message(msg):
     chat_id, text = msg["chat"]["id"], (msg.get("text") or msg.get("caption") or "").strip()
-    if not text or text.startswith("/") or text == B_ADD:
+    has_files = bool(files_of(msg))
+    if not has_files and (not text or text.startswith("/") or text == B_ADD):
         _menu_shown.add(chat_id)
         tg("sendMessage", chat_id=chat_id, reply_markup=MENU, text=(
             "Пришли сюда домашку текстом, например: «физика к пятнице §12, № 5–7». Я найду урок в расписании и запишу"
             " задание от твоего имени. Учителю нужно написать и класс: «11Б физика к пятнице …»."
-            + ("\nФайлы и фото пока не принимаю, только текст." if not text and (msg.get("document") or msg.get("photo")) else "")
-            + "\nКнопки внизу: домашка на завтра, расписание на сегодня и где следующий урок."))
+            "\nМожно приложить файл или фото: подпиши, что это за задание, или напиши задание следующим сообщением."
+            "\nКнопки внизу: домашка на завтра, расписание на сегодня и где следующий урок."))
         return
     user = user_of(msg["from"]["id"])
     if not user:
         print(f"ЛС: Telegram id {msg['from']['id']} не привязан к пользователю (нет входа в основном боте)")
         tg("sendMessage", chat_id=chat_id, text=login_hint())
+        return
+    if has_files and not text:
+        _on_file(msg, chat_id)
         return
     if text in (B_HW, B_TODAY, B_NEXT):
         _menu_shown.add(chat_id)
@@ -484,7 +547,9 @@ def _on_message(msg):
             reply = answer_menu(text, user["class_id"])
         tg("sendMessage", chat_id=chat_id, text=reply, reply_markup=MENU)
         return
-    if user["role"] == "student" and user.get("class_id") and _question(msg, chat_id, text, user["class_id"]):
+    waiting = _pending.get(chat_id) and time.time() - _pending[chat_id]["at"] < PENDING
+    if user["role"] == "student" and user.get("class_id") and not has_files and not waiting \
+            and _question(msg, chat_id, text, user["class_id"]):  # к файлу пишут задание, а не вопрос
         return
     if user["role"] == "student":
         cid = user.get("class_id")
@@ -567,6 +632,13 @@ def _draft(msg, chat_id, text, user, cls, cid):
     d = {"id": secrets.token_hex(4), "tg": chat_id, "msg_id": msg["message_id"], "posted": posted,
          "user": user, "cls": cls, "cid": cid, "subjects": names, "status": "draft",
          "items": understand(m, cls, subjects_in(text, names) or subjects_typo(text, names))}
+    p = _pending.pop(chat_id, None)
+    if p and time.time() - p["at"] < PENDING:  # файлы, присланные до задания
+        d["files"], d["names"] = p["files"], p["names"]
+    if files_of(msg):
+        paths, fnames = fetch_files(msg)
+        d["files"], d["names"] = d.get("files", []) + paths, d.get("names", []) + fnames
+        d["group"] = msg.get("media_group_id")
     for it in d["items"]:
         resolve(d, it)
     body, kb = preview(d)
@@ -624,7 +696,8 @@ def item_for(d, i, it):
             "class": d["cls"], "subject": it["lesson"]["subject"], "due_lesson": {"start": it["lesson"]["start"]},
             "via": "dm", "author_user_id": u["user_id"], "author_role": u["role"], "author_login": u["login"],
             "chat": f"личные сообщения боту ({u['role']} {u['login']})", "message_id": f"{d['msg_id']}.{i}",
-            "sent_at": d["posted"], "posted": d["posted"][:10], "notify": d["tg"], "status": "new"}
+            "sent_at": d["posted"], "posted": d["posted"][:10], "notify": d["tg"], "status": "new",
+            **({"file_paths": d["files"], "files": d["names"]} if i == 0 and d.get("files") else {})}
 
 
 def submit(d):
