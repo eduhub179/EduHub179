@@ -4,6 +4,7 @@
 //! All types here are internal to the infrastructure layer;
 //! the domain layer interacts only via traits.
 
+pub mod admin_repository_pg;
 pub mod announcement_repository_pg;
 pub mod cabinet_repository_pg;
 pub mod class_repository_pg;
@@ -15,6 +16,7 @@ pub mod homework_repository_pg;
 pub mod lesson_instance_repository_pg;
 pub mod lesson_material_repository_pg;
 pub mod lesson_repository_pg;
+pub mod lesson_substitution_repository_pg;
 pub mod lesson_template_repository_pg;
 pub mod plusnik_repository_pg;
 pub mod schedule_week_repository_pg;
@@ -25,6 +27,7 @@ pub mod user_repository_pg;
 pub mod web_session_repository_pg;
 
 // Re-export for convenience in the `bin` crate (DI composition root).
+pub use admin_repository_pg::AdminRepositoryPg;
 pub use announcement_repository_pg::AnnouncementRepositoryPg;
 pub use cabinet_repository_pg::CabinetRepositoryPg;
 pub use class_repository_pg::ClassRepositoryPg;
@@ -36,6 +39,7 @@ pub use homework_repository_pg::HomeworkRepositoryPg;
 pub use lesson_instance_repository_pg::LessonInstanceRepositoryPg;
 pub use lesson_material_repository_pg::LessonMaterialRepositoryPg;
 pub use lesson_repository_pg::LessonRepositoryPg;
+pub use lesson_substitution_repository_pg::LessonSubstitutionRepositoryPg;
 pub use lesson_template_repository_pg::LessonTemplateRepositoryPg;
 pub use plusnik_repository_pg::PlusnikRepositoryPg;
 pub use schedule_week_repository_pg::ScheduleWeekRepositoryPg;

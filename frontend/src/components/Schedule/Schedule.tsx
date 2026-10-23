@@ -118,8 +118,9 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                                             Урок {index + 1}
                                                         </div>
 
-                                                        <div className="schedule__title">
+                                                        <div className={`schedule__title${lesson.cancelled ? ' schedule__title--cancelled' : ''}`}>
                                                             {lesson.title || '—'}
+                                                            {lesson.cancelled && ' (отменён)'}
                                                         </div>
                                                         {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                             <div className="schedule__lesson-meta">
@@ -129,6 +130,9 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                                                     lesson.teachers.filter((teacher) => teacher.trim()).join(', '),
                                                                 ].filter(Boolean).join(' · ')}
                                                             </div>
+                                                        )}
+                                                        {lesson.note && (
+                                                            <div className="schedule__lesson-meta">{lesson.note}</div>
                                                         )}
                                                     </div>
                                                     {group.length > 1

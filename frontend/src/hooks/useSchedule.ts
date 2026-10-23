@@ -43,6 +43,8 @@ const mapScheduleWeek = (week: Awaited<ReturnType<typeof fetchClassWeekSchedule>
                 title: lesson.subject_name,
                 teachers: lesson.teachers.map((teacher) => teacher.trim().split(/\s+/)[0]).filter(Boolean),
                 cabinet: lesson.cabinet,
+                cancelled: lesson.status === 'cancelled',
+                note: lesson.note ?? null,
                 homework: lesson.homework
                     ? {
                         id: lesson.homework.id,

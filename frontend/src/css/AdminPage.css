@@ -1,0 +1,267 @@
+.admin {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px;
+    color: var(--color-text);
+}
+
+.admin__title {
+    margin-bottom: 16px;
+    font-size: 1.6rem;
+}
+
+.admin__tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.admin__tab {
+    padding: 8px 14px;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+}
+
+.admin__tab--active {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+    font-weight: 600;
+}
+
+.admin__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.admin__card {
+    margin-bottom: 16px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+}
+
+.admin__card h3 {
+    margin-bottom: 8px;
+    font-size: 1.05rem;
+}
+
+.admin__card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.admin__card-head h3 {
+    margin: 0;
+}
+
+.admin__table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin__table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+}
+
+.admin__table th,
+.admin__table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: top;
+}
+
+.admin__table tr:last-child td {
+    border-bottom: none;
+}
+
+.admin__row--cancelled td {
+    color: var(--color-text-muted);
+    background: var(--color-bg-secondary);
+}
+
+.admin__nowrap {
+    white-space: nowrap;
+}
+
+.admin__muted {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+}
+
+.admin__error {
+    margin: 8px 0;
+    color: #dc2626;
+}
+
+.admin__note {
+    margin-top: 4px;
+    font-style: italic;
+}
+
+.admin__content {
+    margin-bottom: 8px;
+    white-space: pre-wrap;
+}
+
+.admin__badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    font-size: 0.8rem;
+    color: var(--color-text);
+}
+
+.admin__badge--red {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #b91c1c;
+}
+
+.admin__badge--green {
+    background: #dcfce7;
+    border-color: #bbf7d0;
+    color: #15803d;
+}
+
+.admin__editor {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 6px;
+    background: var(--color-bg-secondary);
+}
+
+.admin__form {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.admin__form h3,
+.admin__form p,
+.admin__wide,
+.admin__form .admin__actions {
+    grid-column: 1 / -1;
+}
+
+.admin__form label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.9rem;
+}
+
+.admin__classes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.admin__classes label {
+    flex-direction: row;
+    align-items: center;
+}
+
+.admin__inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin__grow {
+    flex: 1 1 220px;
+}
+
+.admin__grow input {
+    width: 100%;
+}
+
+.admin__actions {
+    display: flex;
+    gap: 8px;
+}
+
+.admin input,
+.admin select,
+.admin textarea {
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font: inherit;
+    background: var(--color-bg);
+}
+
+.admin input[type='checkbox'] {
+    padding: 0;
+}
+
+.admin button {
+    padding: 6px 14px;
+    border: 1px solid var(--color-accent);
+    border-radius: 6px;
+    background: var(--color-accent);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+}
+
+.admin button:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.admin button.admin__secondary {
+    background: var(--color-bg);
+    color: var(--color-accent);
+}
+
+.admin button.admin__danger {
+    border-color: #dc2626;
+    background: #dc2626;
+}
+
+@media (max-width: 640px) {
+    .admin {
+        padding: 16px 12px;
+    }
+
+    .admin__table th,
+    .admin__table td {
+        padding: 6px 4px;
+    }
+}
+
+.admin__table td.admin__nowrap:first-child {
+    width: 110px;
+}
+
+.admin__table td.admin__nowrap:last-child {
+    width: 1%;
+    text-align: right;
+}
+
+.admin__card > .admin__muted + .admin__actions {
+    margin-top: 8px;
+}

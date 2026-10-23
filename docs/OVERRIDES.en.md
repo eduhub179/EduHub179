@@ -133,3 +133,24 @@ as a choice. Known gap: event organizers are not yet covered by
 - `lesson_templates.is_override` column — dropped from migration 0003. It was always `FALSE`
   and served no purpose with the instance-level approach.
 - The proposed `lesson_overrides` table — never created, not needed.
+
+## 9. Substitute teacher and note from the admin panel (`lesson_substitutions`, 2026-10-23)
+
+The flow in section 4 doesn't work for the most common case — **same subject, another
+teacher**: the replacement lesson can't be created because `lessons` is unique by
+`(class_id, subject_id)` / `(group_id, subject_id)` and `lesson_templates` by
+`(lesson_id, day, start_time, end_time, parity)`. Also a note for students
+("in the assembly hall") has nowhere to live.
+
+So the admin panel (`PATCH /api/admin/lessons/{instance_id}`) does this:
+
+- **Cancel** and **cabinet change** — as before, on the instance itself (`status`, `cabinet_id`).
+- **Substitute teacher** and **note** — a row in `lesson_substitutions` (migration 0012,
+  one row per instance, deleted with it). An empty substitution (no teacher, no note) is deleted.
+- The schedule (`ScheduleService`) shows the substitute in `teachers`, the usual teachers
+  in `usual_teachers`, the note in `note`; the lesson also appears in the substitute's schedule.
+- Homework stays on the same instance. `copy_week` doesn't copy substitutions.
+
+The section 4 flow remains for **subject changes** (swapping subjects between slots).
+Known gap: `check_teacher_available` doesn't consider `lesson_substitutions` yet, and the
+admin panel doesn't check that the substitute is free.

@@ -22,6 +22,10 @@ export interface ScheduleItem {
     title: string;
     teachers?: string[];
     cabinet?: string | null;
+    /** The lesson is cancelled: shown greyed and struck through. */
+    cancelled?: boolean;
+    /** Admin's note ("в актовом зале"); `teachers` already show a substitute. */
+    note?: string | null;
     homework?: Homework;
 }
 

@@ -219,6 +219,10 @@ pub enum DomainError {
     InvalidAnnouncementFileSize,
     /// Announcement file with the specified ID was not found.
     AnnouncementFileNotFound,
+    /// Substitution note must be at most 500 chars.
+    InvalidSubstitutionNote,
+    /// A schedule week with this Monday already exists.
+    ScheduleWeekAlreadyExists,
 }
 impl fmt::Display for DomainError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -337,6 +341,8 @@ impl fmt::Display for DomainError {
             }
             DomainError::InvalidAnnouncementFileSize => write!(f, "Invalid announcement file size"),
             DomainError::AnnouncementFileNotFound => write!(f, "Announcement file not found"),
+            DomainError::InvalidSubstitutionNote => write!(f, "Invalid substitution note"),
+            DomainError::ScheduleWeekAlreadyExists => write!(f, "Schedule week already exists"),
         }
     }
 }

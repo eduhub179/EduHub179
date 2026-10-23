@@ -27,8 +27,13 @@ export interface ScheduleLessonDto {
   subject_name: string;
   /** Class ("2027б") or group the lesson is for. */
   target_name: string;
+  /** Who gives the lesson: the substitute teacher if there is one. */
   teachers: string[];
+  /** The usual teachers, only when the lesson has a substitute. */
+  usual_teachers?: string[];
   cabinet?: string | null;
+  status?: 'scheduled' | 'completed' | 'cancelled';
+  note?: string | null;
   homework?: HomeworkDto | null;
 }
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use application::use_cases::{
+    admin::AdminService,
     auth::{login::LoginUseCase, OneTimeCodeService},
     homework::{
         attach_file_to_lesson::AttachFileToLessonUseCase,
@@ -40,7 +41,7 @@ use uuid::Uuid;
 
 use crate::routes::notifications::PushNotifications;
 use crate::routes::{
-    auth, classes, files, homework, materials, notifications, plusnik, schedule, telegram,
+    admin, auth, classes, files, homework, materials, notifications, plusnik, schedule, telegram,
 };
 
 #[derive(Debug)]
@@ -273,6 +274,7 @@ pub struct AppState {
     pub materials_service: Option<Arc<MaterialsService>>,
     /// `None` if browser push is not configured (`VAPID_PRIVATE_KEY` unset).
     pub push: Option<PushNotifications>,
+    pub admin_service: Option<Arc<AdminService>>,
 }
 
 /// Homework file use cases; all of them need object storage.
@@ -546,6 +548,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             plusnik_service: None,
             materials_service: None,
             push: None,
+            admin_service: None,
         })
 }
 
@@ -589,6 +592,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             plusnik_service: None,
             materials_service: None,
             push: None,
+            admin_service: None,
         })
 }
 
@@ -611,6 +615,7 @@ pub fn create_app_with_auth_and_schedule(
     plusnik_service: Arc<PlusnikService>,
     materials_service: Arc<MaterialsService>,
     push: Option<PushNotifications>,
+    admin_service: Arc<AdminService>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -669,6 +674,7 @@ pub fn create_app_with_auth_and_schedule(
         .merge(plusnik_routes())
         .merge(materials_routes())
         .merge(notification_routes())
+        .merge(admin_routes())
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -689,6 +695,7 @@ pub fn create_app_with_auth_and_schedule(
             plusnik_service: Some(plusnik_service),
             materials_service: Some(materials_service),
             push,
+            admin_service: Some(admin_service),
         })
 }
 
@@ -701,6 +708,35 @@ fn notification_routes() -> Router<AppState> {
         .route(
             "/api/notifications/subscriptions",
             post(notifications::subscribe_handler).delete(notifications::unsubscribe_handler),
+        )
+}
+
+fn admin_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/announcements", get(admin::my_announcements_handler))
+        .route(
+            "/api/admin/users",
+            get(admin::list_users_handler).post(admin::create_user_handler),
+        )
+        .route("/api/admin/users/:user_id", patch(admin::update_user_handler))
+        .route(
+            "/api/admin/cabinets",
+            get(admin::cabinets_handler).post(admin::create_cabinet_handler),
+        )
+        .route("/api/admin/lessons", get(admin::lessons_handler))
+        .route("/api/admin/lessons/:instance_id", patch(admin::update_lesson_handler))
+        .route(
+            "/api/admin/weeks",
+            get(admin::weeks_handler).post(admin::create_week_handler),
+        )
+        .route("/api/admin/weeks/:week_start_date", patch(admin::update_week_handler))
+        .route(
+            "/api/admin/announcements",
+            get(admin::list_announcements_handler).post(admin::create_announcement_handler),
+        )
+        .route(
+            "/api/admin/announcements/:announcement_id",
+            put(admin::update_announcement_handler).delete(admin::delete_announcement_handler),
         )
 }
 
@@ -946,6 +982,7 @@ mod tests {
             plusnik_service: None,
             materials_service: None,
             push: None,
+            admin_service: None,
         }
     }
 
@@ -981,6 +1018,7 @@ mod tests {
         let _: Router<AppState> = plusnik_routes()
             .merge(materials_routes())
             .merge(notification_routes())
+            .merge(admin_routes())
             .route("/api/lessons/:lesson_instance_id/files", post(ok))
             .route("/api/homework/:homework_id/files/:file_id", get(ok))
             .route("/api/homework/files/:file_id", delete(ok))

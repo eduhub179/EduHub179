@@ -1,3 +1,4 @@
+pub mod admin_repository;
 pub mod announcement_repository;
 pub mod cabinet_repository;
 pub mod class_repository;
@@ -7,6 +8,7 @@ pub mod homework_repository;
 pub mod lesson_instance_repository;
 pub mod lesson_material_repository;
 pub mod lesson_repository;
+pub mod lesson_substitution_repository;
 pub mod lesson_template_repository;
 pub mod plusnik_repository;
 pub mod schedule_week_repository;

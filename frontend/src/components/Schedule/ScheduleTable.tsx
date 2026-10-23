@@ -167,7 +167,10 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                         aria-label={`Открыть урок ${lesson.lessonNumber}: ${lesson.title}`}
                                                     >
                                                         <span className="schedule-grid__lesson-content">
-                                                            <strong>{lesson.title}</strong>
+                                                            <strong className={lesson.cancelled ? 'schedule__title--cancelled' : undefined}>
+                                                                {lesson.title}
+                                                                {lesson.cancelled && ' (отменён)'}
+                                                            </strong>
                                                             {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                                 <small className="schedule-grid__lesson-meta">
                                                                     {[
@@ -176,6 +179,9 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                                             lesson.teachers.filter((teacher) => teacher.trim()).join(', '),
                                                                     ].filter(Boolean).join(' · ')}
                                                                 </small>
+                                                            )}
+                                                            {lesson.note && (
+                                                                <small className="schedule-grid__lesson-meta">{lesson.note}</small>
                                                             )}
                                                         </span>
                                                         {lesson.homework && (
