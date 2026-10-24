@@ -46,8 +46,15 @@
 
 .plusnik-page__table th,
 .plusnik-page__table td {
-    padding: 12px;
+    padding: 4px 8px;
     border: 1px solid var(--color-border);
+}
+
+.plusnik-page__table th:not(:first-child),
+.plusnik-page__table td.plusnik-page__cell {
+    min-width: 52px;
+    padding-right: 6px;
+    padding-left: 6px;
 }
 
 .plusnik-page__table th {
@@ -58,14 +65,9 @@
     text-align: center;
 }
 
-.plusnik-page__solved {
-    color: var(--color-text-muted);
-}
-
-.plusnik-page__solved.is-solved {
-    color: var(--color-accent);
-    font-size: 18px;
-    font-weight: 700;
+.plusnik-page__cell.is-solved,
+.plusnik-page__table tr.is-current-user td.plusnik-page__cell.is-solved {
+    background: #94bb9b;
 }
 
 .plusnik-page__empty {
@@ -74,21 +76,12 @@
 }
 
 .plusnik-page__message,
-.plusnik-page__error,
-.plusnik-page__progress {
+.plusnik-page__error {
     color: var(--color-text-muted);
 }
 
 .plusnik-page__error {
     color: #b42318;
-}
-
-.plusnik-page__progress {
-    max-width: 520px;
-}
-
-.plusnik-page__progress progress {
-    width: 100%;
 }
 
 @media (max-width: 600px) {
@@ -100,9 +93,20 @@
 /* A student sees the whole lesson: their own row stands out. */
 .plusnik-page__table tr.is-current-user th,
 .plusnik-page__table tr.is-current-user td {
-    background: #eff6ff;
+    background: #dce9f8;
 }
 
-.plusnik-page__progress + .plusnik-page__table-wrap {
-    margin-top: 16px;
+.plusnik-page__table th,
+.plusnik-page__table td {
+    transition: background-color 120ms ease;
+}
+
+.plusnik-page__table tbody tr:hover th,
+.plusnik-page__table tbody tr:hover td:not(.is-solved),
+.plusnik-page__table .is-hovered-column:not(.is-solved) {
+    background: #e8eef6;
+}
+
+.plusnik-page__table .is-solved.is-hovered-column {
+    box-shadow: inset 0 0 0 999px rgb(255 255 255 / 14%);
 }
