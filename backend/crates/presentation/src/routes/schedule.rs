@@ -42,24 +42,42 @@ pub struct ScheduleLessonResponse {
     pub subject_name: String,
     /// Class ("2027б") or group the lesson is for.
     pub target_name: String,
+    /// Who gives the lesson: the substitute teacher if there is one.
     pub teachers: Vec<String>,
+    /// The usual teachers when the lesson has a substitute, otherwise absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usual_teachers: Option<Vec<String>>,
     pub cabinet: Option<String>,
+    /// scheduled | completed | cancelled: cancelled lessons stay in the list, shown greyed.
+    pub status: String,
+    /// Admin's note for this lesson ("в актовом зале").
+    pub note: Option<String>,
+    /// Added by an admin to this date only (one-off or moved lesson).
+    pub is_extra: bool,
     pub homework: Option<HomeworkResponse>,
 }
 
 fn lesson_response(lesson: ScheduleLesson) -> ScheduleLessonResponse {
+    let name = |teacher: &domain::entities::user::User| {
+        format!("{} {}", teacher.last_name, teacher.first_name)
+    };
+    let usual_teachers: Vec<String> = lesson.teachers.iter().map(name).collect();
+    let (teachers, usual_teachers) = match &lesson.substitute_teacher {
+        Some(substitute) => (vec![name(substitute)], Some(usual_teachers)),
+        None => (usual_teachers, None),
+    };
     ScheduleLessonResponse {
         id: lesson.instance.id.to_string(),
         start_time: lesson.start_time.format("%H:%M").to_string(),
         end_time: lesson.end_time.format("%H:%M").to_string(),
         subject_name: lesson.subject.name,
         target_name: lesson.target_name,
-        teachers: lesson
-            .teachers
-            .into_iter()
-            .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-            .collect(),
+        teachers,
+        usual_teachers,
         cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
+        status: lesson.instance.status.to_string(),
+        note: lesson.substitution.and_then(|substitution| substitution.note),
+        is_extra: lesson.is_extra,
         homework: lesson.homework.map(homework_response),
     }
 }

@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod classes;
 pub mod files;
@@ -7,3 +8,4 @@ pub mod notifications;
 pub mod plusnik;
 pub mod schedule;
 pub mod telegram;
+pub mod timetable;

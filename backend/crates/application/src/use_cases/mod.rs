@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod device_tokens;
 pub mod homework;

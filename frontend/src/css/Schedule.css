@@ -193,3 +193,46 @@
         padding: 16px;
     }
 }
+.schedule__title--cancelled {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+}
+
+/* Cancelled lesson: pale red card, crossed-out title, a small "отменён" badge. */
+.schedule__lesson-button.schedule__lesson-button--cancelled {
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.13);
+    box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.schedule__cancelled-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #b91c1c;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-decoration: none;
+    vertical-align: middle;
+}
+
+/* Substitution or a lesson added to this date: pale blue card and a small badge. */
+.schedule__lesson-button.schedule__lesson-button--changed {
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.12);
+    box-shadow: inset 3px 0 0 #3b82f6;
+}
+
+.schedule__changed-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+    font-size: 0.75em;
+    font-weight: 600;
+    vertical-align: middle;
+}

@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {Link} from 'react-router-dom';
 
 import {useSchedule} from '../../hooks/useSchedule';
-import type {ScheduleItem} from '../../types/ScheduleTypes.ts';
+import {changeLabel, type ScheduleItem} from '../../types/ScheduleTypes.ts';
 import '../../css/Schedule.css';
 
 interface ScheduleProps {
@@ -106,7 +106,7 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                     <div className="schedule__lesson-group">
                                         {group.map((lesson, lessonIndex) => (
                                             <button
-                                                className={`schedule__lesson-button${group.length > 1 && lessonIndex > 0 ? ' schedule__lesson-button--split' : ''}`}
+                                                className={`schedule__lesson-button${group.length > 1 && lessonIndex > 0 ? ' schedule__lesson-button--split' : ''}${lesson.cancelled ? ' schedule__lesson-button--cancelled' : ''}${changeLabel(lesson) ? ' schedule__lesson-button--changed' : ''}`}
                                                 type="button"
                                                 key={lesson.id}
                                                 onClick={() => onLessonSelect(lesson)}
@@ -118,8 +118,10 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                                             Урок {index + 1}
                                                         </div>
 
-                                                        <div className="schedule__title">
+                                                        <div className={`schedule__title${lesson.cancelled ? ' schedule__title--cancelled' : ''}`}>
                                                             {lesson.title || '—'}
+                                                            {lesson.cancelled && <span className="schedule__cancelled-badge">отменён</span>}
+                                                            {changeLabel(lesson) && <span className="schedule__changed-badge">{changeLabel(lesson)}</span>}
                                                         </div>
                                                         {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                             <div className="schedule__lesson-meta">
@@ -129,6 +131,9 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                                                     lesson.teachers.filter((teacher) => teacher.trim()).join(', '),
                                                                 ].filter(Boolean).join(' · ')}
                                                             </div>
+                                                        )}
+                                                        {lesson.note && (
+                                                            <div className="schedule__lesson-meta">{lesson.note}</div>
                                                         )}
                                                     </div>
                                                     {group.length > 1

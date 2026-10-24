@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use application::use_cases::{
+    admin::{AdminService, TimetableService},
     auth::OneTimeCodeService,
     homework::{
         attach_file_to_lesson::AttachFileToLessonUseCase,
@@ -33,9 +34,9 @@ use infrastructure::{
     },
     config::Config,
     postgres::{
-        create_pool, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg, DeviceTokenRepositoryPg,
+        create_pool, AdminRepositoryPg, AnnouncementRepositoryPg, CabinetRepositoryPg, ClassRepositoryPg, CredentialsStorePg, DeviceTokenRepositoryPg,
         HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonMaterialRepositoryPg,
-        LessonRepositoryPg, PlusnikRepositoryPg,
+        LessonRepositoryPg, LessonSubstitutionRepositoryPg, TimetableRepositoryPg, PlusnikRepositoryPg,
         LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
         SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
         WebSessionRepositoryPg,
@@ -71,7 +72,7 @@ async fn main() {
 
     let login_use_case = Arc::new(application::use_cases::auth::login::LoginUseCase::new(
         user_repo.clone(),
-        credentials_store,
+        credentials_store.clone(),
         token_issuer.clone(),
     ));
 
@@ -108,17 +109,43 @@ async fn main() {
     let cabinets = Arc::new(CabinetRepositoryPg::new(pool.clone()));
     let homeworks = Arc::new(HomeworkRepositoryPg::new(pool.clone()));
 
+    let substitutions = Arc::new(LessonSubstitutionRepositoryPg::new(pool.clone()));
     let schedule_service = Arc::new(ScheduleService::new(
-        schedule_weeks,
-        student_groups,
-        instances,
-        templates,
-        lessons,
-        subjects,
-        users,
-        cabinets,
+        schedule_weeks.clone(),
+        student_groups.clone(),
+        instances.clone(),
+        templates.clone(),
+        lessons.clone(),
+        subjects.clone(),
+        users.clone(),
+        cabinets.clone(),
         homeworks.clone(),
         Arc::new(ClassRepositoryPg::new(pool.clone())),
+    )
+    .with_substitutions(substitutions.clone()));
+
+    let admin_service = Arc::new(AdminService::new(
+        Arc::new(AdminRepositoryPg::new(pool.clone())),
+        Arc::new(UserRepositoryPg::new(pool.clone())),
+        Arc::new(ClassRepositoryPg::new(pool.clone())),
+        Arc::new(CabinetRepositoryPg::new(pool.clone())),
+        Arc::new(LessonInstanceRepositoryPg::new(pool.clone())),
+        substitutions,
+        Arc::new(AnnouncementRepositoryPg::new(pool.clone())),
+        schedule_service.clone(),
+    )
+    .with_credentials(credentials_store.clone()));
+    let timetable_service = Arc::new(TimetableService::new(
+        lessons,
+        templates,
+        instances,
+        schedule_weeks,
+        subjects,
+        student_groups,
+        users,
+        cabinets,
+        Arc::new(TimetableRepositoryPg::new(pool.clone())),
+        schedule_service.clone(),
     ));
 
     let create_homework_use_case = Arc::new(CreateHomeworkUseCase::new(homeworks.clone()));
@@ -254,6 +281,8 @@ async fn main() {
         plusnik_service,
         materials_service,
         push,
+        admin_service,
+        timetable_service,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);

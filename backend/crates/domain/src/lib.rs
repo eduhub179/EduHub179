@@ -10,6 +10,7 @@ pub mod entities {
     pub mod lesson;
     pub mod lesson_instance;
     pub mod lesson_material;
+    pub mod lesson_substitution;
     pub mod lesson_template;
     pub mod plusnik;
     pub mod schedule_week;
