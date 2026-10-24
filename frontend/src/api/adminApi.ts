@@ -137,8 +137,16 @@ export async function fetchAdminUsers(filter: UserFilter): Promise<AdminUserList
   return apiFetch<AdminUserListDto>(`/api/admin/users?${params.toString()}`);
 }
 
-export async function createAdminUser(input: NewUserInput): Promise<void> {
-  await apiFetch('/api/admin/users', { method: 'POST', body: json(input) });
+export async function createAdminUser(input: NewUserInput): Promise<{ id: string }> {
+  return apiFetch<{ id: string }>('/api/admin/users', { method: 'POST', body: json(input) });
+}
+
+/** Sets the user's website password (8–128 characters). */
+export async function setAdminUserPassword(userId: string, password: string): Promise<void> {
+  await apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/password`, {
+    method: 'PUT',
+    body: json({ password }),
+  });
 }
 
 export async function updateAdminUser(userId: string, change: UserChangeInput): Promise<void> {

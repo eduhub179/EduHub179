@@ -223,6 +223,8 @@ pub enum DomainError {
     InvalidSubstitutionNote,
     /// A schedule week with this Monday already exists.
     ScheduleWeekAlreadyExists,
+    /// A password set by an admin must be 8..=128 chars.
+    InvalidPasswordFormat,
 }
 impl fmt::Display for DomainError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -343,6 +345,7 @@ impl fmt::Display for DomainError {
             DomainError::AnnouncementFileNotFound => write!(f, "Announcement file not found"),
             DomainError::InvalidSubstitutionNote => write!(f, "Invalid substitution note"),
             DomainError::ScheduleWeekAlreadyExists => write!(f, "Schedule week already exists"),
+            DomainError::InvalidPasswordFormat => write!(f, "Invalid password format"),
         }
     }
 }

@@ -80,6 +80,9 @@ impl ApiError {
                 (StatusCode::UNPROCESSABLE_ENTITY, "Announcement needs a title or text")
             }
             DomainError::UserIsInactive => (StatusCode::CONFLICT, "User account is inactive"),
+            DomainError::InvalidPasswordFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Password must be 8-128 characters")
+            }
             DomainError::InsufficientPermissions => {
                 (StatusCode::FORBIDDEN, "Insufficient permissions")
             }
@@ -331,6 +334,27 @@ pub async fn update_user_handler(
         .await
         .map_err(ApiError::from_admin_domain)?;
     Ok(Json(user.into()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetPasswordRequest {
+    pub password: String,
+}
+
+/// `PUT /api/admin/users/:user_id/password`: sets the user's website password.
+pub async fn set_password_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+    Json(request): Json<SetPasswordRequest>,
+) -> Result<StatusCode, ApiError> {
+    let (actor, service) = admin(&state, &headers).await?;
+    let user_id = parse_uuid(&user_id, "user id")?;
+    service
+        .set_password(&actor, user_id, &request.password)
+        .await
+        .map_err(ApiError::from_admin_domain)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ============================================================================

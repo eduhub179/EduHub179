@@ -19,22 +19,22 @@ use std::sync::Arc;
 use chrono::{Datelike, NaiveDate, NaiveTime, Weekday};
 use domain::{
     entities::{
-        lesson::Lesson, lesson_instance::LessonInstance, lesson_template::LessonTemplate,
-        student_group::StudentGroup, subject::Subject, user::User,
+        lesson::Lesson, lesson_template::LessonTemplate, student_group::StudentGroup,
+        subject::Subject, user::User,
     },
     errors::DomainError,
     repositories::{
         cabinet_repository::CabinetRepository,
-        lesson_instance_repository::LessonInstanceRepository, lesson_repository::LessonRepository,
+        lesson_instance_repository::LessonInstanceRepository,
+        lesson_repository::LessonRepository,
         lesson_template_repository::LessonTemplateRepository,
         schedule_week_repository::ScheduleWeekRepository,
-        student_group_repository::StudentGroupRepository, subject_repository::SubjectRepository,
-        timetable_repository::TimetableRepository, user_repository::UserRepository,
+        student_group_repository::StudentGroupRepository,
+        subject_repository::SubjectRepository,
+        timetable_repository::{SlotSpec, TimetableRepository, WriteCount},
+        user_repository::UserRepository,
     },
-    value_objects::{
-        day_of_week::DayOfWeek, lesson_instance_status::LessonInstanceStatus,
-        lesson_target::LessonTarget, week_parity::WeekParity,
-    },
+    value_objects::{day_of_week::DayOfWeek, lesson_target::LessonTarget, week_parity::WeekParity},
 };
 use uuid::Uuid;
 
@@ -66,24 +66,10 @@ pub struct ClassTimetable {
 }
 
 /// Time and place of a slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SlotInput {
-    pub lesson_id: Uuid,
-    pub day: DayOfWeek,
-    pub start_time: NaiveTime,
-    pub end_time: NaiveTime,
-    pub parity: WeekParity,
-    pub cabinet_id: Option<Uuid>,
-}
+pub type SlotInput = SlotSpec;
 
 /// What a regular timetable change did to already created weeks.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct TimetableChange {
-    /// Lessons added, moved or removed in existing weeks.
-    pub changed: usize,
-    /// Lessons left as they were because they have homework (removed slots: cancelled instead).
-    pub kept: usize,
-}
+pub type TimetableChange = WriteCount;
 
 pub struct TimetableService {
     lessons: Arc<dyn LessonRepository>,
@@ -333,41 +319,6 @@ impl TimetableService {
     // Regular timetable
     // ------------------------------------------------------------------
 
-    /// An active template for `input`, reusing a deactivated one with the same slot.
-    async fn active_template(&self, input: SlotInput) -> Result<LessonTemplate, DomainError> {
-        let existing = self
-            .timetable
-            .find_template(
-                input.lesson_id,
-                input.day,
-                input.start_time,
-                input.end_time,
-                input.parity,
-            )
-            .await?;
-        let template = match existing {
-            Some(template) if template.is_active => {
-                return Err(DomainError::LessonTemplateAlreadyExists)
-            }
-            Some(mut template) => {
-                template.is_active = true;
-                template.cabinet_id = input.cabinet_id;
-                template
-            }
-            None => LessonTemplate::try_new(
-                Uuid::new_v4(),
-                input.lesson_id,
-                input.day,
-                input.start_time,
-                input.end_time,
-                input.parity,
-                input.cabinet_id,
-                true,
-            )?,
-        };
-        self.templates.save(template).await
-    }
-
     async fn check_slot(&self, input: &SlotInput) -> Result<(), DomainError> {
         self.lessons.get_by_id(input.lesson_id).await?;
         if let Some(cabinet_id) = input.cabinet_id {
@@ -377,26 +328,6 @@ impl TimetableService {
             return Err(DomainError::InvalidLessonTemplateTime);
         }
         Ok(())
-    }
-
-    /// Existing weeks whose `day` is on or after `from`, with that date.
-    async fn existing_dates(
-        &self,
-        day: DayOfWeek,
-        from: NaiveDate,
-    ) -> Result<Vec<(NaiveDate, NaiveDate)>, DomainError> {
-        Ok(self
-            .weeks
-            .get_all()
-            .await?
-            .into_iter()
-            .map(|week| {
-                let date = week.week_start_date
-                    + chrono::Duration::days(i64::from(day.num_days_from_monday()));
-                (week.week_start_date, date)
-            })
-            .filter(|(_, date)| *date >= from)
-            .collect())
     }
 
     /// Adds a regular slot. With `apply_from`, the lesson is also added to already
@@ -413,32 +344,7 @@ impl TimetableService {
     ) -> Result<TimetableChange, DomainError> {
         require_admin(actor)?;
         self.check_slot(&input).await?;
-        let template = self.active_template(input).await?;
-        let mut change = TimetableChange::default();
-        if let Some(from) = apply_from {
-            let taken: HashSet<NaiveDate> = self
-                .instances
-                .get_by_template(template.id)
-                .await?
-                .into_iter()
-                .map(|instance| instance.week_start_date)
-                .collect();
-            for (monday, date) in self.existing_dates(template.day, from).await? {
-                if taken.contains(&monday) {
-                    continue;
-                }
-                let instance = LessonInstance::try_new(
-                    Uuid::new_v4(),
-                    template.id,
-                    monday,
-                    date,
-                    LessonInstanceStatus::Scheduled,
-                    template.cabinet_id,
-                )?;
-                self.instances.save(instance).await?;
-                change.changed += 1;
-            }
-        }
+        let (_, change) = self.timetable.add_slot(input, apply_from).await?;
         Ok(change)
     }
 
@@ -453,83 +359,9 @@ impl TimetableService {
     ) -> Result<TimetableChange, DomainError> {
         require_admin(actor)?;
         self.check_slot(&input).await?;
-        let mut old = self.templates.get_by_id(template_id).await?;
-        let same_slot = old.lesson_id == input.lesson_id
-            && old.day == input.day
-            && old.start_time == input.start_time
-            && old.end_time == input.end_time
-            && old.parity == input.parity;
-
-        if same_slot {
-            // Only the cabinet changes: the template keeps its id.
-            let old_cabinet = old.cabinet_id;
-            old.cabinet_id = input.cabinet_id;
-            self.templates.save(old.clone()).await?;
-            let mut change = TimetableChange::default();
-            if let Some(from) = apply_from {
-                for instance in self.timetable.instances_from(template_id, from).await? {
-                    // A cabinet set for one day by an admin stays.
-                    if instance.cabinet_id == old_cabinet {
-                        self.timetable
-                            .repoint_instance(
-                                instance.instance_id,
-                                template_id,
-                                instance.lesson_date,
-                                input.cabinet_id,
-                            )
-                            .await?;
-                        change.changed += 1;
-                    }
-                }
-            }
-            return Ok(change);
-        }
-
-        // Deactivate first: the new slot may overlap the old one.
-        old.is_active = false;
-        self.templates.save(old.clone()).await?;
-        let new = match self.active_template(input).await {
-            Ok(template) => template,
-            Err(error) => {
-                old.is_active = true;
-                self.templates.save(old).await?;
-                return Err(error);
-            }
-        };
-
-        let mut change = TimetableChange::default();
-        let Some(from) = apply_from else {
-            return Ok(change);
-        };
-        let taken: HashSet<NaiveDate> = self
-            .instances
-            .get_by_template(new.id)
-            .await?
-            .into_iter()
-            .map(|instance| instance.week_start_date)
-            .collect();
-        let course_changed = old.lesson_id != new.lesson_id;
-        for instance in self.timetable.instances_from(old.id, from).await? {
-            let date = instance.week_start_date
-                + chrono::Duration::days(i64::from(new.day.num_days_from_monday()));
-            if (course_changed && instance.has_homework)
-                || taken.contains(&instance.week_start_date)
-                || date < from
-            {
-                change.kept += 1;
-                continue;
-            }
-            let cabinet = if instance.cabinet_id == old.cabinet_id {
-                new.cabinet_id
-            } else {
-                instance.cabinet_id
-            };
-            self.timetable
-                .repoint_instance(instance.instance_id, new.id, date, cabinet)
-                .await?;
-            change.changed += 1;
-        }
-        Ok(change)
+        self.timetable
+            .change_slot(template_id, input, apply_from)
+            .await
     }
 
     /// Removes a regular slot. With `apply_from`, its lessons in already created weeks
@@ -541,29 +373,36 @@ impl TimetableService {
         apply_from: Option<NaiveDate>,
     ) -> Result<TimetableChange, DomainError> {
         require_admin(actor)?;
-        let mut template = self.templates.get_by_id(template_id).await?;
-        template.is_active = false;
-        self.templates.save(template).await?;
-        let mut change = TimetableChange::default();
-        if let Some(from) = apply_from {
-            for instance in self.timetable.instances_from(template_id, from).await? {
-                if instance.has_homework {
-                    let mut full = self.instances.get_by_id(instance.instance_id).await?;
-                    full.status = LessonInstanceStatus::Cancelled;
-                    self.instances.save(full).await?;
-                    change.kept += 1;
-                } else {
-                    self.timetable.delete_instance(instance.instance_id).await?;
-                    change.changed += 1;
-                }
-            }
-        }
-        Ok(change)
+        self.timetable.remove_slot(template_id, apply_from).await
     }
 
     // ------------------------------------------------------------------
     // One-off lessons
     // ------------------------------------------------------------------
+
+    /// Checks a one-off place and returns its slot and week.
+    async fn one_off_slot(
+        &self,
+        lesson_id: Uuid,
+        date: NaiveDate,
+        start_time: NaiveTime,
+        end_time: NaiveTime,
+        cabinet_id: Option<Uuid>,
+    ) -> Result<(SlotInput, NaiveDate), DomainError> {
+        let day = day_of(date)?;
+        let monday = monday_of(date);
+        self.weeks.get_by_id(monday).await?;
+        let slot = SlotInput {
+            lesson_id,
+            day,
+            start_time,
+            end_time,
+            parity: WeekParity::Every,
+            cabinet_id,
+        };
+        self.check_slot(&slot).await?;
+        Ok((slot, monday))
+    }
 
     /// Adds a lesson to one date only (the week must exist). A cancelled lesson in the
     /// same slot is restored instead of duplicated.
@@ -581,70 +420,14 @@ impl TimetableService {
         cabinet_id: Option<Uuid>,
     ) -> Result<ScheduleLesson, DomainError> {
         require_admin(actor)?;
-        let day = day_of(date)?;
-        let monday = monday_of(date);
-        self.weeks.get_by_id(monday).await?;
-        let input = SlotInput {
-            lesson_id,
-            day,
-            start_time,
-            end_time,
-            parity: WeekParity::Every,
-            cabinet_id,
-        };
-        self.check_slot(&input).await?;
-
-        let template = match self
+        let (slot, monday) = self
+            .one_off_slot(lesson_id, date, start_time, end_time, cabinet_id)
+            .await?;
+        let id = self
             .timetable
-            .find_template(lesson_id, day, start_time, end_time, WeekParity::Every)
-            .await?
-        {
-            Some(template) => template,
-            // Inactive: a one-off slot is never generated into other weeks.
-            None => {
-                self.templates
-                    .save(LessonTemplate::try_new(
-                        Uuid::new_v4(),
-                        lesson_id,
-                        day,
-                        start_time,
-                        end_time,
-                        WeekParity::Every,
-                        cabinet_id,
-                        false,
-                    )?)
-                    .await?
-            }
-        };
-
-        let existing = self
-            .instances
-            .get_by_template(template.id)
-            .await?
-            .into_iter()
-            .find(|instance| instance.week_start_date == monday);
-        let instance = match existing {
-            Some(instance) if !instance.status.is_cancelled() => {
-                return Err(DomainError::LessonInstanceAlreadyExists)
-            }
-            Some(mut instance) => {
-                instance.status = LessonInstanceStatus::Scheduled;
-                instance.cabinet_id = cabinet_id;
-                instance
-            }
-            None => LessonInstance::try_new(
-                Uuid::new_v4(),
-                template.id,
-                monday,
-                date,
-                LessonInstanceStatus::Scheduled,
-                cabinet_id,
-            )?,
-        };
-        let saved = self.instances.save(instance).await?;
-        // A lesson restored in its regular slot is not new; anything else is.
-        self.timetable.set_extra(saved.id, !template.is_active).await?;
-        self.schedule.schedule_lesson(saved.id).await
+            .place_lesson(slot, monday, date, None)
+            .await?;
+        self.schedule.schedule_lesson(id).await
     }
 
     /// Moves one lesson to another date / time (within an existing week): the original
@@ -674,27 +457,13 @@ impl TimetableService {
             return self.schedule.schedule_lesson(instance_id).await;
         }
 
-        let moved = self
-            .add_one_off(
-                actor,
-                template.lesson_id,
-                date,
-                start_time,
-                end_time,
-                cabinet_id,
-            )
+        let (slot, monday) = self
+            .one_off_slot(template.lesson_id, date, start_time, end_time, cabinet_id)
             .await?;
-        original.status = LessonInstanceStatus::Cancelled;
-        self.instances.save(original).await?;
-        // The new lesson may be a restored one that already has homework: then both stay.
-        match self
+        let id = self
             .timetable
-            .move_homework(instance_id, moved.instance.id)
-            .await
-        {
-            Ok(()) | Err(DomainError::HomeworkAlreadyExists) => {}
-            Err(error) => return Err(error),
-        }
-        self.schedule.schedule_lesson(moved.instance.id).await
+            .place_lesson(slot, monday, date, Some(instance_id))
+            .await?;
+        self.schedule.schedule_lesson(id).await
     }
 }

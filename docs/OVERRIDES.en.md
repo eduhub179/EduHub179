@@ -181,6 +181,10 @@ lessons. Code: `application/src/use_cases/admin/timetable_service.rs`, routes
   lesson moved back to its regular slot is `FALSE` again). The schedule API returns
   `is_extra`; the site shows such lessons and lessons with a substitute
   (`usual_teachers`) in pale blue, labelled «новый урок» / «замена».
+- Every edit of this section (add, change or remove a slot, a one-off lesson, a move) is
+  done by `TimetableRepository` in one transaction under a shared `pg_advisory_xact_lock`:
+  a failure in the middle changes nothing, and two admins' edits never interleave (whether
+  the lesson is there and has homework is checked inside the transaction).
 
 Known gaps: no check that the class, teacher or cabinet is free at that time (overlap is
 checked only within one course); week parity is still ignored when generating weeks (as
