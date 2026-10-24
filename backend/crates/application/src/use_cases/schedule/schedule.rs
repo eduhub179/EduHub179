@@ -5,11 +5,13 @@
 //! Guarantees: persistence is accessed through a domain trait, so this module
 //! remains independent of the PostgreSQL adapter.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{Datelike, NaiveDate, NaiveTime};
 use domain::entities::homework::{Homework, HomeworkFile};
 use domain::entities::lesson::Lesson;
+use domain::entities::lesson_template::LessonTemplate;
 use domain::entities::schedule_week::ScheduleWeek;
 use domain::entities::{
     cabinet::Cabinet, lesson_instance::LessonInstance, lesson_substitution::LessonSubstitution,
@@ -29,6 +31,7 @@ use domain::repositories::subject_repository::SubjectRepository;
 use domain::repositories::user_repository::UserRepository;
 use domain::value_objects::lesson_target::LessonTarget;
 use domain::value_objects::week_status::WeekStatus;
+use uuid::Uuid;
 
 /// Coordinates schedule-week operations for presentation handlers.
 ///
@@ -105,6 +108,34 @@ pub struct ScheduleLesson {
     pub is_extra: bool,
 }
 
+/// Which lessons a schedule shows.
+enum Scope {
+    /// Lessons of these courses, plus single instances of other courses (the lessons
+    /// a teacher substitutes in).
+    Courses {
+        lessons: Vec<Lesson>,
+        extra_instances: HashSet<Uuid>,
+    },
+    /// Every lesson of the school (admin panel).
+    All,
+}
+
+/// Data shared by many lessons of one schedule, loaded at most once per request:
+/// a week repeats the same courses, subjects, teachers and cabinets many times.
+/// Lives only while one schedule is built, so it never serves stale data.
+#[derive(Default)]
+struct LoadCache {
+    templates: HashMap<Uuid, LessonTemplate>,
+    lessons: HashMap<Uuid, Lesson>,
+    subjects: HashMap<Uuid, Subject>,
+    users: HashMap<Uuid, User>,
+    cabinets: HashMap<Uuid, Cabinet>,
+    /// Teachers by course id.
+    teachers: HashMap<Uuid, Vec<User>>,
+    /// Class / group name by course id.
+    target_names: HashMap<Uuid, String>,
+}
+
 /// Homework data needed by a schedule card and its details screen.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HomeworkDetails {
@@ -160,7 +191,7 @@ impl ScheduleService {
     /// A date without a week returns `ScheduleWeekNotFound`, as for students.
     pub async fn all_lessons_for_date(&self, date: NaiveDate) -> Result<ScheduleDay, DomainError> {
         self.schedule_weeks.get_by_id(monday_of(date)).await?;
-        self.build_day_filtered(date, |_, _| true).await
+        self.build_day(date, Scope::All).await
     }
 
     /// One lesson instance with all display data (for the admin panel after an edit).
@@ -229,7 +260,7 @@ impl ScheduleService {
     /// propagated unchanged.
     pub async fn day_schedule(
         &self,
-        student_id: uuid::Uuid,
+        student_id: Uuid,
         date: NaiveDate,
     ) -> Result<ScheduleDay, DomainError> {
         let week_start_date = monday_of(date);
@@ -245,16 +276,8 @@ impl ScheduleService {
         if !student.role.is_student() {
             return Err(DomainError::InsufficientPermissions);
         }
-        let student_group_ids = self
-            .student_groups
-            .get_groups_by_student(student_id)
-            .await?
-            .into_iter()
-            .map(|group| group.id)
-            .collect::<std::collections::HashSet<_>>();
-
-        self.build_day_schedule(date, student.class_id, &student_group_ids)
-            .await
+        let scope = self.student_scope(&student).await?;
+        self.build_day(date, scope).await
     }
 
     /// Loads the personal schedule for the student and week containing `date`.
@@ -265,7 +288,7 @@ impl ScheduleService {
     /// `DomainError::ScheduleWeekNotFound` and no partial response is emitted.
     pub async fn current_week_schedule(
         &self,
-        student_id: uuid::Uuid,
+        student_id: Uuid,
         date: NaiveDate,
     ) -> Result<WeeklySchedule, DomainError> {
         let student = self.users.get_by_id(student_id).await?;
@@ -282,7 +305,8 @@ impl ScheduleService {
             return Err(DomainError::ScheduleWeekNotFound);
         }
 
-        self.build_week_schedule(week_start_date, student_id).await
+        let scope = self.student_scope(&student).await?;
+        self.build_week(week_start_date, scope).await
     }
 
     /// Loads the weekly schedule for a concrete class.
@@ -291,7 +315,7 @@ impl ScheduleService {
     /// schedule for a class, without resolving a student account first.
     pub async fn class_week_schedule(
         &self,
-        class_id: uuid::Uuid,
+        class_id: Uuid,
         date: NaiveDate,
     ) -> Result<WeeklySchedule, DomainError> {
         let week_start_date = monday_of(date);
@@ -300,14 +324,14 @@ impl ScheduleService {
             return Err(DomainError::ScheduleWeekNotFound);
         }
 
-        self.build_week_schedule_for_class(week_start_date, class_id)
-            .await
+        let scope = self.class_scope(class_id).await?;
+        self.build_week(week_start_date, scope).await
     }
 
     /// Loads the day schedule for a concrete class.
     pub async fn class_day_schedule(
         &self,
-        class_id: uuid::Uuid,
+        class_id: Uuid,
         date: NaiveDate,
     ) -> Result<ScheduleDay, DomainError> {
         let week_start_date = monday_of(date);
@@ -316,20 +340,8 @@ impl ScheduleService {
             return Err(DomainError::ScheduleWeekNotFound);
         }
 
-        let students_in_class = self.users.get_active_students_by_class(class_id).await?;
-        let mut class_group_ids = std::collections::HashSet::new();
-        for student in students_in_class {
-            let groups = self
-                .student_groups
-                .get_groups_by_student(student.id)
-                .await?;
-            for group in groups {
-                class_group_ids.insert(group.id);
-            }
-        }
-
-        self.build_day_schedule(date, Some(class_id), &class_group_ids)
-            .await
+        let scope = self.class_scope(class_id).await?;
+        self.build_day(date, scope).await
     }
 
     /// Loads the week containing `date` for a teacher: lessons of every course the
@@ -341,10 +353,10 @@ impl ScheduleService {
     /// `ScheduleWeekNotFound`, as for students.
     pub async fn teacher_week_schedule(
         &self,
-        teacher_id: uuid::Uuid,
+        teacher_id: Uuid,
         date: NaiveDate,
     ) -> Result<WeeklySchedule, DomainError> {
-        let lesson_ids = self.teacher_lesson_ids(teacher_id).await?;
+        let lessons = self.teacher_lessons(teacher_id).await?;
         let week_start_date = monday_of(date);
         let week = self.schedule_weeks.get_by_id(week_start_date).await?;
         if !week.is_published() {
@@ -358,36 +370,35 @@ impl ScheduleService {
                 week_start_date + chrono::Duration::days(6),
             )
             .await?;
-        self.build_week_filtered(week_start_date, |instance, lesson| {
-            lesson_ids.contains(&lesson.id) || substituted.contains(&instance.id)
-        })
-        .await
+        let scope = Scope::Courses {
+            lessons,
+            extra_instances: substituted,
+        };
+        self.build_week(week_start_date, scope).await
     }
 
     /// Loads one day for a teacher; same rules as `teacher_week_schedule`.
     pub async fn teacher_day_schedule(
         &self,
-        teacher_id: uuid::Uuid,
+        teacher_id: Uuid,
         date: NaiveDate,
     ) -> Result<ScheduleDay, DomainError> {
-        let lesson_ids = self.teacher_lesson_ids(teacher_id).await?;
+        let lessons = self.teacher_lessons(teacher_id).await?;
         let week = self.schedule_weeks.get_by_id(monday_of(date)).await?;
         if !week.is_published() {
             return Err(DomainError::ScheduleWeekNotFound);
         }
 
         let substituted = self.substituted_instance_ids(teacher_id, date, date).await?;
-        self.build_day_filtered(date, |instance, lesson| {
-            lesson_ids.contains(&lesson.id) || substituted.contains(&instance.id)
-        })
-        .await
+        let scope = Scope::Courses {
+            lessons,
+            extra_instances: substituted,
+        };
+        self.build_day(date, scope).await
     }
 
     /// Courses of a teacher. Admins may teach too, so only students are rejected.
-    async fn teacher_lesson_ids(
-        &self,
-        teacher_id: uuid::Uuid,
-    ) -> Result<std::collections::HashSet<uuid::Uuid>, DomainError> {
+    async fn teacher_lessons(&self, teacher_id: Uuid) -> Result<Vec<Lesson>, DomainError> {
         let teacher = self.users.get_by_id(teacher_id).await?;
         if teacher.role.is_student() {
             return Err(DomainError::UserNotFound);
@@ -395,21 +406,57 @@ impl ScheduleService {
         if !teacher.is_active {
             return Err(DomainError::UserIsInactive);
         }
-        Ok(self
-            .lessons
-            .get_by_teacher(teacher_id)
-            .await?
-            .into_iter()
-            .map(|lesson| lesson.id)
-            .collect())
+        self.lessons.get_by_teacher(teacher_id).await
     }
 
-    /// Week of all instances that pass `include`, Monday to Sunday.
-    async fn build_week_filtered(
+    /// Courses a student attends: those of their class and of their groups.
+    async fn student_scope(&self, student: &User) -> Result<Scope, DomainError> {
+        let group_ids: HashSet<Uuid> = self
+            .student_groups
+            .get_groups_by_student(student.id)
+            .await?
+            .into_iter()
+            .map(|group| group.id)
+            .collect();
+        self.courses_scope(student.class_id, &group_ids).await
+    }
+
+    /// Courses of a class: its own plus group courses attended by its students.
+    async fn class_scope(&self, class_id: Uuid) -> Result<Scope, DomainError> {
+        let mut group_ids = HashSet::new();
+        for student in self.users.get_active_students_by_class(class_id).await? {
+            for group in self.student_groups.get_groups_by_student(student.id).await? {
+                group_ids.insert(group.id);
+            }
+        }
+        self.courses_scope(Some(class_id), &group_ids).await
+    }
+
+    async fn courses_scope(
+        &self,
+        class_id: Option<Uuid>,
+        group_ids: &HashSet<Uuid>,
+    ) -> Result<Scope, DomainError> {
+        let mut lessons = match class_id {
+            Some(class_id) => self.lessons.get_by_class(class_id).await?,
+            None => Vec::new(),
+        };
+        for group_id in group_ids {
+            lessons.extend(self.lessons.get_by_group(*group_id).await?);
+        }
+        Ok(Scope::Courses {
+            lessons,
+            extra_instances: HashSet::new(),
+        })
+    }
+
+    /// The week starting `week_start_date` with the lessons of `scope`, Monday to Sunday.
+    async fn build_week(
         &self,
         week_start_date: NaiveDate,
-        include: impl Fn(&LessonInstance, &Lesson) -> bool,
+        scope: Scope,
     ) -> Result<WeeklySchedule, DomainError> {
+        let instances = self.instances.get_by_week(week_start_date).await?;
         let mut days = (0..7)
             .map(|offset| ScheduleDay {
                 date: week_start_date + chrono::Duration::days(offset),
@@ -417,20 +464,13 @@ impl ScheduleService {
             })
             .collect::<Vec<_>>();
 
-        for instance in self.instances.get_by_week(week_start_date).await? {
-            let template = self.templates.get_by_id(instance.template_id).await?;
-            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
-            if !include(&instance, &lesson) {
-                continue;
-            }
-
-            let schedule_lesson = self.build_schedule_lesson(instance).await?;
-            let day_index = usize::try_from(schedule_lesson.instance.day_of_week())
+        for lesson in self.load_lessons(instances, scope).await? {
+            let day_index = usize::try_from(lesson.instance.day_of_week())
                 .map_err(|_| DomainError::InvalidLessonInstanceDate)?;
             days.get_mut(day_index)
                 .ok_or(DomainError::InvalidLessonInstanceDate)?
                 .lessons
-                .push(schedule_lesson);
+                .push(lesson);
         }
 
         for day in &mut days {
@@ -442,23 +482,72 @@ impl ScheduleService {
         })
     }
 
-    /// One day of all instances that pass `include`.
-    async fn build_day_filtered(
-        &self,
-        date: NaiveDate,
-        include: impl Fn(&LessonInstance, &Lesson) -> bool,
-    ) -> Result<ScheduleDay, DomainError> {
-        let mut lessons = Vec::new();
-        for instance in self.instances.get_by_date(date).await? {
-            let template = self.templates.get_by_id(instance.template_id).await?;
-            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
-            if include(&instance, &lesson) {
-                lessons.push(self.build_schedule_lesson(instance).await?);
-            }
-        }
-
+    /// One day with the lessons of `scope`, by start time.
+    async fn build_day(&self, date: NaiveDate, scope: Scope) -> Result<ScheduleDay, DomainError> {
+        let instances = self.instances.get_by_date(date).await?;
+        let mut lessons = self.load_lessons(instances, scope).await?;
         lessons.sort_by_key(|lesson| lesson.start_time);
         Ok(ScheduleDay { date, lessons })
+    }
+
+    /// Keeps the instances of `scope` and loads their display data.
+    ///
+    /// The school has hundreds of instances a week and a student a few dozen, so
+    /// the scope is resolved *before* touching them: the templates of the scope's
+    /// courses are loaded once and instances are matched by `template_id` in memory,
+    /// with no query per foreign instance. Templates, courses, subjects, teachers,
+    /// cabinets and class/group names repeat from lesson to lesson and are loaded at
+    /// most once per call (`LoadCache`).
+    ///
+    /// # Fail-safe поведение
+    /// Only instances that end up in the result are resolved, so a broken record of
+    /// another class no longer fails this schedule; errors of the kept ones are
+    /// returned unchanged.
+    async fn load_lessons(
+        &self,
+        instances: Vec<LessonInstance>,
+        scope: Scope,
+    ) -> Result<Vec<ScheduleLesson>, DomainError> {
+        let mut cache = LoadCache::default();
+        let selected: Vec<LessonInstance> = match scope {
+            Scope::Courses {
+                lessons,
+                extra_instances,
+            } => {
+                let mut course_templates = HashSet::new();
+                for lesson in lessons {
+                    if cache.lessons.contains_key(&lesson.id) {
+                        continue;
+                    }
+                    // All templates, archived too: an instance may still point to one.
+                    for template in self.templates.get_by_lesson(lesson.id).await? {
+                        course_templates.insert(template.id);
+                        cache.templates.insert(template.id, template);
+                    }
+                    cache.lessons.insert(lesson.id, lesson);
+                }
+                instances
+                    .into_iter()
+                    .filter(|instance| {
+                        course_templates.contains(&instance.template_id)
+                            || extra_instances.contains(&instance.id)
+                    })
+                    .collect()
+            }
+            Scope::All => {
+                // One query for the usual case; archived templates load on demand.
+                for template in self.templates.get_all_active().await? {
+                    cache.templates.insert(template.id, template);
+                }
+                instances
+            }
+        };
+
+        let mut lessons = Vec::with_capacity(selected.len());
+        for instance in selected {
+            lessons.push(self.build_lesson_cached(instance, &mut cache).await?);
+        }
+        Ok(lessons)
     }
 
     /// The other lessons of a double lesson: the same course right before and after
@@ -466,11 +555,20 @@ impl ScheduleService {
     /// Same rule as the chat agent, which puts one homework on both lessons of a pair.
     pub async fn double_lesson_partners(
         &self,
-        instance_id: uuid::Uuid,
+        instance_id: Uuid,
     ) -> Result<Vec<ScheduleLesson>, DomainError> {
         let lesson = self.schedule_lesson(instance_id).await?;
+        // Only the day of the same class (or group) matters, not the whole school.
+        let lessons = match lesson.lesson.target {
+            LessonTarget::Class(class_id) => self.lessons.get_by_class(class_id).await?,
+            LessonTarget::Group(group_id) => self.lessons.get_by_group(group_id).await?,
+        };
+        let scope = Scope::Courses {
+            lessons,
+            extra_instances: HashSet::from([instance_id]),
+        };
         let mut day: Vec<ScheduleLesson> = self
-            .all_lessons_for_date(lesson.instance.lesson_date)
+            .build_day(lesson.instance.lesson_date, scope)
             .await?
             .lessons
             .into_iter()
@@ -510,173 +608,38 @@ impl ScheduleService {
         }
     }
 
-    /// Composes the complete week for a class from the repositories stored in the service.
-    async fn build_week_schedule_for_class(
-        &self,
-        week_start_date: NaiveDate,
-        class_id: uuid::Uuid,
-    ) -> Result<WeeklySchedule, DomainError> {
-        let week_instances = self.instances.get_by_week(week_start_date).await?;
-        let students_in_class = self.users.get_active_students_by_class(class_id).await?;
-        let class_group_ids = students_in_class
-            .into_iter()
-            .map(|student| self.student_groups.get_groups_by_student(student.id))
-            .collect::<Vec<_>>();
-
-        let mut all_group_ids = std::collections::HashSet::new();
-        for group_list in class_group_ids {
-            for group in group_list.await? {
-                all_group_ids.insert(group.id);
-            }
-        }
-
-        let mut days = (0..7)
-            .map(|offset| ScheduleDay {
-                date: week_start_date + chrono::Duration::days(offset),
-                lessons: Vec::new(),
-            })
-            .collect::<Vec<_>>();
-
-        for instance in week_instances {
-            let template = self.templates.get_by_id(instance.template_id).await?;
-            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
-            let belongs_to_class = lesson.class_id() == Some(class_id);
-            let belongs_to_group = lesson
-                .group_id()
-                .is_some_and(|group_id| all_group_ids.contains(&group_id));
-            if !(belongs_to_class || belongs_to_group) {
-                continue;
-            }
-
-            let day = self.build_schedule_lesson(instance).await?;
-            let day_index = usize::try_from(day.instance.day_of_week())
-                .map_err(|_| DomainError::InvalidLessonInstanceDate)?;
-            if let Some(schedule_day) = days.get_mut(day_index) {
-                schedule_day.lessons.push(day);
-            } else {
-                return Err(DomainError::InvalidLessonInstanceDate);
-            }
-        }
-
-        for day in &mut days {
-            day.lessons.sort_by_key(|lesson| lesson.start_time);
-        }
-        Ok(WeeklySchedule {
-            week_start_date,
-            days,
-        })
-    }
-
-    /// Composes one frontend-ready day from the repositories stored in the service.
-    async fn build_day_schedule(
-        &self,
-        date: NaiveDate,
-        student_class_id: Option<uuid::Uuid>,
-        student_group_ids: &std::collections::HashSet<uuid::Uuid>,
-    ) -> Result<ScheduleDay, DomainError> {
-        let day_instances = self.instances.get_by_date(date).await?;
-        let mut lessons_for_day = Vec::with_capacity(day_instances.len());
-
-        for instance in day_instances {
-            let template = self.templates.get_by_id(instance.template_id).await?;
-            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
-            let belongs_to_student = lesson.class_id() == student_class_id
-                || lesson
-                    .group_id()
-                    .is_some_and(|group_id| student_group_ids.contains(&group_id));
-            if !belongs_to_student {
-                continue;
-            }
-
-            lessons_for_day.push(self.build_schedule_lesson(instance).await?);
-        }
-
-        lessons_for_day.sort_by_key(|lesson| lesson.start_time);
-        Ok(ScheduleDay {
-            date,
-            lessons: lessons_for_day,
-        })
-    }
-
-    /// Composes the complete week from the repositories stored in the service.
-    async fn build_week_schedule(
-        &self,
-        week_start_date: NaiveDate,
-        student_id: uuid::Uuid,
-    ) -> Result<WeeklySchedule, DomainError> {
-        let week_instances = self.instances.get_by_week(week_start_date).await?;
-        let student = self.users.get_by_id(student_id).await?;
-        let student_group_ids = self
-            .student_groups
-            .get_groups_by_student(student_id)
-            .await?
-            .into_iter()
-            .map(|group| group.id)
-            .collect::<std::collections::HashSet<_>>();
-        let mut days = (0..7)
-            .map(|offset| ScheduleDay {
-                date: week_start_date + chrono::Duration::days(offset),
-                lessons: Vec::new(),
-            })
-            .collect::<Vec<_>>();
-
-        for instance in week_instances {
-            let template = self.templates.get_by_id(instance.template_id).await?;
-            let lesson = self.lessons.get_by_id(template.lesson_id).await?;
-            let belongs_to_student = lesson.class_id() == student.class_id
-                || lesson
-                    .group_id()
-                    .is_some_and(|group_id| student_group_ids.contains(&group_id));
-            if !belongs_to_student {
-                continue;
-            }
-
-            let day = self.build_schedule_lesson(instance).await?;
-            let day_index = usize::try_from(day.instance.day_of_week())
-                .map_err(|_| DomainError::InvalidLessonInstanceDate)?;
-            if let Some(schedule_day) = days.get_mut(day_index) {
-                schedule_day.lessons.push(day);
-            } else {
-                return Err(DomainError::InvalidLessonInstanceDate);
-            }
-        }
-
-        for day in &mut days {
-            day.lessons.sort_by_key(|lesson| lesson.start_time);
-        }
-        Ok(WeeklySchedule {
-            week_start_date,
-            days,
-        })
-    }
-
     /// Loads all related data for one schedule instance.
     async fn build_schedule_lesson(
         &self,
         instance: LessonInstance,
     ) -> Result<ScheduleLesson, DomainError> {
-        let template = self.templates.get_by_id(instance.template_id).await?;
-        let lesson = self.lessons.get_by_id(template.lesson_id).await?;
-        let subject = self.subjects.get_by_id(lesson.subject_id).await?;
-        let teacher_ids = self.lessons.get_teacher_ids(lesson.id).await?;
-        let mut teacher_list = Vec::with_capacity(teacher_ids.len());
-        for teacher_id in teacher_ids {
-            teacher_list.push(self.users.get_by_id(teacher_id).await?);
-        }
+        self.build_lesson_cached(instance, &mut LoadCache::default()).await
+    }
 
-        let cabinet_id = instance.cabinet_id.or(template.cabinet_id);
-        let cabinet = match cabinet_id {
-            Some(id) => Some(self.cabinets.get_by_id(id).await?),
+    /// `build_schedule_lesson` that reuses data already in `cache`. Homework,
+    /// substitution and `is_extra` belong to this instance only and are not cached.
+    async fn build_lesson_cached(
+        &self,
+        instance: LessonInstance,
+        cache: &mut LoadCache,
+    ) -> Result<ScheduleLesson, DomainError> {
+        let template = self.cached_template(cache, instance.template_id).await?;
+        let lesson = self.cached_lesson(cache, template.lesson_id).await?;
+        let subject = self.cached_subject(cache, lesson.subject_id).await?;
+        let teacher_list = self.cached_teachers(cache, lesson.id).await?;
+
+        let cabinet = match instance.cabinet_id.or(template.cabinet_id) {
+            Some(id) => Some(self.cached_cabinet(cache, id).await?),
             None => None,
         };
         let homework = load_homework(&self.homeworks, instance.id).await?;
-        let target_name = self.target_name(&lesson).await?;
+        let target_name = self.cached_target_name(cache, &lesson).await?;
         let (substitution, is_extra) = match &self.substitutions {
             Some(repo) => (repo.get(instance.id).await?, repo.is_extra(instance.id).await?),
             None => (None, false),
         };
         let substitute_teacher = match substitution.as_ref().and_then(|s| s.substitute_teacher_id) {
-            Some(id) => Some(self.users.get_by_id(id).await?),
+            Some(id) => Some(self.cached_user(cache, id).await?),
             None => None,
         };
         Ok(ScheduleLesson {
@@ -693,6 +656,74 @@ impl ScheduleService {
             substitute_teacher,
             is_extra,
         })
+    }
+
+    async fn cached_template(&self, cache: &mut LoadCache, id: Uuid) -> Result<LessonTemplate, DomainError> {
+        if let Some(found) = cache.templates.get(&id) {
+            return Ok(found.clone());
+        }
+        let loaded = self.templates.get_by_id(id).await?;
+        cache.templates.insert(id, loaded.clone());
+        Ok(loaded)
+    }
+
+    async fn cached_lesson(&self, cache: &mut LoadCache, id: Uuid) -> Result<Lesson, DomainError> {
+        if let Some(found) = cache.lessons.get(&id) {
+            return Ok(found.clone());
+        }
+        let loaded = self.lessons.get_by_id(id).await?;
+        cache.lessons.insert(id, loaded.clone());
+        Ok(loaded)
+    }
+
+    async fn cached_subject(&self, cache: &mut LoadCache, id: Uuid) -> Result<Subject, DomainError> {
+        if let Some(found) = cache.subjects.get(&id) {
+            return Ok(found.clone());
+        }
+        let loaded = self.subjects.get_by_id(id).await?;
+        cache.subjects.insert(id, loaded.clone());
+        Ok(loaded)
+    }
+
+    async fn cached_user(&self, cache: &mut LoadCache, id: Uuid) -> Result<User, DomainError> {
+        if let Some(found) = cache.users.get(&id) {
+            return Ok(found.clone());
+        }
+        let loaded = self.users.get_by_id(id).await?;
+        cache.users.insert(id, loaded.clone());
+        Ok(loaded)
+    }
+
+    async fn cached_cabinet(&self, cache: &mut LoadCache, id: Uuid) -> Result<Cabinet, DomainError> {
+        if let Some(found) = cache.cabinets.get(&id) {
+            return Ok(found.clone());
+        }
+        let loaded = self.cabinets.get_by_id(id).await?;
+        cache.cabinets.insert(id, loaded.clone());
+        Ok(loaded)
+    }
+
+    /// Teachers of a course, in `get_teacher_ids` order.
+    async fn cached_teachers(&self, cache: &mut LoadCache, lesson_id: Uuid) -> Result<Vec<User>, DomainError> {
+        if let Some(found) = cache.teachers.get(&lesson_id) {
+            return Ok(found.clone());
+        }
+        let teacher_ids = self.lessons.get_teacher_ids(lesson_id).await?;
+        let mut teachers = Vec::with_capacity(teacher_ids.len());
+        for teacher_id in teacher_ids {
+            teachers.push(self.cached_user(cache, teacher_id).await?);
+        }
+        cache.teachers.insert(lesson_id, teachers.clone());
+        Ok(teachers)
+    }
+
+    async fn cached_target_name(&self, cache: &mut LoadCache, lesson: &Lesson) -> Result<String, DomainError> {
+        if let Some(found) = cache.target_names.get(&lesson.id) {
+            return Ok(found.clone());
+        }
+        let loaded = self.target_name(lesson).await?;
+        cache.target_names.insert(lesson.id, loaded.clone());
+        Ok(loaded)
     }
 
     /// Generates lesson instances for the given week from all active templates.
