@@ -37,7 +37,8 @@
 }
 
 .plusnik-page__table {
-    width: 100%;
+    width: max-content;
+    min-width: 100%;
     border-collapse: collapse;
     background: #fff;
     color: var(--color-text);
@@ -47,7 +48,7 @@
 .plusnik-page__table th,
 .plusnik-page__table td {
     padding: 4px 8px;
-    border: 1px solid var(--color-border);
+    border: 1.5px solid var(--color-border);
 }
 
 .plusnik-page__table th:not(:first-child),
@@ -61,8 +62,45 @@
     font-weight: 600;
 }
 
+.plusnik-page__table :where(
+    thead th:nth-child(2n + 1):nth-child(n + 5),
+    tbody td:nth-child(2n + 1):nth-child(n + 5)
+) {
+    background: #f4f5f6;
+}
+
 .plusnik-page__cell {
     text-align: center;
+}
+
+.plusnik-page__count-cell,
+.plusnik-page__grade-cell {
+    text-align: center;
+}
+
+.plusnik-page__table th.plusnik-page__count-cell,
+.plusnik-page__table td.plusnik-page__count-cell {
+    width: 36px;
+    min-width: 36px;
+    padding-right: 2px;
+    padding-left: 2px;
+}
+
+.plusnik-page__table th.plusnik-page__count-cell {
+    font-size: 24px;
+    line-height: 1;
+}
+
+.plusnik-page__table th.plusnik-page__grade-cell,
+.plusnik-page__table td.plusnik-page__grade-cell {
+    width: 48px;
+    min-width: 48px;
+    padding-right: 2px;
+    padding-left: 2px;
+}
+
+.plusnik-page__table th.plusnik-page__grade-cell {
+    font-size: 11px;
 }
 
 .plusnik-page__cell.is-solved,
