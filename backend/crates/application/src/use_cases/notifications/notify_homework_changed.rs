@@ -8,12 +8,15 @@
 //!
 //! Dependencies: repositories, `NotificationSender` (Web Push in production).
 //! Guarantees: returns `Result`, no panics; a failure for one recipient does not stop
-//! the others — it is counted in the summary.
+//! the others — it is counted in the summary. Recipients are notified concurrently
+//! (`MAX_CONCURRENT_SENDS` at a time), so the last student of a class is not delayed
+//! by everyone before them.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use domain::errors::DomainError;
+use futures::stream::{self, StreamExt};
 use domain::ports::notification_sender::{NotificationPayload, NotificationSender};
 use domain::repositories::homework_repository::HomeworkRepository;
 use domain::repositories::lesson_instance_repository::LessonInstanceRepository;
@@ -26,6 +29,10 @@ use super::resolve_homework_recipients::ResolveHomeworkRecipientsUseCase;
 
 /// Body snippet length: enough for "§12, № 5–7, 9*" style homework, short on a lock screen.
 const SNIPPET_CHARS: usize = 120;
+/// One push takes a round trip to the push service (~0.5–1 s); a class of 30 sent one by
+/// one would wait up to half a minute. Bounded so a big group does not open dozens of
+/// connections at once.
+const MAX_CONCURRENT_SENDS: usize = 16;
 
 /// What happened to the homework.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,23 +156,34 @@ impl NotifyHomeworkChangedUseCase {
             ("lesson_instance_id".to_string(), instance.id.to_string()),
         ]);
 
-        let mut summary = NotifySummary::default();
-        for user_id in self.recipients.for_lesson_instance(lesson_instance_id).await? {
-            if Some(user_id) == author_id {
-                continue;
-            }
-            summary.recipients += 1;
+        let recipients: Vec<Uuid> = self
+            .recipients
+            .for_lesson_instance(lesson_instance_id)
+            .await?
+            .into_iter()
+            .filter(|user_id| Some(*user_id) != author_id)
+            .collect();
+        // Each send owns its sender handle and payload: the futures run inside a spawned
+        // task, so they must not borrow from this call.
+        let sends = recipients.into_iter().map(|user_id| {
+            let sender = Arc::clone(&self.sender);
             let payload = NotificationPayload {
                 user_id,
                 title: title.clone(),
                 body: body.clone(),
                 data: data.clone(),
             };
-            if self.sender.send_to_user(user_id, &payload).await.is_err() {
-                summary.failed += 1;
-            }
-        }
-        Ok(summary)
+            async move { sender.send_to_user(user_id, &payload).await.is_ok() }
+        });
+        let results: Vec<bool> = stream::iter(sends)
+            .buffer_unordered(MAX_CONCURRENT_SENDS)
+            .collect()
+            .await;
+
+        Ok(NotifySummary {
+            recipients: results.len(),
+            failed: results.iter().filter(|delivered| !**delivered).count(),
+        })
     }
 }
 
