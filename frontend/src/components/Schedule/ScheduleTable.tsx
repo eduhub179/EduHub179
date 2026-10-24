@@ -6,6 +6,7 @@ import '../../css/ScheduleTable.css';
 interface FullScheduleTableProps {
     onLessonSelect: (lesson: ScheduleItem) => void;
     selectedClass: string;
+    scheduleType?: 'class' | 'teacher';
 }
 
 const WEEKDAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -60,8 +61,12 @@ const getTimelinePosition = (time: string): number => {
         LESSON_SLOT_HEIGHT;
 };
 
-const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, selectedClass}) => {
-    const {days, isLoading, error, hasClass} = useSchedule(selectedClass);
+const FullScheduleTable: React.FC<FullScheduleTableProps> = ({
+    onLessonSelect,
+    selectedClass,
+    scheduleType = 'class',
+}) => {
+    const {days, isLoading, error, hasClass} = useSchedule(selectedClass, scheduleType);
     const [hoveredDay, setHoveredDay] = useState<string | null>(null);
     const scheduleDays = WEEKDAYS.map((name) => ({
         name,
@@ -172,9 +177,10 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                             </strong>
                                                             {lesson.cancelled && <small className="schedule__cancelled-badge">урок отменён</small>}
                                                             {changeLabel(lesson) && <small className="schedule__changed-badge">{changeLabel(lesson)}</small>}
-                                                            {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
+                                                            {(lesson.targetName || lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                                 <small className="schedule-grid__lesson-meta">
                                                                     {[
+                                                                        lesson.targetName,
                                                                         lesson.cabinet?.trim(),
                                                                         lesson.teachers?.some((teacher) => teacher.trim()) &&
                                                                             lesson.teachers.filter((teacher) => teacher.trim()).join(', '),

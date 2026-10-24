@@ -1,4 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {getSchoolClassLabel} from '../../api/classApi';
 import type {SchoolClassDto} from '../../api/classApi';
 import ClassTable from '../ClassTable';
 
@@ -6,31 +7,27 @@ interface ScheduleClassSelectorProps {
     classes: SchoolClassDto[];
     selectedClassId: string;
     onChange: (classId: string) => void;
+    showTeacherSchedule?: boolean;
+    isTeacherScheduleSelected?: boolean;
+    onSelectTeacherSchedule?: () => void;
 }
-
-const getSchoolYear = () => {
-    const now = new Date();
-    return now.getFullYear() - (now.getMonth() < 7 ? 1 : 0);
-};
-
-const getGrade = (graduationYear: number) => getSchoolYear() + 12 - graduationYear;
-
-const getClassLabel = (schoolClass: SchoolClassDto) =>
-    `${getGrade(schoolClass.graduation_year)}${schoolClass.letter.toLocaleUpperCase('ru-RU')}`;
 
 const ScheduleClassSelector: React.FC<ScheduleClassSelectorProps> = ({
     classes,
     selectedClassId,
     onChange,
+    showTeacherSchedule = false,
+    isTeacherScheduleSelected = false,
+    onSelectTeacherSchedule,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const selectorRef = useRef<HTMLDivElement>(null);
     const selectedClass = classes.find((schoolClass) => schoolClass.id === selectedClassId);
     const classOptions = useMemo(
         () => classes.map((schoolClass) => ({
-            grade: getGrade(schoolClass.graduation_year),
+            grade: Number.parseInt(getSchoolClassLabel(schoolClass), 10),
             letter: schoolClass.letter.toLocaleUpperCase('ru-RU'),
-            label: getClassLabel(schoolClass),
+            label: getSchoolClassLabel(schoolClass),
             value: schoolClass.id,
         })),
         [classes],
@@ -67,19 +64,27 @@ const ScheduleClassSelector: React.FC<ScheduleClassSelectorProps> = ({
 
     return (
         <div className="schedule-class-selector" ref={selectorRef}>
-            <span className="schedule-class-selector__label">Класс</span>
+            <span className="schedule-class-selector__label">
+                {showTeacherSchedule ? 'Расписание' : 'Класс'}
+            </span>
             <button
                 aria-expanded={isOpen}
                 aria-haspopup="dialog"
-                aria-label={selectedClass
-                    ? `Выбран ${getClassLabel(selectedClass)} класс. Нажмите, чтобы выбрать другой класс`
+                aria-label={isTeacherScheduleSelected
+                    ? 'Выбрано моё расписание. Нажмите, чтобы выбрать расписание класса'
+                    : selectedClass
+                        ? `Выбран класс ${getSchoolClassLabel(selectedClass)}. Нажмите, чтобы выбрать другой`
                     : 'Выбрать класс расписания'}
                 aria-controls="schedule-class-selector-options"
                 className="schedule-class-selector__trigger"
                 onClick={() => setIsOpen((open) => !open)}
                 type="button"
             >
-                {selectedClass ? `${getClassLabel(selectedClass)} класс` : 'Выбрать класс'}
+                {isTeacherScheduleSelected
+                    ? 'Моё расписание'
+                    : selectedClass
+                        ? getSchoolClassLabel(selectedClass)
+                        : 'Выбрать класс'}
                 <span aria-hidden="true" className="schedule-class-selector__chevron">
                     {isOpen ? '▴' : '▾'}
                 </span>
@@ -91,6 +96,19 @@ const ScheduleClassSelector: React.FC<ScheduleClassSelectorProps> = ({
                     role="dialog"
                     aria-label="Выбрать класс расписания"
                 >
+                    {showTeacherSchedule && (
+                        <button
+                            className="schedule-class-selector__teacher-option"
+                            type="button"
+                            aria-pressed={isTeacherScheduleSelected}
+                            onClick={() => {
+                                onSelectTeacherSchedule?.();
+                                setIsOpen(false);
+                            }}
+                        >
+                            Моё расписание
+                        </button>
+                    )}
                     {classes.length ? (
                         <ClassTable
                             classOptions={classOptions}

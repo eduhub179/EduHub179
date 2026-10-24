@@ -1,6 +1,6 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
-import {fetchSchoolClasses, hasAdminRole, type SchoolClassDto} from '../api';
+import {fetchSchoolClasses, getSchoolClassLabel, hasAdminRole, type SchoolClassDto} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import AuthenticatedMathView from '../components/Math/AuthenticatedMathView';
 import AdminMathView from '../components/Math/AdminMathView';
@@ -11,16 +11,6 @@ import CourseMaterialsLinks from '../components/Materials/CourseMaterialsLinks';
 import Header from '../components/Header';
 import '../css/MathPage.css';
 
-const getSchoolYear = () => {
-    const now = new Date();
-    return now.getFullYear() - (now.getMonth() < 7 ? 1 : 0);
-};
-
-const getClassLabel = (schoolClass: SchoolClassDto) => {
-    const grade = getSchoolYear() + 12 - schoolClass.graduation_year;
-    return `${grade}${schoolClass.letter.toLocaleUpperCase('ru-RU')}`;
-};
-
 const MathPage: React.FC = () => {
     const {user} = useAuth();
     const {schoolClass: routeClass} = useParams<{ schoolClass: string }>();
@@ -29,7 +19,7 @@ const MathPage: React.FC = () => {
     const [classLoadError, setClassLoadError] = useState<string | null>(null);
     const classOptions = useMemo<ClassOption[]>(
         () => (classes ?? []).map((schoolClass) => {
-            const label = getClassLabel(schoolClass);
+            const label = getSchoolClassLabel(schoolClass);
             return {
                 grade: Number.parseInt(label, 10),
                 letter: schoolClass.letter.toLocaleUpperCase('ru-RU'),
@@ -46,12 +36,12 @@ const MathPage: React.FC = () => {
 
         const normalizedValue = value.trim().toLocaleLowerCase('ru-RU');
         return classes?.find((schoolClass) =>
-            [schoolClass.id, schoolClass.name, getClassLabel(schoolClass)]
+            [schoolClass.id, schoolClass.name, getSchoolClassLabel(schoolClass)]
                 .some((candidate) => candidate.trim().toLocaleLowerCase('ru-RU') === normalizedValue),
         );
     };
     const selectedClass = findClass(routeClass);
-    const schoolClass = selectedClass ? getClassLabel(selectedClass) : undefined;
+    const schoolClass = selectedClass ? getSchoolClassLabel(selectedClass) : undefined;
 
     useEffect(() => {
         let isCurrent = true;
@@ -80,13 +70,13 @@ const MathPage: React.FC = () => {
         if (routeClass) {
             if (!selectedClass) {
                 navigate('/math', {replace: true});
-            } else if (routeClass !== getClassLabel(selectedClass)) {
-                navigate(`/math/${encodeURIComponent(getClassLabel(selectedClass))}`, {replace: true});
+            } else if (routeClass !== getSchoolClassLabel(selectedClass)) {
+                navigate(`/math/${encodeURIComponent(getSchoolClassLabel(selectedClass))}`, {replace: true});
             }
         } else if (user?.schoolClass) {
             const profileClass = findClass(user.schoolClass);
             if (profileClass) {
-                navigate(`/math/${encodeURIComponent(getClassLabel(profileClass))}`, {replace: true});
+                navigate(`/math/${encodeURIComponent(getSchoolClassLabel(profileClass))}`, {replace: true});
             }
         }
     }, [classes, classLoadError, navigate, routeClass, selectedClass, user]);
@@ -126,6 +116,7 @@ const MathPage: React.FC = () => {
                 {schoolClass && selectedClass && (
                     <MathTopicsTable
                         schoolClass={selectedClass}
+                        classes={classes ?? []}
                         user={user}
                     />
                 )}

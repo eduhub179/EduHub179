@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {fetchSchoolClasses} from '../api/classApi';
 import type {SchoolClassDto} from '../api/classApi';
+import {hasTeacherRole} from '../api/access';
 import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
 import ScheduleClassSelector from '../components/Schedule/ScheduleClassSelector';
@@ -14,6 +15,7 @@ const FullSchedule: React.FC = () => {
     const {user} = useAuth();
     const [selectedLesson, setSelectedLesson] = useState<ScheduleItem | null>(null);
     const [selectedClass, setSelectedClass] = useState(user?.schoolClass?.trim() ?? '');
+    const [isTeacherScheduleSelected, setIsTeacherScheduleSelected] = useState(hasTeacherRole(user));
     const [classes, setClasses] = useState<SchoolClassDto[]>([]);
     const [classListError, setClassListError] = useState<string | null>(null);
 
@@ -67,7 +69,13 @@ const FullSchedule: React.FC = () => {
                     <ScheduleClassSelector
                         classes={classes}
                         selectedClassId={selectedClass}
-                        onChange={setSelectedClass}
+                        onChange={(classId) => {
+                            setSelectedClass(classId);
+                            setIsTeacherScheduleSelected(false);
+                        }}
+                        showTeacherSchedule={hasTeacherRole(user)}
+                        isTeacherScheduleSelected={isTeacherScheduleSelected}
+                        onSelectTeacherSchedule={() => setIsTeacherScheduleSelected(true)}
                     />
                 </div>
 
@@ -75,6 +83,7 @@ const FullSchedule: React.FC = () => {
                 <FullScheduleTable
                     onLessonSelect={setSelectedLesson}
                     selectedClass={selectedClass}
+                    scheduleType={isTeacherScheduleSelected ? 'teacher' : 'class'}
                 />
             </main>
             {selectedLesson && (

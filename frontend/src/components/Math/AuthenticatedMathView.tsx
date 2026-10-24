@@ -23,7 +23,7 @@ const AuthenticatedMathView: React.FC<AuthenticatedMathViewProps> = ({
             <div>
                 <p className="math-content__eyebrow">Учебный раздел</p>
                 <h1 id="math-title">
-                    Математика{schoolClass ? ` — ${schoolClass} класс` : ''}
+                    Математика{schoolClass ? ` — ${schoolClass}` : ''}
                 </h1>
             </div>
             {schoolClass && (

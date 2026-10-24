@@ -3,6 +3,8 @@ import {Link} from 'react-router-dom';
 
 import {useSchedule} from '../../hooks/useSchedule';
 import {changeLabel, type ScheduleItem} from '../../types/ScheduleTypes.ts';
+import {hasTeacherRole} from '../../api/access';
+import {useAuth} from '../../auth/AuthProvider';
 import '../../css/Schedule.css';
 
 interface ScheduleProps {
@@ -11,7 +13,11 @@ interface ScheduleProps {
 
 const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
     const [dayIndex, setDayIndex] = useState(0);
-    const {days, isLoading, error, hasClass} = useSchedule();
+    const {user} = useAuth();
+    const {days, isLoading, error, hasClass} = useSchedule(
+        undefined,
+        hasTeacherRole(user) ? 'teacher' : 'class',
+    );
 
     const changeDay = (direction: number) => {
         setDayIndex((current) => {
@@ -123,9 +129,10 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
                                                             {lesson.cancelled && <span className="schedule__cancelled-badge">отменён</span>}
                                                             {changeLabel(lesson) && <span className="schedule__changed-badge">{changeLabel(lesson)}</span>}
                                                         </div>
-                                                        {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
+                                                        {(lesson.targetName || lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                             <div className="schedule__lesson-meta">
                                                                 {[
+                                                                    lesson.targetName,
                                                                     lesson.cabinet?.trim(),
                                                                     lesson.teachers?.some((teacher) => teacher.trim()) &&
                                                                     lesson.teachers.filter((teacher) => teacher.trim()).join(', '),

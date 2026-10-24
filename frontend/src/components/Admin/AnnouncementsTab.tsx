@@ -5,6 +5,7 @@ import {
     deleteAnnouncement,
     fetchAdminAnnouncements,
     fetchSchoolClasses,
+    getSchoolClassLabel,
     updateAnnouncement,
     type AdminAnnouncementDto,
     type AnnouncementInput,
@@ -171,7 +172,7 @@ const AnnouncementsTab: React.FC = () => {
                                     checked={form.classIds.includes(schoolClass.id)}
                                     onChange={() => toggleClass(schoolClass.id)}
                                 />{' '}
-                                {schoolClass.name}
+                                {getSchoolClassLabel(schoolClass)}
                             </label>
                         ))}
                     </fieldset>

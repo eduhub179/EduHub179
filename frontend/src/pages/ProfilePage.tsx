@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import type {FormEvent} from 'react';
 import {useEffect} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {fetchSchoolClasses} from '../api';
+import {fetchSchoolClasses, getSchoolClassLabel} from '../api';
 import type {SchoolClassDto} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
@@ -105,7 +105,7 @@ const ProfilePage: React.FC = () => {
                                         <option value="">Выберите класс</option>
                                         {classes.map((schoolClass) => (
                                             <option key={schoolClass.id} value={schoolClass.id}>
-                                                {schoolClass.name}
+                                                {getSchoolClassLabel(schoolClass)}
                                             </option>
                                         ))}
                                     </select>

@@ -88,6 +88,32 @@
     box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
 }
 
+.schedule-class-selector__teacher-option {
+    display: block;
+    width: 100%;
+    min-height: 42px;
+    margin-bottom: 8px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.schedule-class-selector__teacher-option:hover,
+.schedule-class-selector__teacher-option:focus-visible,
+.schedule-class-selector__teacher-option[aria-pressed='true'] {
+    background: #1d4ed8;
+}
+
+.schedule-class-selector__teacher-option:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
 .full-schedule__error,
 .schedule-class-selector__empty {
     margin: 0 0 12px;

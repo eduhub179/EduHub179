@@ -10,6 +10,8 @@ import {
     fetchGroups,
     fetchSchoolClasses,
     fetchSubjects,
+    formatClassName,
+    getSchoolClassLabel,
     removeSlot,
     setCourseTeachers,
     updateSlot,
@@ -70,7 +72,9 @@ const draftOf = (slot: SlotDto): SlotDraft => ({
 });
 
 const courseTitle = (course: TimetableCourseDto, classTarget: string): string =>
-    course.target_name === classTarget ? course.subject.name : `${course.subject.name} (${course.target_name})`;
+    course.target_name === classTarget
+        ? course.subject.name
+        : `${course.subject.name} (${formatClassName(course.target_name)})`;
 
 const teacherNames = (teachers: {name: string}[]): string =>
     teachers.map((teacher) => teacher.name).join(', ') || 'учитель не назначен';
@@ -358,7 +362,7 @@ const TimetableTab: React.FC = () => {
                     Класс{' '}
                     <select value={classId} onChange={(event) => setClassId(event.target.value)}>
                         {classes.map((item) => (
-                            <option key={item.id} value={item.id}>{item.name}</option>
+                            <option key={item.id} value={item.id}>{getSchoolClassLabel(item)}</option>
                         ))}
                     </select>
                 </label>
@@ -421,7 +425,7 @@ const TimetableTab: React.FC = () => {
                                                 <strong>
                                                     {slot.target_name === classTarget
                                                         ? slot.subject_name
-                                                        : `${slot.subject_name} (${slot.target_name})`}
+                                                        : `${slot.subject_name} (${formatClassName(slot.target_name)})`}
                                                 </strong>
                                                 {slot.parity !== 'every' && (
                                                     <span className="admin__badge">{parityTitles[slot.parity]}</span>
