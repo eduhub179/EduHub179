@@ -8,6 +8,8 @@ domain = { path = "../domain" }
 uuid = { version = "1.10", features = ["v4"] }
 chrono = "0.4"
 async-trait = "0.1"
+# Concurrent push delivery (already in the tree via sqlx).
+futures = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }

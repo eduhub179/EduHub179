@@ -84,6 +84,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "domain",
+ "futures",
  "infrastructure",
  "sqlx",
  "tokio",

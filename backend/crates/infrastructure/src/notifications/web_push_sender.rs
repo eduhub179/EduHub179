@@ -132,7 +132,10 @@ impl NotificationSender for WebPushSender {
         message.set_payload(ContentEncoding::Aes128Gcm, content.as_bytes());
         message.set_vapid_signature(signature);
         message.set_ttl(TTL_SECONDS);
-        message.set_urgency(Urgency::Normal);
+        // High: the push service delivers at once instead of batching it for an idle
+        // device (with Normal, FCM may hold a message for minutes). Homework
+        // notifications are user-visible, which is what High is meant for.
+        message.set_urgency(Urgency::High);
         let message = message.build().map_err(|error| {
             tracing::error!("web push: cannot build message: {error}");
             DomainError::InternalError
