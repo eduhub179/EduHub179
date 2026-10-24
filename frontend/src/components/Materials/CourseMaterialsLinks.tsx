@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
-import {fetchClassCourses, type CourseDto, type SchoolClassDto} from '../../api';
+import {fetchClassCourses, formatClassName, type CourseDto, type SchoolClassDto} from '../../api';
 import type {User} from '../../auth/authService';
 import '../../css/CourseMaterialsPage.css';
 
@@ -57,7 +57,7 @@ const CourseMaterialsLinks: React.FC<CourseMaterialsLinksProps> = ({schoolClass,
                         <li key={course.lesson_id}>
                             <Link to={`/courses/${course.lesson_id}/materials`}>
                                 {course.subject_name}
-                                {course.target_name !== schoolClass.name ? ` · ${course.target_name}` : ''}
+                                {course.target_name !== schoolClass.name ? ` · ${formatClassName(course.target_name)}` : ''}
                             </Link>
                         </li>
                     ))}

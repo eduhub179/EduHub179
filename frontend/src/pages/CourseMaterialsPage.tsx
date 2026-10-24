@@ -1,6 +1,7 @@
 import React, {useCallback, useEffect, useState} from 'react';
 import type {FormEvent} from 'react';
 import {Link, useParams} from 'react-router-dom';
+import {formatClassName} from '../api/classApi';
 import {
     addMaterialLink,
     createMaterialTopic,
@@ -250,7 +251,7 @@ const CourseMaterialsPage: React.FC = () => {
                 <div className="course-materials__heading">
                     <div>
                         <span className="course-materials__eyebrow">Материалы курса</span>
-                        <h1>{course ? `${course.subject_name} — ${course.target_name}` : 'Материалы'}</h1>
+                        <h1>{course ? `${course.subject_name} — ${formatClassName(course.target_name)}` : 'Материалы'}</h1>
                     </div>
                     <Link to="/math">Назад к математике</Link>
                 </div>

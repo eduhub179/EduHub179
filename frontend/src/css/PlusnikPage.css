@@ -1,7 +1,8 @@
 .plusnik-page {
     min-height: calc(100vh - 64px);
-    padding: 32px clamp(20px, 4vw, 64px);
+    padding: 10px;
     background: var(--color-bg);
+    width: 100%;
 }
 
 .plusnik-page__heading {
@@ -37,8 +38,8 @@
 }
 
 .plusnik-page__table {
-    width: max-content;
-    min-width: 100%;
+    width: 100%;
+    min-width: max-content;
     border-collapse: collapse;
     background: #fff;
     color: var(--color-text);

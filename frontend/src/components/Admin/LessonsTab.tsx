@@ -8,6 +8,8 @@ import {
     fetchCabinets,
     fetchClassTimetable,
     fetchSchoolClasses,
+    formatClassName,
+    getSchoolClassLabel,
     moveLesson,
     updateAdminLesson,
     type AdminLessonDto,
@@ -132,7 +134,7 @@ const AddLessonForm: React.FC<AddLessonFormProps> = ({date, cabinets, onAdded}) 
                 Класс{' '}
                 <select value={classId} onChange={(event) => setClassId(event.target.value)}>
                     {classes.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
+                        <option key={item.id} value={item.id}>{getSchoolClassLabel(item)}</option>
                     ))}
                 </select>
             </label>
@@ -141,7 +143,7 @@ const AddLessonForm: React.FC<AddLessonFormProps> = ({date, cabinets, onAdded}) 
                 <select required value={courseId} onChange={(event) => setCourseId(event.target.value)}>
                     {courses.map((course) => (
                         <option key={course.id} value={course.id}>
-                            {course.subject.name}{course.group_id ? ` (${course.target_name})` : ''}
+                            {course.subject.name}{course.group_id ? ` (${formatClassName(course.target_name)})` : ''}
                         </option>
                     ))}
                 </select>
@@ -283,7 +285,7 @@ const LessonsTab: React.FC = () => {
         try {
             const moved = await moveLesson(lesson.id, placeInput(place));
             setMessage(
-                `«${moved.subject_name}» (${moved.target_name}) теперь ${formatDay(moved.date)}, ${moved.start_time}` +
+                `«${moved.subject_name}» (${formatClassName(moved.target_name)}) теперь ${formatDay(moved.date)}, ${moved.start_time}` +
                     (lesson.has_homework ? '. Домашка перенесена вместе с уроком.' : '.'),
             );
             load();
@@ -320,7 +322,7 @@ const LessonsTab: React.FC = () => {
                     <select value={target} onChange={(event) => setTarget(event.target.value)}>
                         <option value="">все</option>
                         {targets.map((name) => (
-                            <option key={name} value={name}>{name}</option>
+                            <option key={name} value={name}>{formatClassName(name)}</option>
                         ))}
                     </select>
                 </label>
@@ -331,7 +333,7 @@ const LessonsTab: React.FC = () => {
                 date={date}
                 cabinets={cabinets}
                 onAdded={(lesson) => {
-                    setMessage(`Добавлен урок «${lesson.subject_name}» (${lesson.target_name}) ${formatDay(lesson.date)}, ${lesson.start_time}.`);
+                    setMessage(`Добавлен урок «${lesson.subject_name}» (${formatClassName(lesson.target_name)}) ${formatDay(lesson.date)}, ${lesson.start_time}.`);
                     load();
                 }}
             />
@@ -343,7 +345,7 @@ const LessonsTab: React.FC = () => {
 
             {groups.map(([name, items]) => (
                 <div key={name} className="admin__card">
-                    <h3>{name}</h3>
+                    <h3>{formatClassName(name)}</h3>
                     <table className="admin__table">
                         <tbody>
                             {items.map((lesson) => {

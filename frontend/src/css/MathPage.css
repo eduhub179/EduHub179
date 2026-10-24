@@ -16,6 +16,104 @@
     background: var(--color-bg);
 }
 
+.math-topics__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.math-topics__heading h2 {
+    margin: 0;
+}
+
+.math-topics__create-button {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--color-accent);
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+}
+
+.math-topics__create-button:hover,
+.math-topics__create-button:focus-visible {
+    outline: none;
+    background: #2f70db;
+}
+
+.math-topics__create-button:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.math-topic-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin: 0 0 24px;
+    padding: 18px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.math-topic-form > label,
+.math-topic-form__tasks label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--color-text);
+    font-size: 14px;
+}
+
+.math-topic-form input,
+.math-topic-form select {
+    min-height: 38px;
+    padding: 7px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text);
+    font: inherit;
+}
+
+.math-topic-form__tasks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-column: 1 / -1;
+    gap: 12px;
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.math-topic-form__tasks legend {
+    padding: 0 6px;
+    color: var(--color-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.math-topic-form__success {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #16794b;
+}
+
+.math-topic-form > .math-topics__error {
+    grid-column: 1 / -1;
+    margin: 0;
+}
+
+.math-topic-form > .math-topics__create-button {
+    justify-self: start;
+}
+
 .math-content__top {
     display: flex;
     align-items: flex-start;
@@ -218,6 +316,10 @@
 
     .math-content__top {
         gap: 14px;
+    }
+
+    .math-topic-form {
+        grid-template-columns: 1fr;
     }
 
     .math-content h1 {

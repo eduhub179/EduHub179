@@ -23,6 +23,7 @@ export interface ScheduleItem {
     lessonNumber: number;
     title: string;
     teachers?: string[];
+    targetName?: string;
     cabinet?: string | null;
     /** The lesson is cancelled: shown greyed and struck through. */
     cancelled?: boolean;

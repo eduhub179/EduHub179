@@ -15,7 +15,7 @@ const AdminMathView: React.FC<AdminMathViewProps> = ({schoolClass, onSelectClass
             <div>
                 <p className="math-content__eyebrow">Панель администратора</p>
                 <h1 id="math-title">
-                    Материалы по математике{schoolClass ? ` — ${schoolClass} класс` : ''}
+                    Материалы по математике{schoolClass ? ` — ${schoolClass}` : ''}
                 </h1>
             </div>
             {schoolClass && (

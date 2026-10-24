@@ -4,6 +4,7 @@ import {
     createAdminUser,
     fetchAdminUsers,
     fetchSchoolClasses,
+    getSchoolClassLabel,
     setAdminUserPassword,
     updateAdminUser,
     type AdminUserDto,
@@ -137,7 +138,7 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                 <select value={filter.classId} onChange={(event) => setFilter({...filter, classId: event.target.value})}>
                     <option value="">все классы</option>
                     {classes.map((schoolClass) => (
-                        <option key={schoolClass.id} value={schoolClass.id}>{schoolClass.name}</option>
+                        <option key={schoolClass.id} value={schoolClass.id}>{getSchoolClassLabel(schoolClass)}</option>
                     ))}
                 </select>
                 <label>
@@ -185,7 +186,7 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                             <select value={newUser.class_id} onChange={(event) => setNewUser({...newUser, class_id: event.target.value})}>
                                 <option value="">без класса</option>
                                 {classes.map((schoolClass) => (
-                                    <option key={schoolClass.id} value={schoolClass.id}>{schoolClass.name}</option>
+                                    <option key={schoolClass.id} value={schoolClass.id}>{getSchoolClassLabel(schoolClass)}</option>
                                 ))}
                             </select>
                         </label>
@@ -256,7 +257,7 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                                                 >
                                                     <option value="">—</option>
                                                     {classes.map((schoolClass) => (
-                                                        <option key={schoolClass.id} value={schoolClass.id}>{schoolClass.name}</option>
+                                                        <option key={schoolClass.id} value={schoolClass.id}>{getSchoolClassLabel(schoolClass)}</option>
                                                     ))}
                                                 </select>
                                             ) : (

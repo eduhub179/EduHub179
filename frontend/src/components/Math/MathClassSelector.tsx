@@ -47,13 +47,13 @@ const MathClassSelector: React.FC<MathClassSelectorProps> = ({schoolClass, onCha
             <button
                 aria-expanded={isOpen}
                 aria-haspopup="dialog"
-                aria-label={`Выбран ${schoolClass} класс. Нажмите, чтобы выбрать другой класс`}
+                aria-label={`Выбран класс ${schoolClass}. Нажмите, чтобы выбрать другой`}
                 aria-controls="math-class-selector-options"
                 className="math-class-selector__trigger"
                 onClick={() => setIsOpen((open) => !open)}
                 type="button"
             >
-                {schoolClass} класс
+                {schoolClass}
                 <span aria-hidden="true" className="math-class-selector__chevron">
                     {isOpen ? '▴' : '▾'}
                 </span>
