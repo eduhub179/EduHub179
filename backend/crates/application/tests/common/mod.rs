@@ -146,8 +146,8 @@ impl LessonTemplateRepository for MockRepositories {
             .cloned()
             .ok_or(DomainError::LessonTemplateNotFound)
     }
-    async fn get_by_lesson(&self, _: Uuid) -> Result<Vec<LessonTemplate>, DomainError> {
-        Ok(Vec::new())
+    async fn get_by_lesson(&self, lesson_id: Uuid) -> Result<Vec<LessonTemplate>, DomainError> {
+        Ok(self.templates.iter().filter(|t| t.lesson_id == lesson_id).cloned().collect())
     }
     async fn get_active_for_day(&self, _: DayOfWeek) -> Result<Vec<LessonTemplate>, DomainError> {
         Ok(Vec::new())
@@ -172,11 +172,11 @@ impl LessonRepository for MockRepositories {
     async fn save(&self, _: Lesson) -> Result<Lesson, DomainError> {
         Err(DomainError::LessonNotFound)
     }
-    async fn get_by_class(&self, _: Uuid) -> Result<Vec<Lesson>, DomainError> {
-        Ok(Vec::new())
+    async fn get_by_class(&self, class_id: Uuid) -> Result<Vec<Lesson>, DomainError> {
+        Ok(self.lessons.iter().filter(|l| l.is_active && l.class_id() == Some(class_id)).cloned().collect())
     }
-    async fn get_by_group(&self, _: Uuid) -> Result<Vec<Lesson>, DomainError> {
-        Ok(Vec::new())
+    async fn get_by_group(&self, group_id: Uuid) -> Result<Vec<Lesson>, DomainError> {
+        Ok(self.lessons.iter().filter(|l| l.is_active && l.group_id() == Some(group_id)).cloned().collect())
     }
     async fn get_by_teacher(&self, _: Uuid) -> Result<Vec<Lesson>, DomainError> {
         Ok(Vec::new())
