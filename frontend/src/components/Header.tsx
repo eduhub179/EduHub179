@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { hasAdminRole } from '../api/access';
 import { useAuth } from '../auth/AuthProvider';
 import '../css/Header.css';
 
@@ -29,6 +30,11 @@ const Header: React.FC = () => {
 
                 {user ? (
                     <>
+                        {hasAdminRole(user) && (
+                            <Link to="/admin" className="header__link">
+                                Админка
+                            </Link>
+                        )}
                         <Link to="/profile" className="header__link">
                             Профиль
                         </Link>

@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {useSchedule} from '../../hooks/useSchedule';
-import type {ScheduleItem} from '../../types/ScheduleTypes.ts';
+import {changeLabel, type ScheduleItem} from '../../types/ScheduleTypes.ts';
 import '../../css/ScheduleTable.css';
 
 interface FullScheduleTableProps {
@@ -154,7 +154,7 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                 const left = width * slotIndex;
                                                 return (
                                                     <button
-                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}`}
+                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}${lesson.cancelled ? ' schedule-grid__lesson--cancelled' : ''}${changeLabel(lesson) ? ' schedule-grid__lesson--changed' : ''}`}
                                                         style={{
                                                             top,
                                                             left: `${left}%`,
@@ -167,7 +167,11 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                         aria-label={`Открыть урок ${lesson.lessonNumber}: ${lesson.title}`}
                                                     >
                                                         <span className="schedule-grid__lesson-content">
-                                                            <strong>{lesson.title}</strong>
+                                                            <strong className={lesson.cancelled ? 'schedule__title--cancelled' : undefined}>
+                                                                {lesson.title}
+                                                            </strong>
+                                                            {lesson.cancelled && <small className="schedule__cancelled-badge">урок отменён</small>}
+                                                            {changeLabel(lesson) && <small className="schedule__changed-badge">{changeLabel(lesson)}</small>}
                                                             {(lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
                                                                 <small className="schedule-grid__lesson-meta">
                                                                     {[
@@ -176,6 +180,9 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({onLessonSelect, se
                                                                             lesson.teachers.filter((teacher) => teacher.trim()).join(', '),
                                                                     ].filter(Boolean).join(' · ')}
                                                                 </small>
+                                                            )}
+                                                            {lesson.note && (
+                                                                <small className="schedule-grid__lesson-meta">{lesson.note}</small>
                                                             )}
                                                         </span>
                                                         {lesson.homework && (

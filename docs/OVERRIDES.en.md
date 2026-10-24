@@ -133,3 +133,60 @@ as a choice. Known gap: event organizers are not yet covered by
 - `lesson_templates.is_override` column — dropped from migration 0003. It was always `FALSE`
   and served no purpose with the instance-level approach.
 - The proposed `lesson_overrides` table — never created, not needed.
+
+## 9. Substitute teacher and note from the admin panel (`lesson_substitutions`, 2026-10-23)
+
+The flow in section 4 doesn't work for the most common case — **same subject, another
+teacher**: the replacement lesson can't be created because `lessons` is unique by
+`(class_id, subject_id)` / `(group_id, subject_id)` and `lesson_templates` by
+`(lesson_id, day, start_time, end_time, parity)`. Also a note for students
+("in the assembly hall") has nowhere to live.
+
+So the admin panel (`PATCH /api/admin/lessons/{instance_id}`) does this:
+
+- **Cancel** and **cabinet change** — as before, on the instance itself (`status`, `cabinet_id`).
+- **Substitute teacher** and **note** — a row in `lesson_substitutions` (migration 0012,
+  one row per instance, deleted with it). An empty substitution (no teacher, no note) is deleted.
+- The schedule (`ScheduleService`) shows the substitute in `teachers`, the usual teachers
+  in `usual_teachers`, the note in `note`; the lesson also appears in the substitute's schedule.
+- Homework stays on the same instance. `copy_week` doesn't copy substitutions.
+
+The section 4 flow remains for **subject changes** (swapping subjects between slots).
+Known gap: `check_teacher_available` doesn't consider `lesson_substitutions` yet, and the
+admin panel doesn't check that the substitute is free.
+
+## 10. Timetable editor in the admin panel (`TimetableService`, 2026-10-23)
+
+The «Расписание» tab edits the **regular** timetable; «Замены и отмены» edits single
+lessons. Code: `application/src/use_cases/admin/timetable_service.rs`, routes
+`presentation/src/routes/timetable.rs`.
+
+- **Courses** (`lessons`) and their teachers: `POST /api/admin/courses`,
+  `PUT /api/admin/courses/{id}/teachers`. A course teacher changes for every week, past
+  ones included; a one-day change is a substitution (section 9).
+- **Slots** (`lesson_templates`): `POST /api/admin/slots`, `PUT|DELETE /api/admin/slots/{id}`.
+  History is never rewritten: a changed slot becomes a new template and the old one is
+  deactivated (`is_active = FALSE`). Already created weeks change only with `apply_from`:
+  from that date their lessons move to the new template. A lesson with homework never
+  changes its subject (left as is, counted in `kept`); a removed slot's lesson with
+  homework becomes `cancelled`, without homework it is deleted.
+- **One-off lesson**: `POST /api/admin/lessons` adds a lesson to one date. It gets an
+  **inactive** template, so `generate_from_templates` and `copy_week` never carry it to
+  other weeks. A cancelled lesson in the same slot is restored instead of duplicated.
+- **Moving a lesson**: `POST /api/admin/lessons/{id}/move` cancels the original, adds a
+  one-off lesson at the new place and moves the homework with it (the section 4 process,
+  done automatically).
+- `copy_week` now skips lessons of inactive templates (one-off and removed slots).
+- One-off and moved lessons get `lesson_instances.is_extra = TRUE` (migration 0013; a
+  lesson moved back to its regular slot is `FALSE` again). The schedule API returns
+  `is_extra`; the site shows such lessons and lessons with a substitute
+  (`usual_teachers`) in pale blue, labelled «новый урок» / «замена».
+- Every edit of this section (add, change or remove a slot, a one-off lesson, a move) is
+  done by `TimetableRepository` in one transaction under a shared `pg_advisory_xact_lock`:
+  a failure in the middle changes nothing, and two admins' edits never interleave (whether
+  the lesson is there and has homework is checked inside the transaction).
+
+Known gaps: no check that the class, teacher or cabinet is free at that time (overlap is
+checked only within one course); week parity is still ignored when generating weeks (as
+before in `generate_from_templates`); a group course shows in a class timetable only if
+the group has students of that class.
