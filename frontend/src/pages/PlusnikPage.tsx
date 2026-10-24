@@ -122,6 +122,8 @@ const PlusnikPage: React.FC = () => {
                             <thead>
                             <tr>
                                 <th scope="col">Ученик</th>
+                                <th scope="col" className="plusnik-page__count-cell" aria-label="Сдано задач">Σ</th>
+                                <th scope="col" className="plusnik-page__grade-cell">Оценка</th>
                                 {[...matrix.sheet.tasks]
                                     .sort((first, second) => first.sort_order - second.sort_order)
                                     .map((task, taskIndex) => (
@@ -129,6 +131,8 @@ const PlusnikPage: React.FC = () => {
                                             scope="col"
                                             key={task.id}
                                             className={hoveredTaskColumn === taskIndex ? 'is-hovered-column' : undefined}
+                                            onMouseEnter={() => setHoveredTaskColumn(taskIndex)}
+                                            onMouseLeave={() => setHoveredTaskColumn(null)}
                                         >
                                             {task.number}
                                         </th>
@@ -142,6 +146,10 @@ const PlusnikPage: React.FC = () => {
                                     className={student.id === user?.id ? 'is-current-user' : undefined}
                                 >
                                     <th scope="row">{student.name}</th>
+                                    <td className="plusnik-page__count-cell">
+                                        {matrix.pluses.filter((plus) => plus.student_id === student.id).length}
+                                    </td>
+                                    <td className="plusnik-page__grade-cell">—</td>
                                     {[...matrix.sheet.tasks]
                                         .sort((first, second) => first.sort_order - second.sort_order)
                                         .map((task, taskIndex) => {
@@ -169,7 +177,7 @@ const PlusnikPage: React.FC = () => {
                             ))}
                             {orderedStudents.length === 0 && (
                                 <tr>
-                                    <td className="plusnik-page__empty" colSpan={matrix.sheet.tasks.length + 1}>
+                                    <td className="plusnik-page__empty" colSpan={matrix.sheet.tasks.length + 3}>
                                         Для этого урока пока нет учеников.
                                     </td>
                                 </tr>
