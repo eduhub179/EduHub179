@@ -18,6 +18,7 @@ use domain::{
         schedule_week::ScheduleWeek, user::User,
     },
     errors::DomainError,
+    ports::auth::CredentialsStore,
     repositories::{
         admin_repository::{AdminAnnouncementRow, AdminRepository, AdminUserRow, UserFilter},
         announcement_repository::AnnouncementRepository,
@@ -106,7 +107,12 @@ pub struct AdminService {
     substitutions: Arc<dyn LessonSubstitutionRepository>,
     announcements: Arc<dyn AnnouncementRepository>,
     schedule: Arc<ScheduleService>,
+    /// Passwords for website login; `None` = setting passwords is unavailable.
+    credentials: Option<Arc<dyn CredentialsStore>>,
 }
+
+/// Length limits of a password set by an admin (as in `make-admin.sh`).
+const PASSWORD_CHARS: std::ops::RangeInclusive<usize> = 8..=128;
 
 fn require_admin(actor: &User) -> Result<(), DomainError> {
     if actor.is_admin() && actor.is_active {
@@ -142,7 +148,14 @@ impl AdminService {
             substitutions,
             announcements,
             schedule,
+            credentials: None,
         }
+    }
+
+    /// Lets admins set website passwords for users.
+    pub fn with_credentials(mut self, credentials: Arc<dyn CredentialsStore>) -> Self {
+        self.credentials = Some(credentials);
+        self
     }
 
     // ------------------------------------------------------------------
@@ -223,6 +236,22 @@ impl AdminService {
             return Err(DomainError::InvalidNameFormat);
         }
         self.users.save(user).await
+    }
+
+    /// Sets the user's website password (replacing the old one), so that a user created
+    /// in the panel can log in.
+    ///
+    /// # Fail-safe поведение
+    /// `InvalidPasswordFormat` outside 8..=128 chars, `UserNotFound` for a missing user,
+    /// `InternalError` when the service was built without a credentials store.
+    pub async fn set_password(&self, actor: &User, user_id: Uuid, password: &str) -> Result<(), DomainError> {
+        require_admin(actor)?;
+        if !PASSWORD_CHARS.contains(&password.chars().count()) {
+            return Err(DomainError::InvalidPasswordFormat);
+        }
+        let credentials = self.credentials.as_ref().ok_or(DomainError::InternalError)?;
+        self.users.get_by_id(user_id).await?;
+        credentials.set_password(user_id, password).await
     }
 
     // ------------------------------------------------------------------

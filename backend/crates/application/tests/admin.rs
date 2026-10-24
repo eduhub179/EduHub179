@@ -13,14 +13,17 @@ use application::use_cases::schedule::ScheduleService;
 use chrono::NaiveDate;
 use domain::entities::user::User;
 use domain::errors::DomainError;
+use domain::ports::auth::CredentialsStore;
 use domain::repositories::admin_repository::UserFilter;
 use domain::repositories::user_repository::UserRepository;
 use domain::value_objects::{
     announcement_priority::AnnouncementPriority, announcement_status::AnnouncementStatus,
     lesson_instance_status::LessonInstanceStatus, role::UserRole,
 };
+use infrastructure::auth::Argon2PasswordHasher;
 use infrastructure::postgres::{
     AdminRepositoryPg, AnnouncementRepositoryPg, CabinetRepositoryPg, ClassRepositoryPg,
+    CredentialsStorePg,
     HomeworkRepositoryPg, LessonInstanceRepositoryPg, LessonRepositoryPg,
     LessonSubstitutionRepositoryPg, LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg,
     StudentGroupRepositoryPg, SubjectRepositoryPg, UserRepositoryPg,
@@ -32,6 +35,7 @@ const MONDAY: &str = "2026-10-19";
 
 struct World {
     admin_service: AdminService,
+    credentials: Arc<CredentialsStorePg>,
     schedule: Arc<ScheduleService>,
     users: UserRepositoryPg,
     admin: User,
@@ -146,6 +150,7 @@ async fn seed(pool: PgPool) -> World {
         )
         .with_substitutions(substitutions.clone()),
     );
+    let credentials = Arc::new(CredentialsStorePg::new(pool.clone(), Arc::new(Argon2PasswordHasher)));
     let admin_service = AdminService::new(
         Arc::new(AdminRepositoryPg::new(pool.clone())),
         Arc::new(UserRepositoryPg::new(pool.clone())),
@@ -155,10 +160,12 @@ async fn seed(pool: PgPool) -> World {
         substitutions,
         Arc::new(AnnouncementRepositoryPg::new(pool.clone())),
         schedule.clone(),
-    );
+    )
+    .with_credentials(credentials.clone());
     let users = UserRepositoryPg::new(pool);
     World {
         admin_service,
+        credentials,
         schedule,
         admin: users.get_by_id(admin).await.unwrap(),
         teacher: users.get_by_id(teacher).await.unwrap(),
@@ -193,6 +200,22 @@ async fn only_admins_may_use_the_service(pool: PgPool) {
 
     assert_eq!(as_teacher.unwrap_err(), DomainError::InsufficientPermissions);
     assert_eq!(as_student.unwrap_err(), DomainError::InsufficientPermissions);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn admin_sets_a_password_the_user_logs_in_with(pool: PgPool) {
+    let w = seed(pool).await;
+
+    let short = w.admin_service.set_password(&w.admin, w.teacher.id, "1234567").await;
+    let by_teacher = w.admin_service.set_password(&w.teacher, w.teacher.id, "password-1").await;
+    let missing = w.admin_service.set_password(&w.admin, Uuid::new_v4(), "password-1").await;
+    w.admin_service.set_password(&w.admin, w.teacher.id, "password-1").await.unwrap();
+
+    assert_eq!(short, Err(DomainError::InvalidPasswordFormat));
+    assert_eq!(by_teacher, Err(DomainError::InsufficientPermissions));
+    assert_eq!(missing, Err(DomainError::UserNotFound));
+    assert!(w.credentials.verify_password(w.teacher.id, "password-1").await.unwrap());
+    assert!(!w.credentials.verify_password(w.teacher.id, "password-2").await.unwrap());
 }
 
 #[sqlx::test(migrations = "../../migrations")]

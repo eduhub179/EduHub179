@@ -725,6 +725,7 @@ fn admin_routes() -> Router<AppState> {
             get(admin::list_users_handler).post(admin::create_user_handler),
         )
         .route("/api/admin/users/:user_id", patch(admin::update_user_handler))
+        .route("/api/admin/users/:user_id/password", put(admin::set_password_handler))
         .route(
             "/api/admin/cabinets",
             get(admin::cabinets_handler).post(admin::create_cabinet_handler),

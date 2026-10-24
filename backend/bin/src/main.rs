@@ -72,7 +72,7 @@ async fn main() {
 
     let login_use_case = Arc::new(application::use_cases::auth::login::LoginUseCase::new(
         user_repo.clone(),
-        credentials_store,
+        credentials_store.clone(),
         token_issuer.clone(),
     ));
 
@@ -133,7 +133,8 @@ async fn main() {
         substitutions,
         Arc::new(AnnouncementRepositoryPg::new(pool.clone())),
         schedule_service.clone(),
-    ));
+    )
+    .with_credentials(credentials_store.clone()));
     let timetable_service = Arc::new(TimetableService::new(
         lessons,
         templates,

@@ -4,6 +4,7 @@ import {
     createAdminUser,
     fetchAdminUsers,
     fetchSchoolClasses,
+    setAdminUserPassword,
     updateAdminUser,
     type AdminUserDto,
     type SchoolClassDto,
@@ -18,9 +19,20 @@ interface UsersTabProps {
     currentUserId: string | null;
 }
 
-const emptyNewUser = {login: '', last_name: '', first_name: '', middle_name: '', role: 'student' as UserRole, class_id: ''};
+const emptyNewUser = {
+    login: '',
+    last_name: '',
+    first_name: '',
+    middle_name: '',
+    role: 'student' as UserRole,
+    class_id: '',
+    password: '',
+};
 
-/** Search users, change role / class / active flag, add a user. */
+/** Shortest password the backend accepts. */
+const MIN_PASSWORD = 8;
+
+/** Search users, change role / class / active flag / password, add a user. */
 const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
     const [filter, setFilter] = useState<UserFilter>({q: '', role: '', classId: '', includeInactive: false});
     const [users, setUsers] = useState<AdminUserDto[] | null>(null);
@@ -30,6 +42,8 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
     const [newUser, setNewUser] = useState(emptyNewUser);
     const [showNewUser, setShowNewUser] = useState(false);
     const [message, setMessage] = useState<string | null>(null);
+    /** The user whose password is being typed. */
+    const [password, setPassword] = useState<{userId: string; value: string} | null>(null);
 
     useEffect(() => {
         fetchSchoolClasses()
@@ -63,11 +77,23 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
         }
     };
 
+    const savePassword = async (user: AdminUserDto, value: string) => {
+        setError(null);
+        setMessage(null);
+        try {
+            await setAdminUserPassword(user.id, value);
+            setPassword(null);
+            setMessage(`Пароль для ${user.login} задан.`);
+        } catch (passwordError) {
+            setError(`${user.last_name} ${user.first_name}: ${errorText(passwordError)}`);
+        }
+    };
+
     const create = async (event: FormEvent) => {
         event.preventDefault();
         setMessage(null);
         try {
-            await createAdminUser({
+            const created = await createAdminUser({
                 login: newUser.login.trim(),
                 role: newUser.role,
                 last_name: newUser.last_name.trim(),
@@ -75,7 +101,17 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                 middle_name: newUser.middle_name.trim() || null,
                 class_id: newUser.role === 'student' ? newUser.class_id || null : null,
             });
-            setMessage(`Пользователь ${newUser.login.trim().toLowerCase()} добавлен. Войти он сможет по коду на школьную почту.`);
+            const login = newUser.login.trim().toLowerCase();
+            if (newUser.password) {
+                try {
+                    await setAdminUserPassword(created.id, newUser.password);
+                    setMessage(`Пользователь ${login} добавлен, войти на сайт он может с этим паролем.`);
+                } catch (passwordError) {
+                    setMessage(`Пользователь ${login} добавлен, но пароль не задан: ${errorText(passwordError)}`);
+                }
+            } else {
+                setMessage(`Пользователь ${login} добавлен. Чтобы он мог войти на сайт, задайте ему пароль кнопкой «Пароль».`);
+            }
             setNewUser(emptyNewUser);
             load();
         } catch (createError) {
@@ -154,6 +190,17 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                             </select>
                         </label>
                     )}
+                    <label>
+                        Пароль для входа на сайт
+                        <input
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={MIN_PASSWORD}
+                            placeholder="можно задать позже"
+                            value={newUser.password}
+                            onChange={(event) => setNewUser({...newUser, password: event.target.value})}
+                        />
+                    </label>
                     <div className="admin__actions">
                         <button type="submit">Добавить</button>
                     </div>
@@ -183,8 +230,10 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                             )}
                             {users.map((user) => {
                                 const isSelf = user.id === currentUserId;
+                                const typing = password?.userId === user.id ? password.value : null;
                                 return (
-                                    <tr key={user.id} className={user.is_active ? '' : 'admin__row--cancelled'}>
+                                    <React.Fragment key={user.id}>
+                                    <tr className={user.is_active ? '' : 'admin__row--cancelled'}>
                                         <td>{[user.last_name, user.first_name, user.middle_name].filter(Boolean).join(' ')}</td>
                                         <td className="admin__muted">{user.login}</td>
                                         <td>
@@ -216,6 +265,13 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                                         </td>
                                         <td>{user.telegram_bound ? '✓' : ''}</td>
                                         <td className="admin__nowrap">
+                                            <button
+                                                type="button"
+                                                className="admin__secondary"
+                                                onClick={() => setPassword(typing === null ? {userId: user.id, value: ''} : null)}
+                                            >
+                                                Пароль
+                                            </button>{' '}
                                             {!isSelf && (
                                                 <button
                                                     type="button"
@@ -227,6 +283,38 @@ const UsersTab: React.FC<UsersTabProps> = ({currentUserId}) => {
                                             )}
                                         </td>
                                     </tr>
+                                    {typing !== null && (
+                                        <tr>
+                                            <td colSpan={6}>
+                                                <form
+                                                    className="admin__editor"
+                                                    onSubmit={(event) => {
+                                                        event.preventDefault();
+                                                        void savePassword(user, typing);
+                                                    }}
+                                                >
+                                                    <label>
+                                                        Новый пароль для {user.login}
+                                                        <input
+                                                            type="password"
+                                                            autoComplete="new-password"
+                                                            autoFocus
+                                                            minLength={MIN_PASSWORD}
+                                                            required
+                                                            value={typing}
+                                                            onChange={(event) => setPassword({userId: user.id, value: event.target.value})}
+                                                        />
+                                                    </label>
+                                                    <button type="submit">Сохранить</button>
+                                                    <button type="button" className="admin__secondary" onClick={() => setPassword(null)}>
+                                                        Отмена
+                                                    </button>
+                                                    <span className="admin__muted">Старый пароль перестанет работать. Сообщите новый лично.</span>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    )}
+                                    </React.Fragment>
                                 );
                             })}
                         </tbody>

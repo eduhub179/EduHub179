@@ -390,6 +390,80 @@ async fn removed_slot_cancels_lessons_with_homework_and_deletes_the_rest(pool: P
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn failed_slot_removal_changes_nothing(pool: PgPool) {
+    let w = seed(pool).await;
+    sqlx::query("INSERT INTO schedule_weeks (week_start_date, status) VALUES ($1::date, 'published')")
+        .bind(NEXT_MONDAY)
+        .execute(&w.pool)
+        .await
+        .unwrap();
+    let second = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO lesson_instances (instance_id, template_id, week_start_date, lesson_date)
+         VALUES ($1, $2, $3::date, $3::date)",
+    )
+    .bind(second)
+    .bind(w.slot)
+    .bind(NEXT_MONDAY)
+    .execute(&w.pool)
+    .await
+    .unwrap();
+    // The second lesson can't be deleted: the removal fails after the first one is gone.
+    sqlx::query(
+        "CREATE FUNCTION refuse_delete() RETURNS trigger AS $$
+         BEGIN RAISE EXCEPTION 'refused'; END $$ LANGUAGE plpgsql",
+    )
+    .execute(&w.pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE TRIGGER refuse_delete BEFORE DELETE ON lesson_instances FOR EACH ROW
+         WHEN (OLD.instance_id = '{second}') EXECUTE FUNCTION refuse_delete()"
+    ))
+    .execute(&w.pool)
+    .await
+    .unwrap();
+
+    let removed = w.service.remove_slot(&w.admin, w.slot, Some(day(MONDAY))).await;
+
+    assert!(removed.is_err());
+    assert_eq!(
+        w.service.class_timetable(&w.admin, w.class_id).await.unwrap().slots.len(),
+        1,
+        "the slot stays active"
+    );
+    assert_eq!(
+        student_lessons(&w, MONDAY).await,
+        vec![("Алгебра".to_string(), "09:00".to_string(), LessonInstanceStatus::Scheduled)],
+        "the first lesson is back"
+    );
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn two_admins_moving_one_lesson_at_once(pool: PgPool) {
+    let w = seed(pool).await;
+
+    let (first, second) = tokio::join!(
+        w.service
+            .move_lesson(&w.admin, w.instance, day(TUESDAY), time("12:00"), time("12:45"), None),
+        w.service
+            .move_lesson(&w.admin, w.instance, day(TUESDAY), time("14:00"), time("14:45"), None),
+    );
+
+    assert_eq!(
+        [first.is_ok(), second.is_ok()].iter().filter(|ok| **ok).count(),
+        1,
+        "one move wins"
+    );
+    assert_eq!(
+        first.err().or(second.err()),
+        Some(DomainError::LessonInstanceNotFound),
+        "the other finds the lesson already moved"
+    );
+    assert_eq!(student_lessons(&w, TUESDAY).await.len(), 1);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn one_off_lesson_stays_in_its_week(pool: PgPool) {
     let w = seed(pool).await;
 

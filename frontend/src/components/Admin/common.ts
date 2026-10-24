@@ -7,6 +7,7 @@ const errorTexts: Record<string, string> = {
     'Cabinet already exists': 'Такой кабинет уже есть.',
     'Cabinet number must be 100-999': 'Номер кабинета — от 100 до 999.',
     'Login already exists': 'Такой логин уже есть.',
+    'Password must be 8-128 characters': 'Пароль — от 8 до 128 символов.',
     'Subject already exists': 'Такой предмет уже есть.',
     'Subject name is required': 'Введите название предмета.',
     'This class or group already has this subject': 'У этого класса (группы) уже есть такой предмет.',
