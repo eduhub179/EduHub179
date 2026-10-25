@@ -419,6 +419,28 @@ def main():
     check("агент читает его как сообщение из чата", m and m["chat"] == "Физика 11Б" and m["text"] == "дз к пятнице §12"
           and m["author_id"] == "user42")
 
+    # учитель + уверенные метки: пишем без кнопки «Записать» (Max, 25.10)
+    before = len(FILES)
+    hw_before = HOMEWORK.get(phys22, {}).get("text", "")
+    out = write(222, "11Б физика к четвергу §12 №5", [{"quote": "11Б физика к четвергу §12 №5",
+                                                       "type": "homework", "summary": "§12 №5", "date": "2099-10-22"}],
+                doc("auto-1", "ДЗ-15.pdf"))
+    check("учитель + high: записал без подтверждения", "Записал" in out and "✅ Записать" not in buttons())
+    f = FILES[-1] if len(FILES) > before else {}
+    check("... файл загружен к уроку от имени учителя", f.get("lesson") == phys22 and f.get("by") == TEACHER)
+    check("... текст домашки дописан", "§12 №5" in HOMEWORK.get(phys22, {}).get("text", "")
+          and HOMEWORK.get(phys22, {}).get("text", "") != hw_before)
+
+    out = write(222, "11Б физика к четвергу", [{"quote": "11Б физика к четвергу", "type": "homework",
+                                                 "summary": "файл без типа в имени", "date": "2099-10-22"}],
+                doc("auto-2", "скан0042.pdf"))
+    check("учитель + метки unknown: остаётся черновик с кнопкой", "✅ Записать" in buttons() and "Записал" not in out)
+
+    out = write(111, "физика к четвергу", [{"quote": "физика к четвергу", "type": "homework",
+                                            "summary": "ДЗ-16", "date": "2099-10-22"}],
+                doc("auto-3", "ДЗ-16.pdf"))
+    check("ученик даже с high: черновик и модерация, не авто", "✅ Записать" in buttons() and "Записал" not in out)
+
     print(f"{ok}/{total}")
     server.shutdown()
     raise SystemExit(0 if ok == total else 1)
