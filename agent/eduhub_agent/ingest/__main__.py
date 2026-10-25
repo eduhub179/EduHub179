@@ -101,6 +101,11 @@ def scan(source, out_dir, classifier=None):
             except OSError as e:
                 print(f"   пропуск {rel}: {e}")
 
+    from eduhub_agent.files import feed
+    added = feed.from_rows(rows, base=getattr(source, "root", None))
+    if added:
+        print(f"   в метки для act: {added} (python3 -m eduhub_agent.files.act)")
+
     write_review(out / "review.csv", rows)
     write_report(out / "report.md", rows, source)
     return rows, time.time() - t0

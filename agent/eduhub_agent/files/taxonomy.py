@@ -71,6 +71,19 @@ def code_for(name):
     return None
 
 
+def class_from(text):
+    """«11Б» из пути или имени («9 класс/Физика», «11б физика»). None, если буквы нет.
+
+    Параллель без буквы — не класс: в бэкенде класс это год выпуска + буква, и «9» без «Б»
+    не отличить от «9А». Угадывать нельзя, поэтому None.
+    """
+    m = GRADE_LETTER.search(text or "")
+    if not m:
+        return None
+    n = int(m.group(1))
+    return f"{n}{m.group(2).upper()}" if 1 <= n <= 11 else None
+
+
 def grade_from(text):
     for rx in (GRADE, GRADE_LETTER):
         m = rx.search(text or "")

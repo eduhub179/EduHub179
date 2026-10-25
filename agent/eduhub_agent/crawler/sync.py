@@ -133,6 +133,14 @@ def run(source, state_path, out_dir, classifier=None):
             rows.append(row)
             f.write(_json(row) + "\n")
 
+    # Связь с действием: то, что краулер уже прочитал и разметил, попадает в ту же
+    # state/file_labels.jsonl, откуда act.publish() берёт accepted. Для Drive в режиме
+    # ссылок файла на диске нет — такая запись уйдёт в review с причиной, а не потеряется.
+    from eduhub_agent.files import feed
+    added = feed.from_rows(rows, base=getattr(source, "root", None))
+    if added:
+        print(f"   в метки для act: {added}")
+
     state.cursor = cursor_after
     state.save()                 # курсор двигается только здесь, после всех событий
     write_summary(out / "summary.md", rows, time.time() - t0, source.name)
