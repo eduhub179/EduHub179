@@ -41,16 +41,38 @@ def _rows(path):
 
 def enqueue(file_id, name, source="unknown", path=None, link=None, caption=None,
             chat=None, chat_subjects=None, chat_class=None):
-    """Поставить файл в очередь. Тот же id второй раз не добавляется."""
+    """Поставить файл в очередь. Тот же id второй раз не добавляется, но контекст дополняется.
+
+    Файл в ЛС приходит раньше задания: сначала фото без подписи, через минуту текст «физика
+    к пятнице». Первый enqueue несёт только путь, второй — подпись и класс. Молча вернуть
+    False значило бы потерять подпись, поэтому недостающие поля дописываются в ту же строку.
+    """
     STATE.mkdir(exist_ok=True)
-    for row in _rows(QUEUE):
+    rows = _rows(QUEUE)
+    for row in rows:
         if row["id"] == file_id:
-            return False
+            return _fill(row, {"source": source, "path": path, "link": link, "caption": caption,
+                                "chat": chat, "chat_subjects": chat_subjects, "chat_class": chat_class})
     row = {"id": file_id, "name": name, "source": source, "path": path, "link": link,
            "caption": caption, "chat": chat, "chat_subjects": chat_subjects,
            "chat_class": chat_class, "ts": int(time.time())}
     with open(QUEUE, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return True
+
+
+def _fill(row, fields):
+    """Дописать в строку очереди то, чего в ней ещё нет. -> был ли изменён файл."""
+    fresh = {k: v for k, v in fields.items() if v not in (None, "", "unknown", []) and not row.get(k)}
+    if not fresh:
+        return False
+    row.update(fresh)
+    rows = _rows(QUEUE)
+    with open(QUEUE, "w", encoding="utf-8") as f:
+        for r in rows:
+            if r["id"] == row["id"]:
+                r = row
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
     return True
 
 
