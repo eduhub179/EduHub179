@@ -165,6 +165,29 @@ pub enum DomainError {
     PlusnikRecordAlreadyExists,
     // task_id does not belong to sheet_id (trigger check_task_belongs_to_sheet).
     TaskNotInSheet,
+    // Pluses can be granted only for problems of a published sheet.
+    PlusnikSheetNotPublished,
+    // The student is not in the lesson's audience (its class or group).
+    StudentNotInLesson,
+
+    // Course material topic with the specified ID was not found (or belongs to another course).
+    MaterialTopicNotFound,
+    // Topic name must be non-empty and at most 255 chars.
+    InvalidMaterialTopicName,
+    // The course already has a topic with this name (case-insensitive).
+    MaterialTopicAlreadyExists,
+    // Course material with the specified ID was not found.
+    MaterialNotFound,
+    // Material title must be 1-255 chars, description at most 5000 chars.
+    InvalidMaterialTitle,
+    // Link must be an http(s) URL with a host, at most 2000 chars.
+    InvalidMaterialUrl,
+    // The material is a link: there is no file to download.
+    MaterialIsNotAFile,
+    // File storage (S3/MinIO) is not configured on this server.
+    FileStorageUnavailable,
+    // The push service says the browser subscription is gone (HTTP 404/410): stop using it.
+    PushSubscriptionExpired,
 
     // Class Settings.rs
     // Invalid OrgEmailDomain
@@ -180,8 +203,29 @@ pub enum DomainError {
     InvalidAuthCode,
     /// Binding already active — re-authorization not required.
     TelegramBindingAlreadyActive,
+    /// Announcement with the specified ID was not found.
+    AnnouncementNotFound,
+    /// Announcement title must be non-empty and at most 255 chars.
+    InvalidAnnouncementTitle,
+    /// Announcement content (MarkdownV2 body) must be non-empty after trim.
+    InvalidAnnouncementContent,
+    /// Unknown announcement_status value in the database.
+    InvalidAnnouncementStatus,
+    /// Unknown announcement_priority value in the database.
+    InvalidAnnouncementPriority,
+    /// Announcement file metadata is invalid (empty field or over length limit).
+    InvalidAnnouncementFileFormat,
+    /// Announcement file size must be non-negative.
+    InvalidAnnouncementFileSize,
+    /// Announcement file with the specified ID was not found.
+    AnnouncementFileNotFound,
+    /// Substitution note must be at most 500 chars.
+    InvalidSubstitutionNote,
+    /// A schedule week with this Monday already exists.
+    ScheduleWeekAlreadyExists,
+    /// A password set by an admin must be 8..=128 chars.
+    InvalidPasswordFormat,
 }
-
 impl fmt::Display for DomainError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Note: These are for logging. The presentation layer should map
@@ -271,6 +315,17 @@ impl fmt::Display for DomainError {
                 write!(f, "Plusnik record already exists")
             }
             DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
+            DomainError::PlusnikSheetNotPublished => write!(f, "Plusnik sheet is not published"),
+            DomainError::StudentNotInLesson => write!(f, "Student is not in this lesson"),
+            DomainError::MaterialTopicNotFound => write!(f, "Material topic not found"),
+            DomainError::InvalidMaterialTopicName => write!(f, "Invalid material topic name"),
+            DomainError::MaterialTopicAlreadyExists => write!(f, "Material topic already exists"),
+            DomainError::MaterialNotFound => write!(f, "Material not found"),
+            DomainError::InvalidMaterialTitle => write!(f, "Invalid material title"),
+            DomainError::InvalidMaterialUrl => write!(f, "Invalid material URL"),
+            DomainError::MaterialIsNotAFile => write!(f, "Material is not a file"),
+            DomainError::FileStorageUnavailable => write!(f, "File storage is not configured"),
+            DomainError::PushSubscriptionExpired => write!(f, "Push subscription expired"),
             DomainError::InvalidOrgEmailDomain => write!(f, "Invalid ORG_EMAIL_DOMAIN"),
             DomainError::InvalidDeviceTokenFormat => write!(f, "Invalid device token format"),
             DomainError::TelegramBindingNotFound => write!(f, "Telegram binding not found"),
@@ -278,6 +333,19 @@ impl fmt::Display for DomainError {
             DomainError::TelegramBindingAlreadyActive => {
                 write!(f, "Telegram binding already active")
             }
+            DomainError::AnnouncementNotFound => write!(f, "Announcement not found"),
+            DomainError::InvalidAnnouncementTitle => write!(f, "Invalid announcement title"),
+            DomainError::InvalidAnnouncementContent => write!(f, "Invalid announcement content"),
+            DomainError::InvalidAnnouncementStatus => write!(f, "Invalid announcement status"),
+            DomainError::InvalidAnnouncementPriority => write!(f, "Invalid announcement priority"),
+            DomainError::InvalidAnnouncementFileFormat => {
+                write!(f, "Invalid announcement file format")
+            }
+            DomainError::InvalidAnnouncementFileSize => write!(f, "Invalid announcement file size"),
+            DomainError::AnnouncementFileNotFound => write!(f, "Announcement file not found"),
+            DomainError::InvalidSubstitutionNote => write!(f, "Invalid substitution note"),
+            DomainError::ScheduleWeekAlreadyExists => write!(f, "Schedule week already exists"),
+            DomainError::InvalidPasswordFormat => write!(f, "Invalid password format"),
         }
     }
 }

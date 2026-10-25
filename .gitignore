@@ -22,6 +22,7 @@ build/
 
 # Rust
 backend/target/
+backend/bin/src/bin/import_timetable_agent.rs
 
 # Dumps
 project_dump*.txt
@@ -33,3 +34,6 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+
+# Database dumps contain personal data (names, emails) — never commit them.
+*.dump

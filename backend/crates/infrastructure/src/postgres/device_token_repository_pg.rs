@@ -1,6 +1,6 @@
 //! PostgreSQL implementation of `DeviceTokenRepository`.
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use domain::entities::device_token::DeviceToken;
 use domain::errors::DomainError;
 use domain::repositories::device_token_repository::DeviceTokenRepository;
@@ -17,9 +17,11 @@ struct DeviceTokenRow {
     platform: String,
     token: String,
     is_active: bool,
-    last_used_at: Option<NaiveDateTime>,
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
+    // TIMESTAMPTZ columns must be read as DateTime<Utc>: decoding them into
+    // NaiveDateTime fails at runtime (sqlx type mismatch) on every read.
+    last_used_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 impl DeviceTokenRow {
@@ -32,8 +34,8 @@ impl DeviceTokenRow {
             self.user_id,
             platform,
             self.token,
-            self.created_at,
-            self.updated_at,
+            self.created_at.naive_utc(),
+            self.updated_at.naive_utc(),
         )
         .map(|mut token| {
             token.is_active = self.is_active;
@@ -52,17 +54,18 @@ impl DeviceTokenRepositoryPg {
         Self { pool }
     }
 
+    /// Unknown failures (decode errors, lost connection) are `InternalError`: reporting
+    /// them as "user not found" hid a type-mismatch bug that broke every read.
     fn map_db_error(err: sqlx::Error) -> DomainError {
         match err {
             sqlx::Error::RowNotFound => DomainError::UserNotFound,
-            sqlx::Error::Database(db_err) => {
-                if db_err.code().as_deref() == Some("23505") {
-                    DomainError::InvalidDeviceTokenFormat
-                } else {
-                    DomainError::UserNotFound
-                }
-            }
-            _ => DomainError::UserNotFound,
+            sqlx::Error::Database(db_err) => match db_err.code().as_deref() {
+                Some("23505") => DomainError::InvalidDeviceTokenFormat,
+                // 23503: user_id references a missing user.
+                Some("23503") => DomainError::UserNotFound,
+                _ => DomainError::InternalError,
+            },
+            _ => DomainError::InternalError,
         }
     }
 }
@@ -220,6 +223,33 @@ impl DeviceTokenRepository for DeviceTokenRepositoryPg {
             "#,
         )
         .bind(device_token_id)
+        .execute(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
+
+        Ok(())
+    }
+
+    async fn deactivate_token_for_other_users(
+        &self,
+        platform: NotificationPlatform,
+        token: &str,
+        keep_user_id: Uuid,
+    ) -> Result<(), DomainError> {
+        sqlx::query(
+            r#"
+            UPDATE device_tokens
+            SET is_active = FALSE,
+                updated_at = NOW()
+            WHERE platform = $1::notification_platform
+              AND token = $2
+              AND user_id <> $3
+              AND is_active = TRUE
+            "#,
+        )
+        .bind(platform.to_string())
+        .bind(token)
+        .bind(keep_user_id)
         .execute(&self.pool)
         .await
         .map_err(Self::map_db_error)?;

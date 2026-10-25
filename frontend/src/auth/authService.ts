@@ -1,10 +1,22 @@
+import {
+    initSession,
+    login as loginWithApi,
+    logoutSession,
+    updateProfileClass,
+} from '../api/authApi';
+
 export interface User {
+    id: string | null;
     name: string;
     email: string;
+    role: 'student' | 'teacher' | 'admin' | null;
+    classId: string | null;
     schoolClass: string | null;
 }
 
-export interface RegistrationData extends Omit<User, 'schoolClass'> {
+export interface RegistrationData {
+    name: string;
+    email: string;
     password: string;
 }
 
@@ -16,103 +28,92 @@ export interface Credentials {
 export interface AuthService {
     getCurrentUser(): User | null;
     register(data: RegistrationData): User;
-    login(credentials: Credentials): User;
-    updateSchoolClass(schoolClass: string): User;
-    logout(): void;
+    login(credentials: Credentials): Promise<User>;
+    updateSchoolClass(schoolClass: string): Promise<User>;
+    logout(): Promise<void>;
+    /** Drops the locally stored user without calling the backend (the session is already gone). */
+    forgetCurrentUser(): void;
 }
 
-type StoredAccount = RegistrationData & { schoolClass?: string | null };
-
-const ACCOUNTS_KEY = 'eduhub.demo.accounts';
 const CURRENT_USER_KEY = 'eduhub.demo.currentUser';
-
 class LocalStorageAuthService implements AuthService {
     getCurrentUser(): User | null {
         const storedUser = localStorage.getItem(CURRENT_USER_KEY);
-        return storedUser ? this.parseUser(storedUser) : null;
+        if (!storedUser) {
+            return null;
+        }
+        try {
+            return this.parseUser(storedUser);
+        } catch {
+            // Corrupted or old-format record (saved before `id` existed, without a server session):
+            // drop it and treat the user as logged out instead of crashing the whole app on render.
+            localStorage.removeItem(CURRENT_USER_KEY);
+            return null;
+        }
     }
 
     register(data: RegistrationData): User {
-        const accounts = this.getAccounts();
-        const user: User = { name: data.name, email: data.email, schoolClass: null };
-        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify([...accounts, { ...data, schoolClass: null }]));
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-        return user;
-    }
-
-    login(credentials: Credentials): User {
-        const normalizedEmail = credentials.email.toLowerCase();
-        const account = this.getAccounts().find(
-            (storedAccount) =>
-                storedAccount.email.toLowerCase() === normalizedEmail &&
-                storedAccount.password === credentials.password,
-        );
-
-        if (!account) {
-            throw new Error('Неверная почта или пароль.');
-        }
-
         const user: User = {
-            name: account.name,
-            email: account.email,
-            schoolClass: account.schoolClass ?? null,
+            id: null,
+            name: data.name,
+            email: data.email,
+            role: null,
+            classId: null,
+            schoolClass: null,
         };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
     }
 
-    updateSchoolClass(schoolClass: string): User {
+    async login(credentials: Credentials): Promise<User> {
+        const session = await loginWithApi({
+            login: credentials.email.trim(),
+            password: credentials.password,
+        });
+        await initSession({ user_id: session.user.id, auth_token: session.token });
+        const user: User = {
+            id: session.user.id,
+            name: [session.user.first_name, session.user.middle_name, session.user.last_name]
+                .filter(Boolean)
+                .join(' '),
+            email: credentials.email.trim(),
+            role: (session.user.role as User['role']) ?? null,
+            classId: session.user.class_id ?? null,
+            schoolClass: session.user.class_id ?? null,
+        };
+
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+        return user;
+    }
+
+    async updateSchoolClass(schoolClass: string): Promise<User> {
         const currentUser = this.getCurrentUser();
         if (!currentUser) {
             throw new Error('Войдите в аккаунт, чтобы изменить профиль.');
         }
 
-        const accounts = this.getAccounts();
-        const accountIndex = accounts.findIndex(
-            (account) => account.email.toLowerCase() === currentUser.email.toLowerCase(),
-        );
-        if (accountIndex < 0) {
-            throw new Error('Не удалось найти аккаунт для обновления.');
-        }
+        const updated = await updateProfileClass({ class_id: schoolClass });
 
-        accounts[accountIndex] = { ...accounts[accountIndex], schoolClass };
-        const updatedUser: User = { ...currentUser, schoolClass };
-        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+        const updatedUser: User = {
+            ...currentUser,
+            role: (updated.role as User['role']) ?? currentUser.role,
+            classId: updated.class_id ?? null,
+            schoolClass: updated.class_id ?? null,
+        };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
         return updatedUser;
     }
 
-    logout(): void {
+    async logout(): Promise<void> {
+        try {
+            await logoutSession();
+        } finally {
+            localStorage.removeItem(CURRENT_USER_KEY);
+        }
+    }
+
+    forgetCurrentUser(): void {
         localStorage.removeItem(CURRENT_USER_KEY);
-    }
-
-    private getAccounts(): StoredAccount[] {
-        const storedAccounts = localStorage.getItem(ACCOUNTS_KEY);
-        if (!storedAccounts) {
-            return [];
-        }
-
-        const accounts: unknown = JSON.parse(storedAccounts);
-        if (!Array.isArray(accounts) || !accounts.every(this.isStoredAccount)) {
-            throw new Error('Не удалось прочитать данные аккаунтов.');
-        }
-        return accounts;
-    }
-
-    private isStoredAccount(value: unknown): value is StoredAccount {
-        return (
-            typeof value === 'object' &&
-            value !== null &&
-            'name' in value &&
-            typeof value.name === 'string' &&
-            'email' in value &&
-            typeof value.email === 'string' &&
-            'password' in value &&
-            typeof value.password === 'string' &&
-            (!('schoolClass' in value) ||
-                value.schoolClass === null ||
-                typeof value.schoolClass === 'string')
-        );
     }
 
     private parseUser(value: string): User {
@@ -120,10 +121,14 @@ class LocalStorageAuthService implements AuthService {
         if (
             typeof user !== 'object' ||
             user === null ||
+            !('id' in user) ||
+            (user.id !== null && typeof user.id !== 'string') ||
             !('name' in user) ||
             typeof user.name !== 'string' ||
             !('email' in user) ||
             typeof user.email !== 'string' ||
+            ('role' in user && user.role !== null && typeof user.role !== 'string') ||
+            ('classId' in user && user.classId !== null && typeof user.classId !== 'string') ||
             ('schoolClass' in user &&
                 user.schoolClass !== null &&
                 typeof user.schoolClass !== 'string')
@@ -131,8 +136,15 @@ class LocalStorageAuthService implements AuthService {
             throw new Error('Не удалось прочитать данные аккаунта.');
         }
         return {
+            id: 'id' in user && typeof user.id === 'string' ? user.id : null,
             name: user.name,
             email: user.email,
+            role: 'role' in user && typeof user.role === 'string'
+                ? (user.role as User['role'])
+                : null,
+            classId: 'classId' in user && typeof user.classId === 'string'
+                ? user.classId
+                : null,
             schoolClass: 'schoolClass' in user && typeof user.schoolClass === 'string'
                 ? user.schoolClass
                 : null,

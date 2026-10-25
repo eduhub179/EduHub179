@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import MathClassTable from './MathClassTable';
+import ClassTable, {type ClassOption} from '../ClassTable';
+import '../../css/MathClassSelector.css';
 
 interface MathClassSelectorProps {
     schoolClass: string;
     onChange: (schoolClass: string) => void;
+    classOptions: ClassOption[];
 }
 
-const MathClassSelector: React.FC<MathClassSelectorProps> = ({ schoolClass, onChange }) => {
+const MathClassSelector: React.FC<MathClassSelectorProps> = ({schoolClass, onChange, classOptions}) => {
     const [isOpen, setIsOpen] = useState(false);
     const selectorRef = useRef<HTMLDivElement>(null);
 
@@ -45,13 +47,13 @@ const MathClassSelector: React.FC<MathClassSelectorProps> = ({ schoolClass, onCh
             <button
                 aria-expanded={isOpen}
                 aria-haspopup="dialog"
-                aria-label={`Выбран ${schoolClass} класс. Нажмите, чтобы выбрать другой класс`}
+                aria-label={`Выбран класс ${schoolClass}. Нажмите, чтобы выбрать другой`}
                 aria-controls="math-class-selector-options"
                 className="math-class-selector__trigger"
                 onClick={() => setIsOpen((open) => !open)}
                 type="button"
             >
-                {schoolClass} класс
+                {schoolClass}
                 <span aria-hidden="true" className="math-class-selector__chevron">
                     {isOpen ? '▴' : '▾'}
                 </span>
@@ -63,7 +65,8 @@ const MathClassSelector: React.FC<MathClassSelectorProps> = ({ schoolClass, onCh
                     role="dialog"
                     aria-label="Выбрать класс"
                 >
-                    <MathClassTable
+                    <ClassTable
+                        classOptions={classOptions}
                         onSelectClass={selectClass}
                         selectedClass={schoolClass}
                     />

@@ -24,6 +24,7 @@ LESSONS = {  # дата -> уроки 11Б; сообщения пишут в п�
     "2099-10-23": [{"id": str(uuid.uuid4()), "start_time": "10:00", "end_time": "10:45", "subject_name": "Алгебра"}],
 }
 HOMEWORK = {}  # lesson_instance_id -> {"id", "text", "created_by", "created_by_role"}
+FILES = []  # загруженные файлы: {"lesson", "name", "bytes", "by"}
 
 
 class Api(BaseHTTPRequestHandler):
@@ -60,6 +61,17 @@ class Api(BaseHTTPRequestHandler):
         self.answer(200, {"date": day, "lessons": out})
 
     def do_POST(self):
+        if self.path.startswith("/api/lessons/"):  # файл к уроку (multipart, поле file)
+            lesson = self.path.split("/")[3]
+            raw = self.rfile.read(int(self.headers["Content-Length"]))
+            head, data = raw.split(b"\r\n\r\n", 1)
+            name = head.split(b'filename="')[1].split(b'"')[0].decode()
+            FILES.append({"lesson": lesson, "name": name, "bytes": data.rsplit(b"\r\n--", 1)[0],
+                          "by": self.headers.get("X-Agent-On-Behalf-Of")})
+            if lesson not in HOMEWORK:
+                HOMEWORK[lesson] = {"id": str(uuid.uuid4()), "text": ""}
+            return self.answer(200, {"homework_id": HOMEWORK[lesson]["id"], "homework_created": False,
+                                     "file": {"id": str(uuid.uuid4()), "file_name": name}})
         b = self.body()
         if b["lesson_instance_id"] in HOMEWORK:
             return self.answer(409, {"error": "Homework already exists for this lesson"})
@@ -115,14 +127,30 @@ def main():
     ts = datetime(2099, 10, 19, 15, 0).timestamp()
     n = [0]
 
-    def write(tg_id, text, answer=None):
+    def write(tg_id, text, answer=None, extra=None):
         n[0] += 1
         sent.clear()
         if answer is not None:
             answers.append(answer)
-        dm.on_message({"message_id": n[0], "date": ts, "chat": {"id": tg_id, "type": "private"},
-                       "from": {"id": tg_id}, "text": text})
+        msg = {"message_id": n[0], "date": ts, "chat": {"id": tg_id, "type": "private"}, "from": {"id": tg_id}}
+        if extra:  # файл или фото: текст тогда — подпись
+            msg.update(extra)
+            if text:
+                msg["caption"] = text
+        else:
+            msg["text"] = text
+        dm.on_message(msg)
         return "\n".join(p.get("text", "") for _, p in sent)
+
+    def fake_download(api, file_id, dest, name):  # вместо скачивания из Telegram: содержимое файла — его file_id
+        os.makedirs(dest, exist_ok=True)
+        p = os.path.join(dest, dm.attachments.safe_name(name))
+        open(p, "wb").write(file_id.encode())
+        return dm.Path(p)
+    dm.attachments.download = fake_download
+    doc = lambda fid, name: {"document": {"file_id": fid, "file_name": name}}
+    photo = lambda fid, group=None: {"photo": [{"file_id": "small"}, {"file_id": fid}],
+                                     **({"media_group_id": group} if group else {})}
 
     def press(tg_id, what, index=None):
         """Нажать кнопку последнего черновика: ok, no, s:<n>, d:<n>:<дата>; или кнопку по подписи."""
@@ -151,6 +179,11 @@ def main():
     check("записано на урок физики в четверг", "№ 5–7" in hw.get("text", ""))
     check("автор — ученик, роль student", hw.get("created_by") == STUDENT and hw.get("created_by_role") == "student")
     check("в тексте нет «Из чата»", "Из чата" not in hw.get("text", ""))
+    check("в тексте только задание, без предмета и дня", hw.get("text", "").strip() == "№ 5–7 из задачника")
+    check("task_only: «геометрия в чт 12 номер» -> «12 номер»",
+          dm.task_only("геометрия в чт 12 номер", ["Геометрия"]) == "12 номер")
+    check("task_only: «химические реакции» не трогаем",
+          dm.task_only("химические реакции выучить", ["Химия"]) == "химические реакции выучить")
     check("в черновике «Записал»", "Записал" in out)
     check("отдельного «✅ Записал» не пришло (уже видно в черновике)", not any(p.get("chat_id") == 111 and
           m == "sendMessage" for m, p in sent))
@@ -191,6 +224,39 @@ def main():
                 [{"quote": "физика к четвергу выучить формулы", "type": "homework", "summary": "формулы", "date": "2099-10-22"}])
     out = press(222, "ok")
     check("чужой черновик нажать нельзя", "не активен" in out and "формулы" not in HOMEWORK[phys22]["text"])
+
+    # файлы и фото в личке
+    out = write(111, "физика к четвергу лаба 4", [{"quote": "физика к четвергу лаба 4", "type": "homework",
+                                                  "summary": "лаба 4", "date": "2099-10-22"}], doc("pdf-1", "лаба4.pdf"))
+    check("файл с подписью: черновик ДЗ и в нём файл", "чт 22.10" in out and "📎 лаба4.pdf" in out and "✅ Записать" in buttons())
+    press(111, "ok")
+    f = FILES[-1] if FILES else {}
+    check("... после «Записать» файл загружен к уроку от имени ученика", f.get("lesson") == phys22
+          and f.get("bytes") == b"pdf-1" and f.get("name").endswith("лаба4.pdf") and f.get("by") == STUDENT
+          and "лаба 4" in HOMEWORK[phys22]["text"])
+
+    out = write(111, "", None, photo("ph-1"))
+    check("фото без подписи: просим написать задание, черновика нет", "Файл получил" in out and "Записать" not in out)
+    out = write(111, "алгебра к пятнице № 9", [{"quote": "алгебра к пятнице № 9", "type": "homework", "summary": "№ 9",
+                                               "date": "2099-10-23"}])
+    check("следующее сообщение — задание к этому фото, а не вопрос", "пт 23.10" in out and "📎 фото.jpg" in out)
+    press(111, "ok")
+    check("... фото загружено к уроку алгебры", any(f["lesson"] == alg23 and f["bytes"] == b"ph-1" for f in FILES))
+
+    write(111, "физика к четвергу задачи на фото", [{"quote": "физика к четвергу задачи на фото", "type": "homework",
+                                                     "summary": "задачи на фото", "date": "2099-10-22"}], photo("al-1", "g1"))
+    out = write(111, "", None, photo("al-2", "g1"))
+    d = list(dm.load().values())[-1]
+    check("альбом: второе фото добавилось к черновику первого", d["names"] == ["фото.jpg", "фото.jpg"]
+          and len(d["files"]) == 2 and "Файл получил" not in out)
+    before = len(FILES)
+    press(111, "ok")
+    check("... оба фото альбома загружены", sorted(f["bytes"] for f in FILES[before:]) == [b"al-1", b"al-2"])
+
+    out = write(333, "", None, doc("x", "x.pdf"))
+    check("файл от того, кто не вошёл: просим войти", "@EduHub179Bot" in out and not dm._pending.get(333))
+    check("в карточке модератора видны файлы",
+          dm.chat_moderation.fields(dm.item_for(d, 0, d["items"][0]))["files"] == "фото.jpg, фото.jpg")
 
     dm.MODERATE = True
     out = write(111, "физика к четвергу выучить формулы",
@@ -247,9 +313,16 @@ def main():
     check("«что задали по алгебре?» — ДЗ ближайшей алгебры, без модели",
           out.startswith("Алгебра (завтра): № 101–104") and not asked)
     out = write(111, "расписание на четверг")
-    check("«расписание на четверг» — уроки чт", "чт 22.10" in out and "11:00 Физика" in out)
+    check("«расписание на четверг» — уроки чт, дата один раз", out.strip().startswith("Чт 22.10:") and "11:00 Физика" in out
+          and out.lower().count("22.10") == 1)
     out = write(111, "где физика?")
     check("«где физика?» — когда и кабинет", out.startswith("Физика, завтра в 09:00. Кабинет 305."))
+    out = write(111, "когда алгерба")
+    check("«когда алгерба» — опечатка, урок алгебры", out.startswith("Алгебра, завтра в 09:55"))
+    out = write(111, "что по матеше?")
+    check("«что по матеше?» — непонятный предмет: переспрашивает", "Не понял предмет «матеше»" in out and "Физика" in out)
+    check("опечатка в сокращении: «физрв» = физкультура",
+          dm.subjects_typo("когда физрв", ["Физика", "Физкультура"]) == ["Физкультура"])
     out = write(111, "дз на субботу")
     check("«дз на субботу» — уроков нет", "уроков нет" in out)
     out = write(111, "привет")
@@ -309,7 +382,15 @@ def main():
     out = write(111, "что по алгерба?")
     check("«что по алгерба?» — алгебра", out.strip().startswith("Алгебра (завтра)"))
     out = write(111, "расписание на четвег")
-    check("«расписание на четвег» — четверг", "чт 22.10" in out)
+    check("«расписание на четвег» — четверг", "чт 22.10" in out.lower())
+
+    # сдвоенный урок: одно ДЗ на двух уроках показываем один раз
+    real = dm.lessons_now
+    dm.lessons_now = lambda cid, d: [{"id": "a", "start_time": "09:00", "subject_name": "Химия", "homework": {"text": "§5"}},
+                                     {"id": "b", "start_time": "09:55", "subject_name": "Химия", "homework": {"text": "§5"}}]
+    out = dm.answer_question("homework", CLASS, date(2099, 10, 20))
+    check("сдвоенная химия — ДЗ один раз", out.count("Химия: §5") == 1)
+    dm.lessons_now = real
 
     # один бот: основной бот (бот Яши) пересылает обновления агенту, тут — его JSON (из теста agent_forward.rs)
     import socket

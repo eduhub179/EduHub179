@@ -8,9 +8,28 @@
 
 use crate::errors::DomainError;
 
+/// Top-level "folder" of the object key: keeps homework files and course materials
+/// apart in the bucket (`homeworks/...`, `materials/...`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StorageFolder {
+    Homeworks,
+    Materials,
+}
+
+impl StorageFolder {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StorageFolder::Homeworks => "homeworks",
+            StorageFolder::Materials => "materials",
+        }
+    }
+}
+
 /// Data required to upload a file to object storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadFileRequest {
+    /// Folder of the object key.
+    pub folder: StorageFolder,
     /// Original file name as sent by the client.
     pub file_name: String,
     /// MIME type reported by the client or detected by the app.

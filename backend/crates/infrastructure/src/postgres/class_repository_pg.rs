@@ -27,8 +27,16 @@ pub enum DbClassLetter {
     B,
     #[sqlx(rename = "в")]
     V,
+    #[sqlx(rename = "г")]
+    G,
+    #[sqlx(rename = "д")]
+    D,
     #[sqlx(rename = "и")]
     I,
+    #[sqlx(rename = "к")]
+    K,
+    #[sqlx(rename = "л")]
+    L,
 }
 
 impl From<DbClassLetter> for ClassLetter {
@@ -36,7 +44,11 @@ impl From<DbClassLetter> for ClassLetter {
         match db_letter {
             DbClassLetter::B => ClassLetter::B,
             DbClassLetter::V => ClassLetter::V,
+            DbClassLetter::G => ClassLetter::G,
+            DbClassLetter::D => ClassLetter::D,
             DbClassLetter::I => ClassLetter::I,
+            DbClassLetter::K => ClassLetter::K,
+            DbClassLetter::L => ClassLetter::L,
         }
     }
 }
@@ -46,7 +58,11 @@ impl From<ClassLetter> for DbClassLetter {
         match letter {
             ClassLetter::B => DbClassLetter::B,
             ClassLetter::V => DbClassLetter::V,
+            ClassLetter::G => DbClassLetter::G,
+            ClassLetter::D => DbClassLetter::D,
             ClassLetter::I => DbClassLetter::I,
+            ClassLetter::K => DbClassLetter::K,
+            ClassLetter::L => DbClassLetter::L,
         }
     }
 }

@@ -8,6 +8,8 @@
 //! Constraints:
 //! - File name must be non-empty (trimmed).
 //! - MIME type must be non-empty (trimmed).
+//! - File name ≤ 255 chars, MIME type ≤ 100 chars (limits of `homework_files` and `HomeworkFile`).
+//!   Checked before the upload, so a too-long name cannot leave an orphaned object in storage.
 //! - File size must be > 0 and <= 100 MB by default.
 
 use std::sync::Arc;
@@ -15,8 +17,11 @@ use std::sync::Arc;
 use domain::errors::DomainError;
 use domain::ports::file_storage::{FileStorage, UploadFileRequest, StoredFile};
 
-/// Maximum file size: 100 MB.
-const MAX_FILE_SIZE: i64 = 100 * 1024 * 1024;
+/// Maximum file size: 100 MB. Public so the HTTP layer can size its request body limit.
+pub const MAX_FILE_SIZE: i64 = 100 * 1024 * 1024;
+/// Same limits as `homework_files.file_name` / `mime_type` and `HomeworkFile::try_new`.
+const MAX_FILE_NAME_CHARS: usize = 255;
+const MAX_MIME_TYPE_CHARS: usize = 100;
 
 /// Input for uploading a homework file to object storage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,13 +47,17 @@ impl UploadHomeworkFileCommand {
     /// Validates the command before uploading.
     ///
     /// Returns `Err` if:
-    /// - `file_name` or `mime_type` are empty after trimming.
+    /// - `file_name` or `mime_type` are empty after trimming or longer than the DB columns.
     /// - File size is 0 or exceeds the limit.
     pub fn validate(&self) -> Result<(), DomainError> {
         let name = self.file_name.trim();
         let mime = self.mime_type.trim();
 
-        if name.is_empty() || mime.is_empty() {
+        if name.is_empty()
+            || mime.is_empty()
+            || name.chars().count() > MAX_FILE_NAME_CHARS
+            || mime.chars().count() > MAX_MIME_TYPE_CHARS
+        {
             return Err(DomainError::InvalidHomeworkFileFormat);
         }
 
@@ -80,6 +89,7 @@ impl UploadHomeworkFileUseCase {
         cmd.validate()?;
 
         let request = UploadFileRequest {
+            folder: domain::ports::file_storage::StorageFolder::Homeworks,
             file_name: cmd.file_name.trim().to_string(),
             mime_type: cmd.mime_type.trim().to_string(),
             bytes: cmd.bytes,
@@ -155,6 +165,39 @@ mod tests {
 
         let result = cmd.validate();
         assert_eq!(result, Err(DomainError::InvalidHomeworkFileSize));
+    }
+
+    #[test]
+    fn test_validate_rejects_too_long_file_name() {
+        let cmd = UploadHomeworkFileCommand::new(
+            format!("{}.pdf", "я".repeat(252)),
+            "application/pdf".to_string(),
+            vec![1, 2, 3],
+        );
+
+        assert_eq!(cmd.validate(), Err(DomainError::InvalidHomeworkFileFormat));
+    }
+
+    #[test]
+    fn test_validate_accepts_max_length_file_name() {
+        let cmd = UploadHomeworkFileCommand::new(
+            "я".repeat(255),
+            "application/pdf".to_string(),
+            vec![1, 2, 3],
+        );
+
+        assert!(cmd.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_too_long_mime_type() {
+        let cmd = UploadHomeworkFileCommand::new(
+            "file.pdf".to_string(),
+            format!("application/{}", "x".repeat(100)),
+            vec![1, 2, 3],
+        );
+
+        assert_eq!(cmd.validate(), Err(DomainError::InvalidHomeworkFileFormat));
     }
 
     #[test]

@@ -102,7 +102,7 @@ mod tests {
             unimplemented!()
         }
 
-        async fn remove_file(&self, _file_id: Uuid) -> Result<(), DomainError> {
+        async fn remove_file(&self, _file_id: Uuid) -> Result<HomeworkFile, DomainError> {
             unimplemented!()
         }
 

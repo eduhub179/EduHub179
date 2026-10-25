@@ -8,7 +8,7 @@ use std::sync::Arc;
 use application::use_cases::auth::OneTimeCodeService;
 use application::use_cases::telegram::TelegramAuthUseCase;
 use domain::settings::Settings;
-use infrastructure::auth::{Argon2PasswordHasher, LoggingCodeSender, NumericCodeGenerator};
+use infrastructure::auth::{Argon2PasswordHasher, NumericCodeGenerator};
 use infrastructure::config::Config;
 use infrastructure::postgres::{create_pool, TelegramBindingRepositoryPg, UserRepositoryPg};
 use infrastructure::redis::{AuthCodeStoreRedis, TelegramSessionRepositoryRedis};
@@ -70,7 +70,16 @@ async fn main() {
     let code_generator: Arc<dyn domain::ports::auth::CodeGenerator> =
         Arc::new(NumericCodeGenerator);
 
-    let code_sender: Arc<dyn domain::ports::auth::CodeSender> = Arc::new(LoggingCodeSender);
+    let code_sender: Arc<dyn domain::ports::auth::CodeSender> = Arc::new(
+        infrastructure::auth::SmtpCodeSender::try_new(
+            config.smtp_host.clone(),
+            config.smtp_port,
+            config.smtp_user.clone(),
+            config.smtp_password.clone(),
+            config.smtp_from_email.clone(),
+        )
+        .expect("Failed to initialize SMTP CodeSender"),
+    );
 
     // 7. Application services & use cases
     let one_time_code_service = Arc::new(OneTimeCodeService::new(
