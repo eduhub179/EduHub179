@@ -27,7 +27,7 @@ import json
 import time
 from pathlib import Path
 
-from eduhub_agent.files import taxonomy
+from eduhub_agent.files import due, taxonomy
 from eduhub_agent.paths import STATE
 from eduhub_agent.server import backend_api
 
@@ -76,19 +76,28 @@ def acted():
 
 
 def target(row, class_name=None, date=None):
-    """(находка для backend_api, почему не годится). Находка — то, что понимает find_lesson()."""
+    """(находка для backend_api, почему не годится). Находка — то, что понимает find_lesson().
+
+    Дата: из метки (модель прочитала «к пятнице»), из явного --date, а если их нет — по
+    расписанию от времени появления файла (files/due.py: та же логика, что у чатов).
+    Не угадываем предмет и класс: без них — review.
+    """
     if not row.get("path"):
         return None, "нет файла на диске"
     subject = taxonomy.ru_name(row.get("subject"))
     if not subject:
         return None, "предмет не опознан"
-    day = row.get("date") or date
-    if not day:
-        return None, "нет даты: из подписи или черновика она не пришла"
     cls = row.get("class") or class_name
     if not cls:
         return None, "нет класса: ни в профиле, ни в подписи, ни в пути"
-    return {"subject": subject, "date": str(day)[:10], "class": cls,
+    day = row.get("date") or date
+    source = "метка" if day else None
+    if not day:
+        day, _lesson, why = due.due_for({**row, "class": cls}, subject=subject)
+        if not day:
+            return None, why
+        source = "расписание"
+    return {"subject": subject, "date": str(day)[:10], "class": cls, "date_source": source,
             "chat": row.get("chat") or "", "file_paths": [row["path"]]}, None
 
 
