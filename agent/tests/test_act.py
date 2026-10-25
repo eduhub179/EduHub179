@@ -81,7 +81,8 @@ def main():
     label("f2", date=None)
     st = act.publish(dry_run=False)
     kinds = {r["id"]: r["why"] for r in act.review_rows()}
-    check("без даты: ушло в review", st["review"] == 1 and "даты" in kinds["f2"])
+    check("без даты и без уроков в расписании: review",
+          st["review"] == 1 and "расписании" in kinds["f2"])
     check("без даты: файл не загружен", len(fake.FILES) == 1)
 
     # 5. medium/review без подтверждения — не грузим; с confirmed — грузим (человек посмотрел)
@@ -120,6 +121,32 @@ def main():
         check("503: повторяем", st["waiting"] == 1)
     finally:
         b.upload = real
+
+    # 8b. даты нет, но есть класс, предмет и время появления файла: расписание решает
+    from datetime import datetime
+    seen = datetime(2099, 10, 20, 15, 0).timestamp()   # вторник, физика была бы 22-го
+    row = label("f8", date=None)
+    os.utime(row["path"], (seen, seen))
+    from eduhub_agent.files import due, queue as q2
+    q2.enqueue("f8", "f8.pdf", source="folder", path=row["path"], chat_class="11Б")
+    check("queue: время появления файла взято из mtime",
+          q2._rows(q2.QUEUE)[0]["seen_at"].startswith("2099-10-20"))
+    it, why = act.target({**row, "path": row["path"], "seen_at": "2099-10-20T15:00:00"}, class_name="11Б")
+    check("без даты, но с расписанием: дата от mtime",
+          it is not None and it["date"] == "2099-10-22" and it["date_source"] == "расписание")
+
+    # 8c. «через урок» в имени — берём не ближайший, а следующий урок предмета
+    when = datetime(2099, 10, 20, 15, 0)
+    one = due.candidates("11Б", "Физика", when)
+    two = due.due_for({"name": "ДЗ через урок.pdf", "class": "11Б", "subject": "Физика",
+                       "seen_at": when.isoformat()}, subject="Физика")
+    check("«через урок»: второй урок предмета", len(one) >= 2 and two[0] == one[1][0]
+          and "через урок" in two[2])
+
+    # 8d. файл появился после урока — этот урок не кандидат
+    during = datetime(2099, 10, 22, 11, 20)
+    check("урок уже идёт: не он, а следующий", due.candidates("11Б", "Физика", during)[0][0]
+          != during.date())
 
     # 9. код предмета -> русское название для find_lesson()
     check("taxonomy.ru_name", taxonomy.ru_name("physics") == "Физика" and taxonomy.ru_name("nope") is None)
