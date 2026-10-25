@@ -57,6 +57,11 @@ def _write(path, row):
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def record(row):
+    """Записать готовую метку (её пишут feed.py из crawler/ingest и queue.process)."""
+    _write(LABELS, {**row, "status": "done"})
+
+
 def labels():
     """{id файла: последняя удачная метка}. Неудачи в очереди остаются в очереди, здесь их нет."""
     out = {}

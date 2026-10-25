@@ -148,6 +148,30 @@ def main():
     check("урок уже идёт: не он, а следующий", due.candidates("11Б", "Физика", during)[0][0]
           != during.date())
 
+    # 8e. мост из краулера: локальный файл -> метка -> действие, класс из пути
+    from eduhub_agent.files import feed
+    os.makedirs(f"{home}/11Б/Физика", exist_ok=True)
+    local = f"{home}/11Б/Физика/ДЗ-15.pdf"
+    open(local, "wb").write(b"%PDF-1.4 hw")
+    os.utime(local, (seen, seen))
+    ev = {"kind": "created", "id": "drive-1", "name": "ДЗ-15.pdf", "path": "11Б/Физика/ДЗ-15.pdf",
+          "local_path": local, "mtime": seen, "hash": "h1", "route": "accepted",
+          "subject": "physics", "type": "homework", "confidence": "high", "text_status": "native"}
+    check("feed: событие краулера записано", feed.record(ev) is True)
+    check("feed: повтор с тем же хешем не дублируется", feed.record(ev) is False)
+    it, why = act.target(act.labels()["drive-1"])
+    check("feed: класс из пути, дата из расписания", it and it["class"] == "11Б"
+          and it["date"] == "2099-10-22")
+
+    # 8f. Drive в режиме ссылок: файла на диске нет -> review, а не тишина
+    ev2 = {**ev, "id": "drive-2", "name": "лист16.pdf", "path": "9 класс/Физика/лист16.pdf",
+           "local_path": None, "hash": "h2", "route": "review",
+           "route_reason": "нет содержимого: Drive в режиме ссылок", "grade": 9}
+    feed.record(ev2)
+    st = act.publish(dry_run=True)
+    row2 = act.labels()["drive-2"]
+    check("drive без файла: review, не загрузка", row2["route"] == "review" and st["uploaded"] == 0)
+
     # 9. код предмета -> русское название для find_lesson()
     check("taxonomy.ru_name", taxonomy.ru_name("physics") == "Физика" and taxonomy.ru_name("nope") is None)
 
