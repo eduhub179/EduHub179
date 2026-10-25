@@ -284,22 +284,22 @@ impl HomeworkRepository for HomeworkRepositoryPg {
 
     /// Removes a file by ID.
     /// Returns `HomeworkFileNotFound` if no row was affected (explicit contract).
-    async fn remove_file(&self, file_id: Uuid) -> Result<(), DomainError> {
-        let result = sqlx::query(
+    async fn remove_file(&self, file_id: Uuid) -> Result<HomeworkFile, DomainError> {
+        // RETURNING: the deleted row comes back in the same statement, so there is no
+        // window between reading the storage key and deleting the row.
+        let row = sqlx::query_as::<_, HomeworkFileRow>(
             r#"
             DELETE FROM homework_files WHERE file_id = $1
+            RETURNING file_id, homework_id, storage_key, file_name, mime_type, size_bytes, sort_order
             "#,
         )
         .bind(file_id)
-        .execute(&self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(Self::map_db_error)?;
+        .map_err(Self::map_db_error)?
+        .ok_or(DomainError::HomeworkFileNotFound)?;
 
-        if result.rows_affected() == 0 {
-            return Err(DomainError::HomeworkFileNotFound);
-        }
-
-        Ok(())
+        row.into_domain()
     }
 
     /// Deletes a homework by ID.

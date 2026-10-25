@@ -1,14 +1,22 @@
 //! Use case: delete a homework file.
 //!
 //! Flow:
-//! 1. Remove the file metadata from the repository.
-//! 2. Delete the object from file storage.
+//! 1. Remove the file record from the repository; it returns the deleted record.
+//! 2. Delete the object from file storage by the `storage_key` of that record.
+//!
+//! The storage key always comes from the DB, never from the client: otherwise a caller
+//! could delete their own file record and pass the key of someone else's object.
 //!
 //! Order: DB → Storage. If DB deletion fails, no storage operation is triggered.
-//! If storage deletion fails after DB success, log it for later cleanup (orphaned file).
+//! If storage deletion fails after DB success, the key is returned as orphaned
+//! so the caller can log it for later cleanup.
+//!
+//! A homework must have text or at least one file: if the removed file was the last
+//! content of a homework without text, the homework is deleted too.
 
 use std::sync::Arc;
 
+use domain::entities::homework::HomeworkFile;
 use domain::errors::DomainError;
 use domain::ports::file_storage::FileStorage;
 use domain::repositories::homework_repository::HomeworkRepository;
@@ -19,8 +27,21 @@ use uuid::Uuid;
 pub struct DeleteHomeworkFileCommand {
     /// File ID to delete.
     pub file_id: Uuid,
-    /// Storage key for cleanup (optional; if provided, deletes from storage too).
-    pub storage_key: Option<String>,
+}
+
+/// Result of a successful delete.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedHomeworkFile {
+    /// The removed metadata record.
+    pub file: HomeworkFile,
+    /// `Some(key)` if the record is gone but the object could not be removed from storage.
+    /// The application layer has no logger: the caller must log it for background cleanup.
+    pub orphaned_storage_key: Option<String>,
+    /// True if the homework had no text and this was its last file, so it was deleted too.
+    pub homework_deleted: bool,
+    /// Lesson of the homework, read before it may be deleted: lets the caller notify the
+    /// lesson's students even when the homework is gone. `None` if it could not be read.
+    pub lesson_instance_id: Option<Uuid>,
 }
 
 /// Use case that removes a file from homework (both DB and storage).
@@ -37,23 +58,46 @@ impl DeleteHomeworkFileUseCase {
 
     /// Executes the delete flow.
     ///
-    /// First removes the metadata from the repository, then deletes the object
-    /// from file storage. If metadata deletion fails, storage is not touched.
-    /// If storage deletion fails after DB success, the error is reported but
-    /// the file is considered "deleted" from the user's perspective (metadata is gone).
-    pub async fn execute(&self, cmd: DeleteHomeworkFileCommand) -> Result<(), DomainError> {
-        // 1. Remove the file record from the database first.
-        // If this fails, the storage cleanup is skipped.
-        self.homeworks.remove_file(cmd.file_id).await?;
+    /// # Fail-safe поведение
+    /// Returns `Err` only if the DB record was not removed (e.g. `HomeworkFileNotFound`);
+    /// storage is not touched then. A storage failure after the DB delete does not fail
+    /// the operation (for the user the file is gone): it is reported in `orphaned_storage_key`.
+    /// If the empty homework cannot be deleted afterwards, the file is still gone and
+    /// `homework_deleted` is false (the homework stays, visible as file-less).
+    pub async fn execute(
+        &self,
+        cmd: DeleteHomeworkFileCommand,
+    ) -> Result<DeletedHomeworkFile, DomainError> {
+        let file = self.homeworks.remove_file(cmd.file_id).await?;
 
-        // 2. If a storage key was provided, delete from object storage.
-        // Failure here is logged but does not fail the operation (metadata already gone).
-        if let Some(storage_key) = cmd.storage_key {
-            let _ = self.storage.delete(&storage_key).await;
-            // Note: in production, log this failure for background cleanup tasks.
+        let orphaned_storage_key = match self.storage.delete(&file.storage_key).await {
+            Ok(()) => None,
+            Err(_) => Some(file.storage_key.clone()),
+        };
+        let homework = self.homeworks.get_by_id(file.homework_id).await.ok();
+        let lesson_instance_id = homework.as_ref().map(|homework| homework.lesson_instance_id);
+        let homework_deleted = match homework {
+            Some(homework) if homework.text_content.is_none() => {
+                self.delete_homework_if_no_files(homework.id).await
+            }
+            _ => false,
+        };
+
+        Ok(DeletedHomeworkFile {
+            file,
+            orphaned_storage_key,
+            homework_deleted,
+            lesson_instance_id,
+        })
+    }
+
+    /// Deletes a text-less homework that has no files left.
+    /// Best effort: any error leaves the homework in place and returns false.
+    async fn delete_homework_if_no_files(&self, homework_id: Uuid) -> bool {
+        match self.homeworks.get_files(homework_id).await {
+            Ok(files) if files.is_empty() => self.homeworks.delete(homework_id).await.is_ok(),
+            _ => false,
         }
-
-        Ok(())
     }
 }
 
@@ -61,64 +105,115 @@ impl DeleteHomeworkFileUseCase {
 mod tests {
     use super::*;
     use domain::entities::homework::Homework;
+    use std::sync::Mutex;
+
+    const STORED_KEY: &str = "homeworks/stored-key_sample.pdf";
 
     struct MockHomeworkRepository {
         file_exists: bool,
-        was_removed: std::sync::Mutex<bool>,
+        homework_text: Option<String>,
+        remaining_files: usize,
+        homework_deleted: Mutex<bool>,
+    }
+
+    impl MockHomeworkRepository {
+        fn new(file_exists: bool) -> Self {
+            Self {
+                file_exists,
+                homework_text: Some("text".to_string()),
+                remaining_files: 0,
+                homework_deleted: Mutex::new(false),
+            }
+        }
     }
 
     #[async_trait::async_trait]
     impl HomeworkRepository for MockHomeworkRepository {
-        async fn get_by_id(&self, _: Uuid) -> Result<Homework, DomainError> {
-            unimplemented!()
+        async fn get_by_id(&self, homework_id: Uuid) -> Result<Homework, DomainError> {
+            Homework::try_new(
+                homework_id,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                domain::value_objects::role::UserRole::Teacher,
+                self.homework_text.clone(),
+                domain::value_objects::homework_status::HomeworkStatus::Published,
+                false,
+                None,
+                chrono::Utc::now(),
+            )
         }
 
         async fn get_by_lesson_instance(&self, _: Uuid) -> Result<Homework, DomainError> {
             unimplemented!()
         }
 
-        async fn get_files(
-            &self,
-            _: Uuid,
-        ) -> Result<Vec<domain::entities::homework::HomeworkFile>, DomainError> {
-            unimplemented!()
+        async fn get_files(&self, homework_id: Uuid) -> Result<Vec<HomeworkFile>, DomainError> {
+            Ok((0..self.remaining_files)
+                .map(|index| {
+                    HomeworkFile::try_new(
+                        Uuid::new_v4(),
+                        homework_id,
+                        format!("homeworks/other-{index}"),
+                        "b.pdf".to_string(),
+                        "application/pdf".to_string(),
+                        1,
+                        index as i32,
+                    )
+                    .unwrap()
+                })
+                .collect())
         }
 
         async fn save(&self, _: Homework) -> Result<Homework, DomainError> {
             unimplemented!()
         }
 
-        async fn add_file(
-            &self,
-            _: domain::entities::homework::HomeworkFile,
-        ) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
+        async fn add_file(&self, _: HomeworkFile) -> Result<HomeworkFile, DomainError> {
             unimplemented!()
         }
 
-        async fn remove_file(&self, _file_id: Uuid) -> Result<(), DomainError> {
-            if self.file_exists {
-                *self.was_removed.lock().unwrap() = true;
-                Ok(())
-            } else {
-                Err(DomainError::HomeworkFileNotFound)
+        async fn remove_file(&self, file_id: Uuid) -> Result<HomeworkFile, DomainError> {
+            if !self.file_exists {
+                return Err(DomainError::HomeworkFileNotFound);
             }
+            HomeworkFile::try_new(
+                file_id,
+                Uuid::new_v4(),
+                STORED_KEY.to_string(),
+                "sample.pdf".to_string(),
+                "application/pdf".to_string(),
+                42,
+                0,
+            )
         }
 
         async fn delete(&self, _: Uuid) -> Result<(), DomainError> {
-            unimplemented!()
+            *self.homework_deleted.lock().unwrap() = true;
+            Ok(())
         }
 
         async fn create_with_files(
             &self,
             _: Homework,
-            _: Vec<domain::entities::homework::HomeworkFile>,
+            _: Vec<HomeworkFile>,
         ) -> Result<Homework, DomainError> {
             unimplemented!()
         }
     }
 
+    /// Records which keys were deleted; can be told to fail.
     struct MockFileStorage {
-        was_deleted: std::sync::Mutex<bool>,
+        fail: bool,
+        deleted: Mutex<Vec<String>>,
+    }
+
+    impl MockFileStorage {
+        fn new(fail: bool) -> Self {
+            Self {
+                fail,
+                deleted: Mutex::new(vec![]),
+            }
+        }
     }
 
     #[async_trait::async_trait]
@@ -134,74 +229,109 @@ mod tests {
             unimplemented!()
         }
 
-        async fn delete(&self, _: &str) -> Result<(), DomainError> {
-            *self.was_deleted.lock().unwrap() = true;
+        async fn delete(&self, storage_key: &str) -> Result<(), DomainError> {
+            if self.fail {
+                return Err(DomainError::InternalError);
+            }
+            self.deleted.lock().unwrap().push(storage_key.to_string());
             Ok(())
         }
     }
 
     #[tokio::test]
-    async fn test_delete_homework_file_success() {
-        let repo = Arc::new(MockHomeworkRepository {
-            file_exists: true,
-            was_removed: std::sync::Mutex::new(false),
-        });
-        let storage = Arc::new(MockFileStorage {
-            was_deleted: std::sync::Mutex::new(false),
-        });
-        let use_case = DeleteHomeworkFileUseCase::new(repo.clone(), storage.clone());
+    async fn test_delete_uses_storage_key_from_db() {
+        let storage = Arc::new(MockFileStorage::new(false));
+        let use_case = DeleteHomeworkFileUseCase::new(
+            Arc::new(MockHomeworkRepository::new(true)),
+            storage.clone(),
+        );
 
-        let cmd = DeleteHomeworkFileCommand {
-            file_id: Uuid::new_v4(),
-            storage_key: Some("homeworks/sample.pdf".to_string()),
-        };
+        let result = use_case
+            .execute(DeleteHomeworkFileCommand {
+                file_id: Uuid::new_v4(),
+            })
+            .await
+            .unwrap();
 
-        let result = use_case.execute(cmd).await;
-        assert!(result.is_ok());
-        assert!(*repo.was_removed.lock().unwrap());
-        assert!(*storage.was_deleted.lock().unwrap());
+        assert_eq!(result.orphaned_storage_key, None);
+        assert!(!result.homework_deleted, "homework with text must stay");
+        assert_eq!(*storage.deleted.lock().unwrap(), vec![STORED_KEY.to_string()]);
     }
 
     #[tokio::test]
-    async fn test_delete_homework_file_not_found() {
+    async fn test_last_file_of_textless_homework_deletes_homework() {
         let repo = Arc::new(MockHomeworkRepository {
-            file_exists: false,
-            was_removed: std::sync::Mutex::new(false),
+            homework_text: None,
+            ..MockHomeworkRepository::new(true)
         });
-        let storage = Arc::new(MockFileStorage {
-            was_deleted: std::sync::Mutex::new(false),
+        let use_case =
+            DeleteHomeworkFileUseCase::new(repo.clone(), Arc::new(MockFileStorage::new(false)));
+
+        let result = use_case
+            .execute(DeleteHomeworkFileCommand {
+                file_id: Uuid::new_v4(),
+            })
+            .await
+            .unwrap();
+
+        assert!(result.homework_deleted);
+        assert!(*repo.homework_deleted.lock().unwrap());
+        assert!(result.lesson_instance_id.is_some(), "lesson is known even though the homework is gone");
+    }
+
+    #[tokio::test]
+    async fn test_textless_homework_with_other_files_stays() {
+        let repo = Arc::new(MockHomeworkRepository {
+            homework_text: None,
+            remaining_files: 1,
+            ..MockHomeworkRepository::new(true)
         });
-        let use_case = DeleteHomeworkFileUseCase::new(repo, storage);
+        let use_case =
+            DeleteHomeworkFileUseCase::new(repo.clone(), Arc::new(MockFileStorage::new(false)));
 
-        let cmd = DeleteHomeworkFileCommand {
-            file_id: Uuid::new_v4(),
-            storage_key: Some("homeworks/sample.pdf".to_string()),
-        };
+        let result = use_case
+            .execute(DeleteHomeworkFileCommand {
+                file_id: Uuid::new_v4(),
+            })
+            .await
+            .unwrap();
 
-        let result = use_case.execute(cmd).await;
+        assert!(!result.homework_deleted);
+        assert!(!*repo.homework_deleted.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_delete_homework_file_not_found_skips_storage() {
+        let storage = Arc::new(MockFileStorage::new(false));
+        let use_case = DeleteHomeworkFileUseCase::new(
+            Arc::new(MockHomeworkRepository::new(false)),
+            storage.clone(),
+        );
+
+        let result = use_case
+            .execute(DeleteHomeworkFileCommand {
+                file_id: Uuid::new_v4(),
+            })
+            .await;
+
         assert_eq!(result, Err(DomainError::HomeworkFileNotFound));
+        assert!(storage.deleted.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
-    async fn test_delete_homework_file_skips_storage_cleanup_if_no_key() {
-        let repo = Arc::new(MockHomeworkRepository {
-            file_exists: true,
-            was_removed: std::sync::Mutex::new(false),
-        });
-        let storage = Arc::new(MockFileStorage {
-            was_deleted: std::sync::Mutex::new(false),
-        });
-        let use_case = DeleteHomeworkFileUseCase::new(repo.clone(), storage.clone());
+    async fn test_storage_failure_reports_orphaned_key() {
+        let use_case = DeleteHomeworkFileUseCase::new(
+            Arc::new(MockHomeworkRepository::new(true)),
+            Arc::new(MockFileStorage::new(true)),
+        );
 
-        let cmd = DeleteHomeworkFileCommand {
-            file_id: Uuid::new_v4(),
-            storage_key: None,
-        };
+        let result = use_case
+            .execute(DeleteHomeworkFileCommand {
+                file_id: Uuid::new_v4(),
+            })
+            .await
+            .unwrap();
 
-        let result = use_case.execute(cmd).await;
-        assert!(result.is_ok());
-        assert!(*repo.was_removed.lock().unwrap());
-        // Storage should not be called if no key provided
-        assert!(!*storage.was_deleted.lock().unwrap());
+        assert_eq!(result.orphaned_storage_key, Some(STORED_KEY.to_string()));
     }
 }

@@ -39,17 +39,33 @@
     border-bottom: none;
 }
 
+.schedule__lesson-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.schedule__lesson-group {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+}
+
 .schedule__lesson-button {
     display: flex;
     align-items: center;
-    width: 100%;
-    gap: 16px;
+    flex: 1 1 0;
+    min-width: 0;
     padding: 12px 8px;
     border: 0;
     background: transparent;
     text-align: left;
     font: inherit;
     cursor: pointer;
+}
+
+.schedule__lesson-button--split {
+    border-left: 1px solid var(--color-border);
 }
 
 .schedule__lesson-button:hover {
@@ -99,6 +115,13 @@
     color: var(--color-text);
 }
 
+.schedule__lesson-meta {
+    margin-top: 3px;
+    color: var(--color-text-muted);
+    font-size: 0.7rem;
+    line-height: 1.2;
+}
+
 .schedule__homework-button {
     flex: 0 1 55%;
     max-width: 55%;
@@ -112,6 +135,18 @@
     text-align: right;
     overflow-wrap: anywhere;
     cursor: inherit;
+}
+
+.schedule__homework-badge {
+    margin-left: auto;
+    flex: 0 0 auto;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: #e8f0fe;
+    color: #315da8;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1.2;
 }
 
 .schedule__date {
@@ -134,6 +169,7 @@
     background: #f0f0f0;
     color: var(--color-text);
 }
+
 .schedule__header-right {
     display: flex;
     flex-direction: column;
@@ -156,4 +192,47 @@
         height: auto;
         padding: 16px;
     }
+}
+.schedule__title--cancelled {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+}
+
+/* Cancelled lesson: pale red card, crossed-out title, a small "отменён" badge. */
+.schedule__lesson-button.schedule__lesson-button--cancelled {
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.13);
+    box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.schedule__cancelled-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #b91c1c;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-decoration: none;
+    vertical-align: middle;
+}
+
+/* Substitution or a lesson added to this date: pale blue card and a small badge. */
+.schedule__lesson-button.schedule__lesson-button--changed {
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.12);
+    box-shadow: inset 3px 0 0 #3b82f6;
+}
+
+.schedule__changed-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+    font-size: 0.75em;
+    font-weight: 600;
+    vertical-align: middle;
 }

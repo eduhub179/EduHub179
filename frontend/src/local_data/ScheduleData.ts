@@ -11,8 +11,15 @@ const lessonTimes = [
 ] as const;
 
 const makeHomework = (description: string, files: string[]): Homework => ({
+    id: description,
     description,
-    files,
+    files: files.map((name) => ({
+        id: name,
+        name,
+        mimeType: name.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+        sizeBytes: 0,
+        url: `/local_docks/${name}`,
+    })),
 });
 
 const createItems = (

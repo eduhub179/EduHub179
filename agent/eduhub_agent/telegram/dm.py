@@ -14,7 +14,11 @@
    (роль student), а ученику приходит «записал». Без бота-модератора (--no-moderator) — сразу.
 5. Кнопки внизу (для учеников): «ДЗ на завтра» (ближайший учебный день), «Расписание на сегодня»,
    «Где следующий урок» (предмет, время, кабинет), «Добавить ДЗ» (подсказка). Всё из расписания бэкенда.
-6. Вопросы своими словами («что задали по химии?», «расписание на среду», «где алгебра?»): questions.py понимает,
+6. Файлы и фото. С подписью («физика к пятнице») — черновик ДЗ, файл прикладывается к нему. Без подписи — бот
+   ждёт следующее сообщение с заданием (10 минут) и прикладывает файл к нему. Альбом (несколько фото одним
+   сообщением) приходит по одному фото: остальные фото альбома добавляются к черновику первого. После «Записать»
+   файлы уходят в бэкенд к тому же уроку, что и текст (backend_api.attach_files). Лежат в chats/files/ЛС/<id чата>/.
+7. Вопросы своими словами («что задали по химии?», «расписание на среду», «где алгебра?»): questions.py понимает,
    о чём спросили (правила, потом модель), а ответ собирается из расписания бэкенда, как у кнопок.
 Черновики лежат в chats/dm_drafts.json (там тексты учеников, папка chats/ не коммитится).
 
@@ -30,12 +34,15 @@ import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from eduhub_agent.files import attachments
 from eduhub_agent.server import backend_api
 from eduhub_agent.telegram import chat_moderation, questions
 from eduhub_agent.server import timetable
 from eduhub_agent.config import env
 
 DRAFTS = "chats/dm_drafts.json"
+FILES_DIR = "chats/files/ЛС"  # вложения из лички: chats/ не коммитится
+PENDING = 600  # сколько секунд файл без подписи ждёт сообщения с заданием
 HORIZON = 14  # на сколько дней вперёд ищем уроки предмета
 MAX_ITEMS = 3  # больше находок из одного сообщения не показываем
 WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
@@ -49,6 +56,7 @@ WORTH = None  # text -> похоже ли на ДЗ (фильтр болтовн
 _users = {}  # telegram id -> (пользователь или None, когда спросили)
 _days = {}  # (class_id, дата) -> (уроки, когда спросили)
 _menu_shown = set()  # кому уже показали кнопки внизу
+_pending = {}  # chat_id -> {"files", "names", "at", "group"}: файлы без подписи, ждут задания
 
 B_HW, B_TODAY, B_NEXT, B_ADD = "📚 ДЗ на завтра", "📅 Расписание на сегодня", "🚪 Где следующий урок", "➕ Добавить ДЗ"
 MENU = {"keyboard": [[{"text": B_HW}, {"text": B_TODAY}], [{"text": B_NEXT}, {"text": B_ADD}]],
@@ -167,7 +175,24 @@ def subjects_typo(text, names):
             first = n.lower().split()[0]
             if n not in hit and questions.close(w[:len(first) + 1], first, 0.75):
                 hit.append(n)
+        for alias, full in timetable.ALIASES.items():  # «физрв» ~ «физра» = физкультура
+            if len(alias) >= 5 and questions.close(w[:len(alias) + 1], alias, 0.8):
+                hit += [n for n in names if timetable.same_subject(n, full) and n not in hit]
     return hit
+
+
+UNKNOWN_SUBJECT = re.compile(r"(?:\bпо|\bкогда|\bгде|\bкакой кабинет у|\bкабинет)\s+([а-яё\-]{3,})", re.I)
+NOT_SUBJECT = {"завтра", "сегодня", "послезавтра", "нас", "урок", "урока", "уроки", "следующий", "следующего", "будет",
+               "первый", "второй", "ближайший", "мне", "идти", "кабинет", "какому", "какой", "дз"}
+
+
+def unknown_subject(text):
+    """Слово на месте предмета («когда физрв», «что по матеше»), которое не узнали, или None."""
+    m = UNKNOWN_SUBJECT.search(text)
+    w = m and m.group(1).lower()
+    if not w or w in NOT_SUBJECT or questions.parse_day(w, NOW().date()):
+        return None
+    return w
 
 
 def resolve(d, it):
@@ -253,7 +278,8 @@ def answer_question(intent, cid, day=None, subject=None):
         if not les:
             return f"{when(d, today).capitalize()} ({day_label(d.isoformat())}) уроков нет." if d in (
                 today, today + timedelta(days=1)) else f"В {day_label(d.isoformat())} уроков нет."
-        return f"{when(d, today).capitalize()}, {day_label(d.isoformat())}:\n" + "\n".join(lesson_line(l) for l in les)
+        head = when(d, today).capitalize() + (f", {day_label(d.isoformat())}" if d <= today + timedelta(days=1) else "")
+        return f"{head}:\n" + "\n".join(lesson_line(l) for l in les)
     if intent == "next":
         if day:
             l = next((x for x in lessons_now(cid, day) if subject is None or timetable.same_subject(x["subject_name"], subject)), None)
@@ -291,7 +317,8 @@ def answer_question(intent, cid, day=None, subject=None):
     hw = [l for l in les if hw_text(l)]
     if not hw:
         return f"На {when(d, today)} домашки пока нет."
-    return f"ДЗ на {when(d, today)}:\n\n" + "\n\n".join(f"{l['subject_name']}: {hw_text(l)}" for l in hw)
+    lines = list(dict.fromkeys(f"{l['subject_name']}: {hw_text(l)}" for l in hw))  # сдвоенный урок — одно ДЗ, один раз
+    return f"ДЗ на {when(d, today)}:\n\n" + "\n\n".join(lines)
 
 
 def answer_menu(button, cid):
@@ -322,6 +349,8 @@ def preview(d):
             if it.get("date_source"):
                 head += " (ближайший)"
         lines += [head, f"   {it['summary']}"]
+        if i == 0 and d.get("names"):
+            lines.append("   📎 " + ", ".join(d["names"]))
         if it.get("problem") == "date":
             if it.get("date"):
                 lines.append(f"   ⚠️ {day_label(it['date'])} нет урока «{it['subject']}». Выбери день:")
@@ -357,6 +386,61 @@ def quick(m, subjects):
     return [x for x in REFINE(m, [{"quote": text, "type": kind, "summary": text}]) if x.get("type") in KINDS]
 
 
+PREP = {"в", "во", "к", "ко", "на", "до", "по"}
+FILLER = re.compile(r"^(дз|домашк\w*|домашнее|задани[ея]|задали|задано|задал[аи]?)$")
+
+
+def subject_word(words, i, subjects):
+    """Сколько слов с позиции i — название предмета: «алгебре» 1, «английский язык» 2, «химические» 0.
+    Строже, чем subjects_in: формы слова и опечатки, но не однокоренные («геометрическая»)."""
+    w = words[i]
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    for s in subjects:
+        parts = s.lower().split()
+        if timetable.ALIASES.get(w) and timetable.same_subject(s, timetable.ALIASES[w]):
+            return 2 if len(parts) > 1 and nxt[:4] == parts[1][:4] else 1
+        if any(len(a) >= 5 and len(w) == len(a) and sum(x != y for x, y in zip(w, a)) == 1  # «физрв»
+               and f.split()[0] != a and timetable.same_subject(s, f) for a, f in timetable.ALIASES.items()):
+            return 1
+        first = parts[0]
+        form = w.startswith(first[:-1]) and len(w) <= len(first) + 1 or len(w) >= 5 and abs(len(w) - len(first)) <= 1 \
+            and questions.close(w, first, 0.8)
+        if form and len(parts) == 1:
+            return 1
+        if form and nxt[:4] == parts[1][:4]:
+            return 2
+    return 0
+
+
+def task_only(text, subjects):
+    """Само задание без предмета и дня: «геометрия в чт 12 номер» -> «12 номер». Предмет и дата и так
+    есть у урока, в тексте ДЗ они лишние. Предмет режем только в начале или после «по», чтобы не трогать
+    «химические реакции». Если вырезать нечего или ничего не осталось — текст как был."""
+    today = NOW().date()
+    raw = text.split()
+    cores = [re.sub(r"[^а-яё0-9.]", "", w.lower()).strip(".") for w in raw]
+    keep, dropped, skip = [], False, 0
+    for i, (w, core) in enumerate(zip(raw, cores)):
+        if skip:
+            skip -= 1
+            continue
+        word = bool(re.fullmatch(r"[а-яё]+", core))
+        n = word and (not keep or keep[-1].lower() == "по") and subject_word(cores, i, subjects)
+        drop = bool(core) and bool(n or FILLER.match(core) or word and questions.parse_day(core, today)
+                                   or re.fullmatch(r"\d{1,2}\.\d{1,2}", core)
+                                   or not keep and re.fullmatch(r"(?:8|9|10|11|2\d|20\d\d)[а-яё]", core))
+        if drop:
+            dropped, skip = True, max(n - 1, 0)
+            while keep and keep[-1].lower().strip(",:") in PREP:
+                keep.pop()
+        else:
+            keep.append(w)
+    while keep and keep[-1].lower() in PREP:
+        keep.pop()
+    out = " ".join(keep).strip(" ,.:;—-")
+    return out if dropped and len(out) >= 2 else text
+
+
 def understand(m, cls, subjects):
     """Находки ДЗ/контрольных из текста. Модель недоступна или ничего не нашла — всё сообщение одно ДЗ."""
     chat = f"Личные сообщения боту, {cls}" + (f" {subjects[0]}" if len(subjects) == 1 else "")
@@ -373,7 +457,7 @@ def understand(m, cls, subjects):
         quote = (it.get("quote") or "").strip()
         text = quote if len(quote) >= len(it.get("summary") or "") / 2 else it.get("summary") or quote
         cand = subjects_in(quote, subjects) or subjects  # в одном сообщении могут быть два предмета
-        out.append({"type": it["type"], "summary": (text or m["text"])[:500], "quote": quote,
+        out.append({"type": it["type"], "summary": task_only(text or m["text"], subjects)[:500], "quote": quote,
                     "date": it.get("date"), "subject": cand[0] if len(cand) == 1 else None})
     return out
 
@@ -387,20 +471,73 @@ def on_message(msg):
         tg("sendMessage", chat_id=msg["chat"]["id"], text="Сервер сейчас недоступен, пришли задание чуть позже.")
 
 
+def files_of(msg):
+    """[(file_id, имя)] вложений сообщения: документ или самое крупное фото."""
+    if msg.get("document"):
+        return [(msg["document"]["file_id"], msg["document"].get("file_name") or "файл")]
+    if msg.get("photo"):
+        return [(msg["photo"][-1]["file_id"], "фото.jpg")]
+    return []
+
+
+def fetch_files(msg):
+    """Скачивает вложения сообщения. -> ([пути], [имена для черновика])."""
+    paths, names = [], []
+    for fid, name in files_of(msg):
+        p = attachments.download(API, fid, Path(FILES_DIR) / str(msg["chat"]["id"]), f"{msg['message_id']}_{name}")
+        if p:
+            paths.append(str(p))
+            names.append(name)
+    return paths, names
+
+
+def _on_file(msg, chat_id):
+    """Файл или фото без подписи: добавить к черновику того же альбома или ждать сообщения с заданием."""
+    paths, names = fetch_files(msg)
+    if not paths:
+        tg("sendMessage", chat_id=chat_id, text="Не смог скачать файл (Telegram отдаёт ботам файлы до 20 МБ).")
+        return
+    group = msg.get("media_group_id")
+    drafts = load()
+    d = next((x for x in reversed(list(drafts.values())) if group and x.get("group") == group and x["tg"] == chat_id), None)
+    if d and d["status"] == "draft":  # остальные фото альбома, подпись была у первого
+        d["files"] = d.get("files", []) + paths
+        d["names"] = d.get("names", []) + names
+        body, kb = preview(d)
+        tg("editMessageText", chat_id=chat_id, message_id=d["preview"], text=body, reply_markup=kb)
+        save(drafts)
+        return
+    if d:
+        print(f"ЛС: фото альбома пришло после «{d['status']}», не прикладываю")
+        return
+    p = _pending.get(chat_id)
+    fresh = p and time.time() - p["at"] < PENDING
+    _pending[chat_id] = {"files": (p["files"] if fresh else []) + paths, "names": (p["names"] if fresh else []) + names,
+                         "at": time.time(), "group": group}
+    if fresh and group and p.get("group") == group:
+        return  # про этот альбом уже ответили
+    tg("sendMessage", chat_id=chat_id, text="📎 Файл получил. Теперь напиши, что это за задание: предмет и к какому дню,"
+       " например «физика к пятнице». Приложу файл к этому ДЗ.")
+
+
 def _on_message(msg):
     chat_id, text = msg["chat"]["id"], (msg.get("text") or msg.get("caption") or "").strip()
-    if not text or text.startswith("/") or text == B_ADD:
+    has_files = bool(files_of(msg))
+    if not has_files and (not text or text.startswith("/") or text == B_ADD):
         _menu_shown.add(chat_id)
         tg("sendMessage", chat_id=chat_id, reply_markup=MENU, text=(
             "Пришли сюда домашку текстом, например: «физика к пятнице §12, № 5–7». Я найду урок в расписании и запишу"
             " задание от твоего имени. Учителю нужно написать и класс: «11Б физика к пятнице …»."
-            + ("\nФайлы и фото пока не принимаю, только текст." if not text and (msg.get("document") or msg.get("photo")) else "")
-            + "\nКнопки внизу: домашка на завтра, расписание на сегодня и где следующий урок."))
+            "\nМожно приложить файл или фото: подпиши, что это за задание, или напиши задание следующим сообщением."
+            "\nКнопки внизу: домашка на завтра, расписание на сегодня и где следующий урок."))
         return
     user = user_of(msg["from"]["id"])
     if not user:
         print(f"ЛС: Telegram id {msg['from']['id']} не привязан к пользователю (нет входа в основном боте)")
         tg("sendMessage", chat_id=chat_id, text=login_hint())
+        return
+    if has_files and not text:
+        _on_file(msg, chat_id)
         return
     if text in (B_HW, B_TODAY, B_NEXT):
         _menu_shown.add(chat_id)
@@ -410,7 +547,9 @@ def _on_message(msg):
             reply = answer_menu(text, user["class_id"])
         tg("sendMessage", chat_id=chat_id, text=reply, reply_markup=MENU)
         return
-    if user["role"] == "student" and user.get("class_id") and _question(msg, chat_id, text, user["class_id"]):
+    waiting = _pending.get(chat_id) and time.time() - _pending[chat_id]["at"] < PENDING
+    if user["role"] == "student" and user.get("class_id") and not has_files and not waiting \
+            and _question(msg, chat_id, text, user["class_id"]):  # к файлу пишут задание, а не вопрос
         return
     if user["role"] == "student":
         cid = user.get("class_id")
@@ -449,6 +588,11 @@ def _question(msg, chat_id, text, cid):
     if not found and q.get("subject"):
         found = [n for n in names if timetable.same_subject(n, q["subject"])]
     day = questions.parse_day(text, NOW().date()) or (q.get("day") and questions.parse_day(q["day"], NOW().date()))
+    odd = not found and q["intent"] in ("homework", "next") and unknown_subject(text)
+    if odd:  # спросили про предмет, который не узнали: не отвечаем про «любой урок»
+        tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
+           text=f"Не понял предмет «{odd}». Предметы класса: " + ", ".join(sorted(names)) + ".")
+        return True
     print(f"ЛС: вопрос {q['intent']} ({q['by']}), день {day}, предмет {found[:1]}")
     tg("sendMessage", chat_id=chat_id, text=answer_question(q["intent"], cid, day, found[0] if found else None),
        reply_markup=MENU)
@@ -488,6 +632,13 @@ def _draft(msg, chat_id, text, user, cls, cid):
     d = {"id": secrets.token_hex(4), "tg": chat_id, "msg_id": msg["message_id"], "posted": posted,
          "user": user, "cls": cls, "cid": cid, "subjects": names, "status": "draft",
          "items": understand(m, cls, subjects_in(text, names) or subjects_typo(text, names))}
+    p = _pending.pop(chat_id, None)
+    if p and time.time() - p["at"] < PENDING:  # файлы, присланные до задания
+        d["files"], d["names"] = p["files"], p["names"]
+    if files_of(msg):
+        paths, fnames = fetch_files(msg)
+        d["files"], d["names"] = d.get("files", []) + paths, d.get("names", []) + fnames
+        d["group"] = msg.get("media_group_id")
     for it in d["items"]:
         resolve(d, it)
     body, kb = preview(d)
@@ -495,7 +646,7 @@ def _draft(msg, chat_id, text, user, cls, cid):
     drafts = load()
     drafts[d["id"]] = d
     save(drafts)
-    if chat_id not in _menu_shown:  # человек сразу прислал ДЗ и ещё не видел кнопок внизу
+    if chat_id not in _menu_shown and user["role"] == "student":  # прислал ДЗ сразу и ещё не видел кнопок (они для учеников)
         _menu_shown.add(chat_id)
         tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
            text="Внизу кнопки: домашка на завтра, расписание на сегодня и где следующий урок.")
@@ -545,7 +696,8 @@ def item_for(d, i, it):
             "class": d["cls"], "subject": it["lesson"]["subject"], "due_lesson": {"start": it["lesson"]["start"]},
             "via": "dm", "author_user_id": u["user_id"], "author_role": u["role"], "author_login": u["login"],
             "chat": f"личные сообщения боту ({u['role']} {u['login']})", "message_id": f"{d['msg_id']}.{i}",
-            "sent_at": d["posted"], "posted": d["posted"][:10], "notify": d["tg"], "status": "new"}
+            "sent_at": d["posted"], "posted": d["posted"][:10], "notify": d["tg"], "status": "new",
+            **({"file_paths": d["files"], "files": d["names"]} if i == 0 and d.get("files") else {})}
 
 
 def submit(d):

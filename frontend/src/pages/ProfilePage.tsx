@@ -2,10 +2,11 @@ import React, {useState} from 'react';
 import type {FormEvent} from 'react';
 import {useEffect} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {fetchSchoolClasses} from '../api';
+import {fetchSchoolClasses, getSchoolClassLabel} from '../api';
 import type {SchoolClassDto} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
+import NotificationsSettings from '../components/NotificationsSettings';
 import '../css/index.css';
 import '../css/RegisterPage.css';
 
@@ -54,12 +55,12 @@ const ProfilePage: React.FC = () => {
         };
     }, [user?.schoolClass]);
 
-    const handleLogout = () => {
-        logout();
+    const handleLogout = async () => {
+        await logout();
         navigate('/main');
     };
 
-    const handleSave = (event: FormEvent<HTMLFormElement>) => {
+    const handleSave = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const value = schoolClassId.trim();
         if (!value) {
@@ -69,7 +70,7 @@ const ProfilePage: React.FC = () => {
         }
 
         try {
-            updateSchoolClass(value);
+            await updateSchoolClass(value);
             setError('');
             setSaved(true);
         } catch (saveError) {
@@ -104,7 +105,7 @@ const ProfilePage: React.FC = () => {
                                         <option value="">Выберите класс</option>
                                         {classes.map((schoolClass) => (
                                             <option key={schoolClass.id} value={schoolClass.id}>
-                                                {schoolClass.name}
+                                                {getSchoolClassLabel(schoolClass)}
                                             </option>
                                         ))}
                                     </select>
@@ -117,6 +118,7 @@ const ProfilePage: React.FC = () => {
                                     Сохранить класс
                                 </button>
                             </form>
+                            <NotificationsSettings/>
                             <button className="register-form__submit" onClick={handleLogout} type="button">
                                 Выйти
                             </button>

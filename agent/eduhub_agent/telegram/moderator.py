@@ -127,7 +127,8 @@ def card(kind, x, parent):
             head = "✏️ Изменилось: " + head.split(" ", 1)[1].lower()
         title = x["title"] + (f" — {x['speaker']}" if x.get("speaker") else "")
         lines = [f"{head}\n<b>{h(title)}</b>", f"Когда: {h(when(x))}"]
-        for k, name in (("place", "Где"), ("audience", "Для кого"), ("registration_deadline", "Регистрация до")):
+        for k, name in (("place", "Где"), ("audience", "Для кого"), ("registration_deadline", "Регистрация до"),
+                        ("files", "📎 Файлы")):
             if x.get(k):
                 lines.append(f"{name}: {h(str(x[k]))}")
         if x.get("status") == "changed" and x.get("changes"):

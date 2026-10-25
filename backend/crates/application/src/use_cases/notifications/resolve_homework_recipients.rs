@@ -45,10 +45,12 @@ impl ResolveHomeworkRecipientsUseCase {
 
     pub async fn execute(&self, homework_id: Uuid) -> Result<Vec<Uuid>, DomainError> {
         let homework = self.homeworks.get_by_id(homework_id).await?;
-        let instance = self
-            .lesson_instances
-            .get_by_id(homework.lesson_instance_id)
-            .await?;
+        self.for_lesson_instance(homework.lesson_instance_id).await
+    }
+
+    /// Students of the lesson — also works after its homework was deleted.
+    pub async fn for_lesson_instance(&self, lesson_instance_id: Uuid) -> Result<Vec<Uuid>, DomainError> {
+        let instance = self.lesson_instances.get_by_id(lesson_instance_id).await?;
         let template = self
             .lesson_templates
             .get_by_id(instance.template_id)
@@ -135,7 +137,7 @@ mod tests {
             unimplemented!()
         }
 
-        async fn remove_file(&self, _file_id: Uuid) -> Result<(), DomainError> {
+        async fn remove_file(&self, _file_id: Uuid) -> Result<domain::entities::homework::HomeworkFile, DomainError> {
             unimplemented!()
         }
 

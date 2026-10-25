@@ -4,6 +4,7 @@ use application::use_cases::schedule::ScheduleService;
 use async_trait::async_trait;
 use chrono::NaiveDate;
 use domain::entities::cabinet::Cabinet;
+use domain::entities::class::Class;
 use domain::entities::homework::{Homework, HomeworkFile};
 use domain::entities::lesson::Lesson;
 use domain::entities::lesson_instance::LessonInstance;
@@ -14,6 +15,7 @@ use domain::entities::subject::Subject;
 use domain::entities::user::User;
 use domain::errors::DomainError;
 use domain::repositories::cabinet_repository::CabinetRepository;
+use domain::repositories::class_repository::ClassRepository;
 use domain::repositories::homework_repository::HomeworkRepository;
 use domain::repositories::lesson_instance_repository::LessonInstanceRepository;
 use domain::repositories::lesson_repository::LessonRepository;
@@ -22,6 +24,7 @@ use domain::repositories::schedule_week_repository::ScheduleWeekRepository;
 use domain::repositories::student_group_repository::StudentGroupRepository;
 use domain::repositories::subject_repository::SubjectRepository;
 use domain::repositories::user_repository::UserRepository;
+use domain::value_objects::class_letter::ClassLetter;
 use domain::value_objects::day_of_week::DayOfWeek;
 use std::future::Future;
 use std::pin::Pin;
@@ -143,8 +146,8 @@ impl LessonTemplateRepository for MockRepositories {
             .cloned()
             .ok_or(DomainError::LessonTemplateNotFound)
     }
-    async fn get_by_lesson(&self, _: Uuid) -> Result<Vec<LessonTemplate>, DomainError> {
-        Ok(Vec::new())
+    async fn get_by_lesson(&self, lesson_id: Uuid) -> Result<Vec<LessonTemplate>, DomainError> {
+        Ok(self.templates.iter().filter(|t| t.lesson_id == lesson_id).cloned().collect())
     }
     async fn get_active_for_day(&self, _: DayOfWeek) -> Result<Vec<LessonTemplate>, DomainError> {
         Ok(Vec::new())
@@ -169,11 +172,11 @@ impl LessonRepository for MockRepositories {
     async fn save(&self, _: Lesson) -> Result<Lesson, DomainError> {
         Err(DomainError::LessonNotFound)
     }
-    async fn get_by_class(&self, _: Uuid) -> Result<Vec<Lesson>, DomainError> {
-        Ok(Vec::new())
+    async fn get_by_class(&self, class_id: Uuid) -> Result<Vec<Lesson>, DomainError> {
+        Ok(self.lessons.iter().filter(|l| l.is_active && l.class_id() == Some(class_id)).cloned().collect())
     }
-    async fn get_by_group(&self, _: Uuid) -> Result<Vec<Lesson>, DomainError> {
-        Ok(Vec::new())
+    async fn get_by_group(&self, group_id: Uuid) -> Result<Vec<Lesson>, DomainError> {
+        Ok(self.lessons.iter().filter(|l| l.is_active && l.group_id() == Some(group_id)).cloned().collect())
     }
     async fn get_by_teacher(&self, _: Uuid) -> Result<Vec<Lesson>, DomainError> {
         Ok(Vec::new())
@@ -293,7 +296,7 @@ impl HomeworkRepository for MockRepositories {
     async fn add_file(&self, _: HomeworkFile) -> Result<HomeworkFile, DomainError> {
         Err(DomainError::HomeworkFileNotFound)
     }
-    async fn remove_file(&self, _: Uuid) -> Result<(), DomainError> {
+    async fn remove_file(&self, _: Uuid) -> Result<HomeworkFile, DomainError> {
         Err(DomainError::HomeworkFileNotFound)
     }
     async fn delete(&self, _: Uuid) -> Result<(), DomainError> {
@@ -308,9 +311,27 @@ impl HomeworkRepository for MockRepositories {
     }
 }
 
+/// Every class exists and is called "2027б": tests only need a name for `target_name`.
+#[async_trait]
+impl ClassRepository for MockRepositories {
+    async fn get_by_id(&self, id: Uuid) -> Result<Class, DomainError> {
+        Class::try_new(id, 2027, ClassLetter::B, true)
+    }
+    async fn get_active_by_year(&self, _: i32) -> Result<Vec<Class>, DomainError> {
+        Ok(Vec::new())
+    }
+    async fn get_all_active(&self) -> Result<Vec<Class>, DomainError> {
+        Ok(Vec::new())
+    }
+    async fn save(&self, class: Class) -> Result<Class, DomainError> {
+        Ok(class)
+    }
+}
+
 pub fn service_with(weeks: Vec<ScheduleWeek>) -> ScheduleService {
     let r = Arc::new(MockRepositories::with_weeks(weeks));
     ScheduleService::new(
+        r.clone(),
         r.clone(),
         r.clone(),
         r.clone(),
@@ -334,6 +355,7 @@ pub fn service_with_personal_schedule(
         student, instances, templates, lessons, subjects,
     ));
     ScheduleService::new(
+        r.clone(),
         r.clone(),
         r.clone(),
         r.clone(),

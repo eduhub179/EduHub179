@@ -1,163 +1,58 @@
-//! Axum router for the HTTP API.
-//!
-//! This is the initial MVP. It exposes health, auth routes, and schedule routes.
+use std::sync::Arc;
 
 use application::use_cases::{
-    auth::login::{LoginCommand, LoginUseCase},
+    admin::{AdminService, TimetableService},
+    auth::{login::LoginUseCase, OneTimeCodeService},
     homework::{
-        create_homework::{CreateHomeworkCommand, CreateHomeworkUseCase},
-        update_homework_text::{UpdateHomeworkTextCommand, UpdateHomeworkTextUseCase},
+        attach_file_to_lesson::AttachFileToLessonUseCase,
+        create_homework::CreateHomeworkUseCase,
+        delete_file::DeleteHomeworkFileUseCase,
+        delete_homework::DeleteHomeworkUseCase,
+        download_file::DownloadHomeworkFileUseCase,
+        update_homework_text::UpdateHomeworkTextUseCase,
+        upload_file::MAX_FILE_SIZE,
     },
+    materials::MaterialsService,
+    plusnik::PlusnikService,
     schedule::ScheduleService,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::DefaultBodyLimit,
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
-use chrono::NaiveDate;
 use domain::{
+    entities::user::User,
     errors::DomainError,
+    ports::auth::TokenIssuer,
+    ports::session_security::{SessionTokenGenerator, SessionTokenHasher},
     repositories::{
         class_repository::ClassRepository,
         telegram_bindigs_repository::TelegramBindingRepository,
         user_repository::UserRepository,
+        web_session_repository::WebSessionRepository,
     },
-    value_objects::{homework_status::HomeworkStatus, role::UserRole},
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{str::FromStr, sync::Arc};
-use tower_http::cors::{CorsLayer};
+use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize)]
-pub struct LoginRequest {
-    pub login: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct LoginResponse {
-    pub token: String,
-    pub user: PublicUser,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PublicUser {
-    pub id: String,
-    pub login: String,
-    pub role: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub middle_name: Option<String>,
-    pub is_active: bool,
-    pub class_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateHomeworkRequest {
-    pub lesson_instance_id: String,
-    pub created_by: String,
-    #[serde(default)]
-    pub created_by_role: String,
-    #[serde(default)]
-    pub text_content: Option<String>,
-    #[serde(default)]
-    pub status: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CreateHomeworkResponse {
-    pub id: String,
-    pub lesson_instance_id: String,
-    pub created_by: String,
-    pub created_by_role: String,
-    pub text_content: Option<String>,
-    pub status: String,
-    pub locked_by_teacher: bool,
-    pub last_edited_by: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateHomeworkRequest {
-    pub text_content: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct UpdateHomeworkResponse {
-    pub id: String,
-    pub lesson_instance_id: String,
-    pub created_by: String,
-    pub created_by_role: String,
-    pub text_content: Option<String>,
-    pub status: String,
-    pub locked_by_teacher: bool,
-    pub last_edited_by: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ScheduleWeekQuery {
-    pub date: String,
-    #[serde(default)]
-    pub student_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleWeekResponse {
-    pub week_start_date: String,
-    pub days: Vec<ScheduleDayResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleDayResponse {
-    pub date: String,
-    pub lessons: Vec<ScheduleLessonResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleLessonResponse {
-    pub id: String,
-    pub start_time: String,
-    pub end_time: String,
-    pub subject_name: String,
-    pub teachers: Vec<String>,
-    pub cabinet: Option<String>,
-    pub homework: Option<HomeworkResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct HomeworkResponse {
-    pub id: String,
-    pub text: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ClassListItemResponse {
-    pub id: String,
-    pub graduation_year: i32,
-    pub letter: String,
-    pub name: String,
-    pub is_active: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ClassListResponse {
-    pub classes: Vec<ClassListItemResponse>,
-}
+use crate::routes::notifications::PushNotifications;
+use crate::routes::{
+    admin, auth, classes, files, homework, materials, notifications, plusnik, schedule, telegram,
+    timetable,
+};
 
 #[derive(Debug)]
 pub struct ApiError {
-    status: StatusCode,
-    message: String,
+    pub(crate) status: StatusCode,
+    pub(crate) message: String,
 }
 
 impl ApiError {
-    fn from_auth_domain(error: DomainError) -> Self {
+    pub(crate) fn from_auth_domain(error: DomainError) -> Self {
         let (status, message) = match error {
             DomainError::InvalidCredentials => {
                 (StatusCode::UNAUTHORIZED, "Invalid login or password")
@@ -166,8 +61,16 @@ impl ApiError {
             DomainError::InvalidLoginFormat => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "Invalid login format")
             }
+            DomainError::InvalidEmailFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid email format")
+            }
+            DomainError::InvalidAuthCode => {
+                (StatusCode::UNAUTHORIZED, "Invalid or expired auth code")
+            }
             DomainError::UserNotFound => (StatusCode::UNAUTHORIZED, "Invalid login or password"),
-            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
         };
 
@@ -177,7 +80,7 @@ impl ApiError {
         }
     }
 
-    fn from_schedule_domain(error: DomainError) -> Self {
+    pub(crate) fn from_schedule_domain(error: DomainError) -> Self {
         let (status, message) = match error {
             DomainError::UserNotFound => (StatusCode::NOT_FOUND, "Student not found"),
             DomainError::UserIsInactive => (StatusCode::FORBIDDEN, "User account is inactive"),
@@ -190,7 +93,9 @@ impl ApiError {
             DomainError::InvalidLessonInstanceDate => {
                 (StatusCode::BAD_REQUEST, "Invalid lesson date")
             }
-            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
         };
 
@@ -200,7 +105,7 @@ impl ApiError {
         }
     }
 
-    fn from_homework_domain(error: DomainError) -> Self {
+    pub(crate) fn from_homework_domain(error: DomainError) -> Self {
         let (status, message) = match error {
             DomainError::InvalidHomeworkTextFormat => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "Invalid homework text format")
@@ -212,6 +117,13 @@ impl ApiError {
                 (StatusCode::NOT_FOUND, "Lesson instance not found")
             }
             DomainError::HomeworkNotFound => (StatusCode::NOT_FOUND, "Homework not found"),
+            DomainError::HomeworkFileNotFound => (StatusCode::NOT_FOUND, "File not found"),
+            DomainError::InvalidHomeworkFileFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid file name or type")
+            }
+            DomainError::InvalidHomeworkFileSize => {
+                (StatusCode::PAYLOAD_TOO_LARGE, "File is empty or larger than 100 MB")
+            }
             DomainError::InvalidHomeworkStatus => {
                 (StatusCode::BAD_REQUEST, "Invalid homework status")
             }
@@ -219,7 +131,108 @@ impl ApiError {
             DomainError::InsufficientPermissions => {
                 (StatusCode::FORBIDDEN, "Insufficient permissions")
             }
-            DomainError::InternalError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+            _ => (StatusCode::BAD_REQUEST, "Bad request"),
+        };
+
+        Self {
+            status,
+            message: message.to_string(),
+        }
+    }
+}
+
+impl ApiError {
+    pub(crate) fn from_plusnik_domain(error: DomainError) -> Self {
+        let (status, message) = match error {
+            DomainError::PlusnikSheetNotFound => (StatusCode::NOT_FOUND, "Sheet not found"),
+            DomainError::PlusnikTaskNotFound => (StatusCode::NOT_FOUND, "Task not found"),
+            DomainError::LessonNotFound => (StatusCode::NOT_FOUND, "Lesson not found"),
+            DomainError::ClassNotFound => (StatusCode::NOT_FOUND, "Class not found"),
+            DomainError::UserNotFound => (StatusCode::NOT_FOUND, "Student not found"),
+            DomainError::InvalidPlusnikSheetName => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Sheet name must be 1-255 characters")
+            }
+            DomainError::InvalidTaskNumber => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Task number must be 1-20 characters")
+            }
+            DomainError::InvalidSheetStatus => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Status must be draft, published or archived",
+            ),
+            DomainError::PlusnikTaskAlreadyExists => {
+                (StatusCode::CONFLICT, "The sheet already has a task with this number")
+            }
+            DomainError::PlusnikSheetHasRecords => (
+                StatusCode::CONFLICT,
+                "The sheet has pluses and cannot be deleted; archive it instead",
+            ),
+            DomainError::PlusnikTaskHasRecords => {
+                (StatusCode::CONFLICT, "The task has pluses and cannot be deleted")
+            }
+            DomainError::PlusnikSheetNotPublished => {
+                (StatusCode::CONFLICT, "Pluses can be given only on a published sheet")
+            }
+            DomainError::StudentNotInLesson => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "The student is not in this lesson")
+            }
+            DomainError::InsufficientPermissions => {
+                (StatusCode::FORBIDDEN, "Insufficient permissions")
+            }
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
+            _ => (StatusCode::BAD_REQUEST, "Bad request"),
+        };
+
+        Self {
+            status,
+            message: message.to_string(),
+        }
+    }
+}
+
+impl ApiError {
+    pub(crate) fn from_materials_domain(error: DomainError) -> Self {
+        let (status, message) = match error {
+            DomainError::LessonNotFound => (StatusCode::NOT_FOUND, "Course not found"),
+            DomainError::ClassNotFound => (StatusCode::NOT_FOUND, "Class not found"),
+            DomainError::MaterialTopicNotFound => (StatusCode::NOT_FOUND, "Topic not found"),
+            DomainError::MaterialNotFound => (StatusCode::NOT_FOUND, "Material not found"),
+            DomainError::InvalidMaterialTopicName => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Topic name must be 1-255 characters")
+            }
+            DomainError::MaterialTopicAlreadyExists => {
+                (StatusCode::CONFLICT, "The course already has a topic with this name")
+            }
+            DomainError::InvalidMaterialTitle => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Title must be 1-255 characters, description at most 5000",
+            ),
+            DomainError::InvalidMaterialUrl => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Link must be an http(s) URL, at most 2000 characters",
+            ),
+            DomainError::InvalidHomeworkFileFormat => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "Invalid file name or type")
+            }
+            DomainError::InvalidHomeworkFileSize => {
+                (StatusCode::PAYLOAD_TOO_LARGE, "File is empty or larger than 100 MB")
+            }
+            DomainError::MaterialIsNotAFile => {
+                (StatusCode::CONFLICT, "This material is a link, there is no file")
+            }
+            DomainError::FileStorageUnavailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, "File storage is not configured")
+            }
+            DomainError::InsufficientPermissions => {
+                (StatusCode::FORBIDDEN, "Insufficient permissions")
+            }
+            DomainError::InternalError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
             _ => (StatusCode::BAD_REQUEST, "Bad request"),
         };
 
@@ -247,16 +260,67 @@ pub struct AppState {
     pub create_homework_use_case: Option<Arc<CreateHomeworkUseCase>>,
     pub update_homework_use_case: Option<Arc<UpdateHomeworkTextUseCase>>,
     pub class_repository: Option<Arc<dyn ClassRepository>>,
+    pub user_repository: Option<Arc<dyn UserRepository>>,
+    pub one_time_code_service: Option<Arc<OneTimeCodeService>>,
+    pub web_session_repository: Option<Arc<dyn WebSessionRepository>>,
+    pub token_issuer: Option<Arc<dyn TokenIssuer>>,
+    pub session_token_hasher: Option<Arc<dyn SessionTokenHasher>>,
+    pub session_token_generator: Option<Arc<dyn SessionTokenGenerator>>,
     pub telegram_lookup: Option<TelegramLookup>,
+    pub agent_access: Option<AgentAccess>,
+    /// `None` if object storage is not configured (`S3_ENDPOINT` unset): file routes answer 503.
+    pub file_use_cases: Option<FileUseCases>,
+    pub delete_homework_use_case: Option<Arc<DeleteHomeworkUseCase>>,
+    pub plusnik_service: Option<Arc<PlusnikService>>,
+    pub materials_service: Option<Arc<MaterialsService>>,
+    /// `None` if browser push is not configured (`VAPID_PRIVATE_KEY` unset).
+    pub push: Option<PushNotifications>,
+    pub admin_service: Option<Arc<AdminService>>,
+    pub timetable_service: Option<Arc<TimetableService>>,
 }
 
-/// What `GET /api/telegram/users/{telegram_id}` needs: active bindings, users, and the agent key.
+/// Homework file use cases; all of them need object storage.
+#[derive(Clone)]
+pub struct FileUseCases {
+    pub attach_to_lesson: Arc<AttachFileToLessonUseCase>,
+    pub download: Arc<DownloadHomeworkFileUseCase>,
+    pub delete: Arc<DeleteHomeworkFileUseCase>,
+}
+
 #[derive(Clone)]
 pub struct TelegramLookup {
     pub bindings: Arc<dyn TelegramBindingRepository>,
     pub users: Arc<dyn UserRepository>,
-    /// Shared secret of the chat agent (`X-Agent-Key` header). Route is closed when empty.
-    pub agent_key: String,
+}
+
+/// Header with the shared secret of the chat agent (`AGENT_KEY` in backend/.env and agent/.env).
+const AGENT_KEY_HEADER: &str = "x-agent-key";
+/// Optional header: the agent acts as this user (UUID) instead of its own service user,
+/// e.g. for homework a logged-in user sent the bot in DM.
+const AGENT_ON_BEHALF_OF_HEADER: &str = "x-agent-on-behalf-of";
+
+/// Access to the API for the chat agent (Python service in `agent/`), which has no browser session.
+///
+/// Invariant: the key is never empty, so an unset `AGENT_KEY` cannot match a missing header.
+#[derive(Clone)]
+pub struct AgentAccess {
+    key: String,
+    /// Service user the agent acts as by default (created by 0008_create_agent_user.sql).
+    user_id: Uuid,
+}
+
+impl AgentAccess {
+    /// Returns `None` for an empty key: agent access is then off.
+    pub fn new(key: String, user_id: Uuid) -> Option<Self> {
+        (!key.is_empty()).then_some(Self { key, user_id })
+    }
+
+    /// Constant-time comparison, so response timing does not leak the key byte by byte.
+    /// Only the length can leak, which is acceptable for a random secret.
+    fn matches(&self, presented: &str) -> bool {
+        let (a, b) = (self.key.as_bytes(), presented.as_bytes());
+        a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    }
 }
 
 fn cors_layer() -> CorsLayer {
@@ -269,13 +333,168 @@ fn cors_layer() -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(allow_origin)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PATCH])
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+        ])
         .allow_headers([
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
             axum::http::header::HeaderName::from_static("x-internal-secret"),
         ])
         .allow_credentials(true)
+}
+
+fn extract_cookie_value(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
+    let header = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
+
+    header
+        .split(';')
+        .filter_map(|pair| {
+            let mut parts = pair.trim().splitn(2, '=');
+            let name = parts.next()?.trim();
+            let value = parts.next()?.trim();
+            (name == cookie_name).then(|| value.to_string())
+        })
+        .next()
+}
+
+fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn unauthorized(message: &str) -> ApiError {
+    ApiError {
+        status: StatusCode::UNAUTHORIZED,
+        message: message.to_string(),
+    }
+}
+
+/// Checks `X-Agent-Key` for agent-only routes.
+///
+/// # Fail-safe поведение
+/// Returns `Err(401)` if agent access is off, the header is missing or the key is wrong.
+pub(crate) fn require_agent<'a>(
+    state: &'a AppState,
+    headers: &HeaderMap,
+) -> Result<&'a AgentAccess, ApiError> {
+    let agent = state
+        .agent_access
+        .as_ref()
+        .ok_or_else(|| unauthorized("Agent key required"))?;
+    match header_value(headers, AGENT_KEY_HEADER) {
+        Some(key) if agent.matches(key) => Ok(agent),
+        _ => Err(unauthorized("Agent key required")),
+    }
+}
+
+/// Resolves the caller: the chat agent by `X-Agent-Key`, otherwise a web user by the `session` cookie.
+///
+/// # Fail-safe поведение
+/// A present but wrong `X-Agent-Key` is rejected with 401 without falling back to the cookie.
+/// Inactive users (including the one in `X-Agent-On-Behalf-Of`) get 403.
+pub(crate) async fn require_authenticated_user(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<User, ApiError> {
+    require_caller(state, headers).await.map(|caller| caller.user)
+}
+
+/// Authenticated caller of a route.
+pub(crate) struct Caller {
+    /// User the request acts as (for the agent: its service user or `X-Agent-On-Behalf-Of`).
+    pub(crate) user: User,
+    /// True only after a valid `X-Agent-Key`: routes may trust the agent beyond the user's role.
+    pub(crate) is_agent: bool,
+}
+
+/// Who may create, edit and delete homework and its files: teachers, admins, and the
+/// agent (which acts on behalf of whoever sent the homework to the bot).
+pub(crate) fn can_edit_homework(user: &User, is_agent: bool) -> bool {
+    is_agent || user.is_teacher() || user.is_admin()
+}
+
+/// Same as `require_authenticated_user`, but also tells whether the request came from the agent.
+pub(crate) async fn require_caller(state: &AppState, headers: &HeaderMap) -> Result<Caller, ApiError> {
+    if headers.contains_key(AGENT_KEY_HEADER) {
+        let user = authenticate_agent(state, headers).await?;
+        return Ok(Caller { user, is_agent: true });
+    }
+    let user = authenticate_session(state, headers).await?;
+    Ok(Caller { user, is_agent: false })
+}
+
+/// The agent acts as its service user or as the user from `X-Agent-On-Behalf-Of`;
+/// permission checks in handlers then apply to that user as usual.
+async fn authenticate_agent(state: &AppState, headers: &HeaderMap) -> Result<User, ApiError> {
+    let agent = require_agent(state, headers)?;
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+
+    let user_id = match header_value(headers, AGENT_ON_BEHALF_OF_HEADER) {
+        Some(raw) => Uuid::parse_str(raw.trim()).map_err(|_| ApiError {
+            status: StatusCode::BAD_REQUEST,
+            message: "Invalid X-Agent-On-Behalf-Of".to_string(),
+        })?,
+        None => agent.user_id,
+    };
+    let user = match user_repository.get_by_id(user_id).await {
+        Ok(user) => user,
+        Err(DomainError::UserNotFound) => return Err(unauthorized("Unknown agent user")),
+        Err(error) => return Err(ApiError::from_auth_domain(error)),
+    };
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    Ok(user)
+}
+
+async fn authenticate_session(state: &AppState, headers: &HeaderMap) -> Result<User, ApiError> {
+    let web_session_repository =
+        state
+            .web_session_repository
+            .as_ref()
+            .ok_or_else(|| ApiError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "Web session repository not initialized".to_string(),
+            })?;
+    let session_token_hasher = state.session_token_hasher.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Session token hasher not initialized".to_string(),
+    })?;
+    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "User repository not initialized".to_string(),
+    })?;
+
+    let raw_token = extract_cookie_value(headers, "session").ok_or_else(|| ApiError {
+        status: StatusCode::UNAUTHORIZED,
+        message: "Authentication required".to_string(),
+    })?;
+    let token_hash = session_token_hasher
+        .hash_session_token(&raw_token)
+        .map_err(ApiError::from_auth_domain)?;
+    let session = web_session_repository
+        .get_active_by_token_hash(&token_hash)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+    let user = user_repository
+        .get_by_id(session.user_id)
+        .await
+        .map_err(ApiError::from_auth_domain)?;
+
+    if !user.is_active {
+        return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));
+    }
+
+    Ok(user)
 }
 
 pub fn create_app() -> Router {
@@ -289,14 +508,28 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
-        .route("/api/auth/login", post(login_handler))
-        .route("/api/schedule/week", get(schedule_week_handler))
-        .route("/api/schedule/day", get(day_schedule_handler))
-        .route("/api/classes/schedule/week", get(class_schedule_week_handler))
-        .route("/api/classes/schedule/day", get(class_day_schedule_handler))
-        .route("/api/homework", post(create_homework_handler))
-        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
-        .route("/api/classes", get(classes_handler))
+        .route("/api/auth/login", post(auth::login_handler))
+        .route("/api/auth/session/init", post(auth::init_session_handler))
+        .route("/api/auth/logout", post(auth::logout_handler))
+        .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
+        .route("/api/auth/code/send", post(auth::send_auth_code_handler))
+        .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
+        .route("/api/schedule/week", get(schedule::schedule_week_handler))
+        .route("/api/schedule/day", get(schedule::day_schedule_handler))
+        .route(
+            "/api/classes/schedule/week",
+            get(schedule::class_schedule_week_handler),
+        )
+        .route(
+            "/api/classes/schedule/day",
+            get(schedule::class_day_schedule_handler),
+        )
+        .route("/api/homework", post(homework::create_homework_handler))
+        .route(
+            "/api/homework/:homework_id/text",
+            patch(homework::update_homework_text_handler),
+        )
+        .route("/api/classes", get(classes::classes_handler))
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -304,7 +537,21 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             create_homework_use_case: None,
             update_homework_use_case: None,
             class_repository: None,
+            user_repository: None,
+            one_time_code_service: None,
+            web_session_repository: None,
+            token_issuer: None,
+            session_token_hasher: None,
+            session_token_generator: None,
             telegram_lookup: None,
+            agent_access: None,
+            file_use_cases: None,
+            delete_homework_use_case: None,
+            plusnik_service: None,
+            materials_service: None,
+            push: None,
+            admin_service: None,
+            timetable_service: None,
         })
 }
 
@@ -312,13 +559,22 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
-        .route("/api/schedule/week", get(schedule_week_handler))
-        .route("/api/schedule/day", get(day_schedule_handler))
-        .route("/api/classes/schedule/week", get(class_schedule_week_handler))
-        .route("/api/classes/schedule/day", get(class_day_schedule_handler))
-        .route("/api/homework", post(create_homework_handler))
-        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
-        .route("/api/classes", get(classes_handler))
+        .route("/api/schedule/week", get(schedule::schedule_week_handler))
+        .route("/api/schedule/day", get(schedule::day_schedule_handler))
+        .route(
+            "/api/classes/schedule/week",
+            get(schedule::class_schedule_week_handler),
+        )
+        .route(
+            "/api/classes/schedule/day",
+            get(schedule::class_day_schedule_handler),
+        )
+        .route("/api/homework", post(homework::create_homework_handler))
+        .route(
+            "/api/homework/:homework_id/text",
+            patch(homework::update_homework_text_handler),
+        )
+        .route("/api/classes", get(classes::classes_handler))
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: None,
@@ -326,7 +582,21 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             create_homework_use_case: None,
             update_homework_use_case: None,
             class_repository: None,
+            user_repository: None,
+            one_time_code_service: None,
+            web_session_repository: None,
+            token_issuer: None,
+            session_token_hasher: None,
+            session_token_generator: None,
             telegram_lookup: None,
+            agent_access: None,
+            file_use_cases: None,
+            delete_homework_use_case: None,
+            plusnik_service: None,
+            materials_service: None,
+            push: None,
+            admin_service: None,
+            timetable_service: None,
         })
 }
 
@@ -336,20 +606,80 @@ pub fn create_app_with_auth_and_schedule(
     create_homework_use_case: Arc<CreateHomeworkUseCase>,
     update_homework_use_case: Arc<UpdateHomeworkTextUseCase>,
     class_repository: Arc<dyn ClassRepository>,
+    user_repository: Arc<dyn UserRepository>,
+    one_time_code_service: Arc<OneTimeCodeService>,
+    web_session_repository: Arc<dyn WebSessionRepository>,
+    token_issuer: Arc<dyn TokenIssuer>,
+    session_token_hasher: Arc<dyn SessionTokenHasher>,
+    session_token_generator: Arc<dyn SessionTokenGenerator>,
     telegram_lookup: Option<TelegramLookup>,
+    agent_access: Option<AgentAccess>,
+    file_use_cases: Option<FileUseCases>,
+    delete_homework_use_case: Arc<DeleteHomeworkUseCase>,
+    plusnik_service: Arc<PlusnikService>,
+    materials_service: Arc<MaterialsService>,
+    push: Option<PushNotifications>,
+    admin_service: Arc<AdminService>,
+    timetable_service: Arc<TimetableService>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
-        .route("/api/auth/login", post(login_handler))
-        .route("/api/schedule/week", get(schedule_week_handler))
-        .route("/api/schedule/day", get(day_schedule_handler))
-        .route("/api/classes/schedule/week", get(class_schedule_week_handler))
-        .route("/api/classes/schedule/day", get(class_day_schedule_handler))
-        .route("/api/homework", post(create_homework_handler))
-        .route("/api/homework/:homework_id/text", patch(update_homework_text_handler))
-        .route("/api/classes", get(classes_handler))
-        .route("/api/telegram/users/:telegram_id", get(telegram_user_handler))
+        .route("/api/auth/login", post(auth::login_handler))
+        .route("/api/auth/session/init", post(auth::init_session_handler))
+        .route("/api/auth/logout", post(auth::logout_handler))
+        .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
+        .route("/api/auth/code/send", post(auth::send_auth_code_handler))
+        .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
+        .route("/api/schedule/week", get(schedule::schedule_week_handler))
+        .route("/api/schedule/day", get(schedule::day_schedule_handler))
+        .route(
+            "/api/classes/schedule/week",
+            get(schedule::class_schedule_week_handler),
+        )
+        .route(
+            "/api/classes/schedule/day",
+            get(schedule::class_day_schedule_handler),
+        )
+        .route(
+            "/api/teachers/schedule/week",
+            get(schedule::teacher_schedule_week_handler),
+        )
+        .route(
+            "/api/teachers/schedule/day",
+            get(schedule::teacher_schedule_day_handler),
+        )
+        .route("/api/homework", post(homework::create_homework_handler))
+        .route(
+            "/api/homework/:homework_id/text",
+            patch(homework::update_homework_text_handler),
+        )
+        .route(
+            "/api/homework/:homework_id",
+            delete(homework::delete_homework_handler),
+        )
+        .route("/api/classes", get(classes::classes_handler))
+        .route("/api/telegram/users/:telegram_id", get(telegram::telegram_user_handler))
+        .route(
+            "/api/lessons/:lesson_instance_id/files",
+            // Axum's default body limit is 2 MB; files may be up to MAX_FILE_SIZE
+            // (+1 MB for multipart headers). The exact size is checked by the use case.
+            post(files::attach_file_to_lesson_handler).layer(DefaultBodyLimit::max(
+                usize::try_from(MAX_FILE_SIZE).unwrap_or(usize::MAX).saturating_add(1024 * 1024),
+            )),
+        )
+        .route(
+            "/api/homework/:homework_id/files/:file_id",
+            get(files::download_homework_file_handler),
+        )
+        .route(
+            "/api/homework/files/:file_id",
+            delete(files::delete_homework_file_handler),
+        )
+        .merge(plusnik_routes())
+        .merge(materials_routes())
+        .merge(notification_routes())
+        .merge(admin_routes())
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),
@@ -357,449 +687,145 @@ pub fn create_app_with_auth_and_schedule(
             create_homework_use_case: Some(create_homework_use_case),
             update_homework_use_case: Some(update_homework_use_case),
             class_repository: Some(class_repository),
+            user_repository: Some(user_repository),
+            one_time_code_service: Some(one_time_code_service),
+            web_session_repository: Some(web_session_repository),
+            token_issuer: Some(token_issuer),
+            session_token_hasher: Some(session_token_hasher),
+            session_token_generator: Some(session_token_generator),
             telegram_lookup,
+            agent_access,
+            file_use_cases,
+            delete_homework_use_case: Some(delete_homework_use_case),
+            plusnik_service: Some(plusnik_service),
+            materials_service: Some(materials_service),
+            push,
+            admin_service: Some(admin_service),
+            timetable_service: Some(timetable_service),
         })
+}
+
+fn notification_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/notifications/vapid-public-key",
+            get(notifications::vapid_public_key_handler),
+        )
+        .route(
+            "/api/notifications/subscriptions",
+            post(notifications::subscribe_handler).delete(notifications::unsubscribe_handler),
+        )
+}
+
+fn admin_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/announcements", get(admin::my_announcements_handler))
+        .route(
+            "/api/admin/users",
+            get(admin::list_users_handler).post(admin::create_user_handler),
+        )
+        .route("/api/admin/users/:user_id", patch(admin::update_user_handler))
+        .route("/api/admin/users/:user_id/password", put(admin::set_password_handler))
+        .route(
+            "/api/admin/cabinets",
+            get(admin::cabinets_handler).post(admin::create_cabinet_handler),
+        )
+        .route("/api/admin/lessons/:instance_id", patch(admin::update_lesson_handler))
+        .route(
+            "/api/admin/weeks",
+            get(admin::weeks_handler).post(admin::create_week_handler),
+        )
+        .route("/api/admin/weeks/:week_start_date", patch(admin::update_week_handler))
+        .route(
+            "/api/admin/announcements",
+            get(admin::list_announcements_handler).post(admin::create_announcement_handler),
+        )
+        .route(
+            "/api/admin/announcements/:announcement_id",
+            put(admin::update_announcement_handler).delete(admin::delete_announcement_handler),
+        )
+        .route(
+            "/api/admin/subjects",
+            get(timetable::subjects_handler).post(timetable::create_subject_handler),
+        )
+        .route("/api/admin/groups", get(timetable::groups_handler))
+        .route(
+            "/api/admin/classes/:class_id/timetable",
+            get(timetable::class_timetable_handler),
+        )
+        .route("/api/admin/courses", post(timetable::create_course_handler))
+        .route(
+            "/api/admin/courses/:course_id/teachers",
+            put(timetable::set_course_teachers_handler),
+        )
+        .route("/api/admin/slots", post(timetable::add_slot_handler))
+        .route(
+            "/api/admin/slots/:slot_id",
+            put(timetable::update_slot_handler).delete(timetable::remove_slot_handler),
+        )
+        .route(
+            "/api/admin/lessons",
+            get(admin::lessons_handler).post(timetable::add_one_off_handler),
+        )
+        .route(
+            "/api/admin/lessons/:instance_id/move",
+            post(timetable::move_lesson_handler),
+        )
+}
+
+fn materials_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/courses", get(materials::class_courses_handler))
+        .route("/api/courses/:lesson_id", get(materials::course_handler))
+        .route(
+            "/api/courses/:lesson_id/material-topics",
+            get(materials::topics_handler).post(materials::create_topic_handler),
+        )
+        .route(
+            "/api/material-topics/:topic_id",
+            patch(materials::update_topic_handler).delete(materials::delete_topic_handler),
+        )
+        .route("/api/courses/:lesson_id/materials", get(materials::materials_handler))
+        .route("/api/courses/:lesson_id/materials/links", post(materials::add_link_handler))
+        .route(
+            "/api/courses/:lesson_id/materials/files",
+            // Files up to MAX_FILE_SIZE (+1 MB for multipart headers and text fields).
+            post(materials::upload_file_handler).layer(DefaultBodyLimit::max(
+                usize::try_from(MAX_FILE_SIZE).unwrap_or(usize::MAX).saturating_add(1024 * 1024),
+            )),
+        )
+        .route(
+            "/api/materials/:material_id",
+            patch(materials::update_material_handler).delete(materials::delete_material_handler),
+        )
+        .route("/api/materials/:material_id/file", get(materials::download_material_handler))
+}
+
+fn plusnik_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/plusnik/me", get(plusnik::student_progress_handler))
+        .route("/api/plusnik/lessons", get(plusnik::teacher_lessons_handler))
+        .route(
+            "/api/plusnik/lessons/:lesson_id/sheets",
+            get(plusnik::lesson_sheets_handler).post(plusnik::create_sheet_handler),
+        )
+        .route(
+            "/api/plusnik/sheets/:sheet_id",
+            patch(plusnik::update_sheet_handler).delete(plusnik::delete_sheet_handler),
+        )
+        .route("/api/plusnik/sheets/:sheet_id/matrix", get(plusnik::sheet_matrix_handler))
+        .route("/api/plusnik/sheets/:sheet_id/tasks", post(plusnik::add_task_handler))
+        .route("/api/plusnik/tasks/:task_id", delete(plusnik::delete_task_handler))
+        .route(
+            "/api/plusnik/tasks/:task_id/pluses/:student_id",
+            put(plusnik::grant_plus_handler).delete(plusnik::revoke_plus_handler),
+        )
 }
 
 async fn health_check() -> Json<Value> {
     Json(json!({
         "status": "ok",
         "service": "eduhub-api"
-    }))
-}
-
-async fn login_handler(
-    State(state): State<AppState>,
-    Json(payload): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, ApiError> {
-    let login_use_case = state.login_use_case.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Login use case not initialized".to_string(),
-    })?;
-
-    let command = LoginCommand::try_new(payload.login, payload.password)
-        .map_err(ApiError::from_auth_domain)?;
-
-    let session = login_use_case
-        .execute(command)
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-
-    Ok(Json(LoginResponse {
-        token: session.token,
-        user: PublicUser {
-            id: session.user.id.to_string(),
-            login: session.user.login,
-            role: session.user.role.to_string(),
-            first_name: session.user.first_name,
-            last_name: session.user.last_name,
-            middle_name: session.user.middle_name,
-            is_active: session.user.is_active,
-            class_id: session.user.class_id.map(|id| id.to_string()),
-        },
-    }))
-}
-
-async fn create_homework_handler(
-    State(state): State<AppState>,
-    Json(payload): Json<CreateHomeworkRequest>,
-) -> Result<Json<CreateHomeworkResponse>, ApiError> {
-    let create_homework_use_case = state.create_homework_use_case.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Create homework use case not initialized".to_string(),
-    })?;
-
-    let lesson_instance_id = Uuid::parse_str(&payload.lesson_instance_id)
-        .map_err(|_| ApiError::from_homework_domain(DomainError::LessonInstanceNotFound))?;
-    let created_by = Uuid::parse_str(&payload.created_by)
-        .map_err(|_| ApiError::from_homework_domain(DomainError::UserNotFound))?;
-    let created_by_role = UserRole::from_str(&payload.created_by_role)
-        .map_err(ApiError::from_homework_domain)?;
-    let status = HomeworkStatus::from_str(&payload.status)
-        .map_err(ApiError::from_homework_domain)?;
-
-    let homework = create_homework_use_case
-        .execute(CreateHomeworkCommand::new(
-            lesson_instance_id,
-            created_by,
-            created_by_role,
-            payload.text_content,
-            status,
-        ))
-        .await
-        .map_err(ApiError::from_homework_domain)?;
-
-    Ok(Json(CreateHomeworkResponse {
-        id: homework.id.to_string(),
-        lesson_instance_id: homework.lesson_instance_id.to_string(),
-        created_by: homework.created_by.to_string(),
-        created_by_role: homework.created_by_role.to_string(),
-        text_content: homework.text_content,
-        status: homework.status.to_string(),
-        locked_by_teacher: homework.locked_by_teacher,
-        last_edited_by: homework.last_edited_by.map(|id| id.to_string()),
-        created_at: homework.created_at.to_rfc3339(),
-    }))
-}
-
-async fn update_homework_text_handler(
-    State(state): State<AppState>,
-    Path(homework_id): Path<String>,
-    Json(payload): Json<UpdateHomeworkRequest>,
-) -> Result<Json<UpdateHomeworkResponse>, ApiError> {
-    let update_homework_use_case = state.update_homework_use_case.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Update homework use case not initialized".to_string(),
-    })?;
-
-    let homework_uuid = Uuid::parse_str(&homework_id)
-        .map_err(|_| ApiError::from_homework_domain(DomainError::HomeworkNotFound))?;
-
-    let homework = update_homework_use_case
-        .execute(UpdateHomeworkTextCommand::new(homework_uuid, payload.text_content))
-        .await
-        .map_err(ApiError::from_homework_domain)?;
-
-    Ok(Json(UpdateHomeworkResponse {
-        id: homework.id.to_string(),
-        lesson_instance_id: homework.lesson_instance_id.to_string(),
-        created_by: homework.created_by.to_string(),
-        created_by_role: homework.created_by_role.to_string(),
-        text_content: homework.text_content,
-        status: homework.status.to_string(),
-        locked_by_teacher: homework.locked_by_teacher,
-        last_edited_by: homework.last_edited_by.map(|id| id.to_string()),
-        created_at: homework.created_at.to_rfc3339(),
-    }))
-}
-
-async fn schedule_week_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ScheduleWeekQuery>,
-) -> Result<Json<ScheduleWeekResponse>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let student_id = query
-        .student_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .current_week_schedule(student_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let days = response
-        .days
-        .into_iter()
-        .map(|day| ScheduleDayResponse {
-            date: day.date.to_string(),
-            lessons: day
-                .lessons
-                .into_iter()
-                .map(|lesson| ScheduleLessonResponse {
-                    id: lesson.instance.id.to_string(),
-                    start_time: lesson.start_time.format("%H:%M").to_string(),
-                    end_time: lesson.end_time.format("%H:%M").to_string(),
-                    subject_name: lesson.subject.name,
-                    teachers: lesson
-                        .teachers
-                        .into_iter()
-                        .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                        .collect(),
-                    cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(|homework| HomeworkResponse {
-                        id: homework.homework.id.to_string(),
-                        text: homework
-                            .homework
-                            .text_content
-                            .unwrap_or_else(|| String::new()),
-                    }),
-                })
-                .collect(),
-        })
-        .collect();
-
-    Ok(Json(ScheduleWeekResponse {
-        week_start_date: response.week_start_date.to_string(),
-        days,
-    }))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ClassScheduleWeekQuery {
-    pub date: String,
-    #[serde(default)]
-    pub class_id: Option<String>,
-}
-
-async fn class_schedule_week_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ClassScheduleWeekQuery>,
-) -> Result<Json<ScheduleWeekResponse>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let class_id = query
-        .class_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::ClassNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .class_week_schedule(class_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let days = response
-        .days
-        .into_iter()
-        .map(|day| ScheduleDayResponse {
-            date: day.date.to_string(),
-            lessons: day
-                .lessons
-                .into_iter()
-                .map(|lesson| ScheduleLessonResponse {
-                    id: lesson.instance.id.to_string(),
-                    start_time: lesson.start_time.format("%H:%M").to_string(),
-                    end_time: lesson.end_time.format("%H:%M").to_string(),
-                    subject_name: lesson.subject.name,
-                    teachers: lesson
-                        .teachers
-                        .into_iter()
-                        .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                        .collect(),
-                    cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-                    homework: lesson.homework.map(|homework| HomeworkResponse {
-                        id: homework.homework.id.to_string(),
-                        text: homework
-                            .homework
-                            .text_content
-                            .unwrap_or_else(|| String::new()),
-                    }),
-                })
-                .collect(),
-        })
-        .collect();
-
-    Ok(Json(ScheduleWeekResponse {
-        week_start_date: response.week_start_date.to_string(),
-        days,
-    }))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ScheduleDayQuery {
-    pub date: String,
-    #[serde(default)]
-    pub student_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ScheduleDayResponseDto {
-    pub date: String,
-    pub lessons: Vec<ScheduleLessonResponse>,
-}
-
-async fn day_schedule_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ScheduleDayQuery>,
-) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let student_id = query
-        .student_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .day_schedule(student_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let lessons = response
-        .lessons
-        .into_iter()
-        .map(|lesson| ScheduleLessonResponse {
-            id: lesson.instance.id.to_string(),
-            start_time: lesson.start_time.format("%H:%M").to_string(),
-            end_time: lesson.end_time.format("%H:%M").to_string(),
-            subject_name: lesson.subject.name,
-            teachers: lesson
-                .teachers
-                .into_iter()
-                .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                .collect(),
-            cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(|homework| HomeworkResponse {
-                id: homework.homework.id.to_string(),
-                text: homework
-                    .homework
-                    .text_content
-                    .unwrap_or_else(|| String::new()),
-            }),
-        })
-        .collect();
-
-    Ok(Json(ScheduleDayResponseDto {
-        date: response.date.to_string(),
-        lessons,
-    }))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ClassScheduleDayQuery {
-    pub date: String,
-    #[serde(default)]
-    pub class_id: Option<String>,
-}
-
-async fn class_day_schedule_handler(
-    State(state): State<AppState>,
-    Query(query): Query<ClassScheduleDayQuery>,
-) -> Result<Json<ScheduleDayResponseDto>, ApiError> {
-    let date = NaiveDate::parse_from_str(&query.date, "%Y-%m-%d")
-        .map_err(|_| ApiError::from_schedule_domain(DomainError::InvalidLessonInstanceDate))?;
-
-    let class_id = query
-        .class_id
-        .as_deref()
-        .and_then(|id| Uuid::parse_str(id).ok())
-        .ok_or_else(|| ApiError::from_schedule_domain(DomainError::ClassNotFound))?;
-
-    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Schedule service not initialized".to_string(),
-    })?;
-
-    let response = schedule_service
-        .class_day_schedule(class_id, date)
-        .await
-        .map_err(ApiError::from_schedule_domain)?;
-
-    let lessons = response
-        .lessons
-        .into_iter()
-        .map(|lesson| ScheduleLessonResponse {
-            id: lesson.instance.id.to_string(),
-            start_time: lesson.start_time.format("%H:%M").to_string(),
-            end_time: lesson.end_time.format("%H:%M").to_string(),
-            subject_name: lesson.subject.name,
-            teachers: lesson
-                .teachers
-                .into_iter()
-                .map(|teacher| format!("{} {}", teacher.last_name, teacher.first_name))
-                .collect(),
-            cabinet: lesson.cabinet.map(|cabinet| cabinet.number.to_string()),
-            homework: lesson.homework.map(|homework| HomeworkResponse {
-                id: homework.homework.id.to_string(),
-                text: homework
-                    .homework
-                    .text_content
-                    .unwrap_or_else(|| String::new()),
-            }),
-        })
-        .collect();
-
-    Ok(Json(ScheduleDayResponseDto {
-        date: response.date.to_string(),
-        lessons,
-    }))
-}
-
-async fn classes_handler(
-    State(state): State<AppState>,
-) -> Result<Json<ClassListResponse>, ApiError> {
-    let class_repository = state.class_repository.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Class repository not initialized".to_string(),
-    })?;
-
-    let classes = class_repository
-        .get_all_active()
-        .await
-        .map_err(ApiError::from_homework_domain)?;
-
-    let response = ClassListResponse {
-        classes: classes
-            .into_iter()
-            .map(|class| ClassListItemResponse {
-                id: class.id.to_string(),
-                graduation_year: class.graduation_year,
-                letter: class.letter.to_string(),
-                name: class.full_name(),
-                is_active: class.is_active,
-            })
-            .collect(),
-    };
-
-    Ok(Json(response))
-}
-
-#[derive(Debug, Serialize)]
-pub struct TelegramUserResponse {
-    pub user_id: String,
-    pub login: String,
-    pub role: String,
-    pub class_id: Option<String>,
-}
-
-/// Who is writing to the bot: Telegram id -> school user, only for an active binding
-/// (made by the login flow in telegram-adapter). Used by the chat agent to set the homework author.
-/// Requires `X-Agent-Key` equal to `AGENT_KEY`; without it the route answers 404 to everyone.
-async fn telegram_user_handler(
-    State(state): State<AppState>,
-    Path(telegram_id): Path<i64>,
-    headers: HeaderMap,
-) -> Result<Json<TelegramUserResponse>, ApiError> {
-    let not_found = || ApiError {
-        status: StatusCode::NOT_FOUND,
-        message: "Telegram account is not linked".to_string(),
-    };
-    let lookup = state.telegram_lookup.as_ref().ok_or_else(not_found)?;
-    let key = headers.get("x-agent-key").and_then(|v| v.to_str().ok()).unwrap_or("");
-    if lookup.agent_key.is_empty() || key != lookup.agent_key {
-        return Err(ApiError {
-            status: StatusCode::UNAUTHORIZED,
-            message: "Agent key required".to_string(),
-        });
-    }
-
-    let user_id = match lookup.bindings.get_active_user_by_telegram_id(telegram_id).await {
-        Ok(id) => id,
-        Err(DomainError::TelegramBindingNotFound) => return Err(not_found()),
-        Err(e) => return Err(ApiError::from_homework_domain(e)),
-    };
-    let user = match lookup.users.get_by_id(user_id).await {
-        Ok(user) if user.is_active => user,
-        Ok(_) | Err(DomainError::UserNotFound) => return Err(not_found()),
-        Err(e) => return Err(ApiError::from_homework_domain(e)),
-    };
-
-    Ok(Json(TelegramUserResponse {
-        user_id: user.id.to_string(),
-        login: user.login,
-        role: user.role.to_string(),
-        class_id: user.class_id.map(|id| id.to_string()),
     }))
 }
 
@@ -914,7 +940,9 @@ mod tests {
     async fn login_route_works() {
         let user = create_test_user();
         let app = create_app_with_auth(Arc::new(LoginUseCase::new(
-            Arc::new(MockUserRepository { user: Some(user.clone()) }),
+            Arc::new(MockUserRepository {
+                user: Some(user.clone()),
+            }),
             Arc::new(MockCredentialsStore { is_valid: true }),
             Arc::new(MockTokenIssuer {
                 token: "mock_token".to_string(),
@@ -936,5 +964,197 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    const AGENT_KEY: &str = "agent-secret";
+
+    /// Returns an active user with exactly the requested id, so tests see whom the agent acts as.
+    struct EchoUserRepository;
+
+    #[async_trait::async_trait]
+    impl UserRepository for EchoUserRepository {
+        async fn get_by_id(&self, user_id: Uuid) -> Result<User, DomainError> {
+            let mut user = create_test_user();
+            user.id = user_id;
+            Ok(user)
+        }
+
+        async fn get_by_login(&self, _login: &str) -> Result<User, DomainError> {
+            Err(DomainError::UserNotFound)
+        }
+
+        async fn get_active_students_by_class(
+            &self,
+            _class_id: Uuid,
+        ) -> Result<Vec<User>, DomainError> {
+            Ok(vec![])
+        }
+
+        async fn save(&self, _user: User) -> Result<User, DomainError> {
+            unimplemented!()
+        }
+    }
+
+    fn agent_state(agent_user_id: Uuid) -> AppState {
+        AppState {
+            login_use_case: None,
+            schedule_service: None,
+            create_homework_use_case: None,
+            update_homework_use_case: None,
+            class_repository: None,
+            user_repository: Some(Arc::new(EchoUserRepository)),
+            one_time_code_service: None,
+            web_session_repository: None,
+            token_issuer: None,
+            session_token_hasher: None,
+            session_token_generator: None,
+            telegram_lookup: None,
+            agent_access: AgentAccess::new(AGENT_KEY.to_string(), agent_user_id),
+            file_use_cases: None,
+            delete_homework_use_case: None,
+            plusnik_service: None,
+            materials_service: None,
+            push: None,
+            admin_service: None,
+            timetable_service: None,
+        }
+    }
+
+    fn headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(*name, HeaderValue::from_str(value).unwrap());
+        }
+        map
+    }
+
+    /// axum reports overlapping paths only when the router is built: keep homework paths together.
+    #[test]
+    fn homework_routes_do_not_conflict() {
+        async fn ok() {}
+        let _: Router = Router::new()
+            .route("/api/homework/:homework_id", delete(ok))
+            .route("/api/homework/:homework_id/text", patch(ok))
+            .route("/api/homework/:homework_id/files/:file_id", get(ok))
+            .route("/api/homework/files/:file_id", delete(ok));
+    }
+
+    /// Building the router panics on overlapping paths: build the plusnik part in a test.
+    #[test]
+    fn plusnik_routes_do_not_conflict() {
+        let _ = plusnik_routes();
+    }
+
+    /// The whole API in one router: building it panics on any overlapping path.
+    #[test]
+    fn all_feature_routes_do_not_conflict() {
+        async fn ok() {}
+        let _: Router<AppState> = plusnik_routes()
+            .merge(materials_routes())
+            .merge(notification_routes())
+            .merge(admin_routes())
+            .route("/api/lessons/:lesson_instance_id/files", post(ok))
+            .route("/api/homework/:homework_id/files/:file_id", get(ok))
+            .route("/api/homework/files/:file_id", delete(ok))
+            .route("/api/classes/schedule/week", get(ok))
+            .route("/api/teachers/schedule/week", get(ok));
+    }
+
+    #[test]
+    fn homework_editors_are_teachers_admins_and_the_agent() {
+        let with_role = |role: UserRole| {
+            let mut user = create_test_user();
+            user.role = role;
+            user
+        };
+
+        assert!(can_edit_homework(&with_role(UserRole::Teacher), false));
+        assert!(can_edit_homework(&with_role(UserRole::Admin), false));
+        assert!(!can_edit_homework(&with_role(UserRole::Student), false));
+        // The agent may write on behalf of a student who sent homework to the bot.
+        assert!(can_edit_homework(&with_role(UserRole::Student), true));
+    }
+
+    #[test]
+    fn empty_agent_key_disables_agent_access() {
+        assert!(AgentAccess::new(String::new(), Uuid::new_v4()).is_none());
+    }
+
+    #[tokio::test]
+    async fn agent_key_authenticates_as_agent_user() {
+        let agent_user_id = Uuid::new_v4();
+        let state = agent_state(agent_user_id);
+
+        let user = require_authenticated_user(&state, &headers(&[("x-agent-key", AGENT_KEY)]))
+            .await
+            .unwrap();
+
+        assert_eq!(user.id, agent_user_id);
+    }
+
+    #[tokio::test]
+    async fn agent_can_act_on_behalf_of_user() {
+        let state = agent_state(Uuid::new_v4());
+        let author_id = Uuid::new_v4();
+
+        let user = require_authenticated_user(
+            &state,
+            &headers(&[
+                ("x-agent-key", AGENT_KEY),
+                ("x-agent-on-behalf-of", &author_id.to_string()),
+            ]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(user.id, author_id);
+    }
+
+    #[tokio::test]
+    async fn agent_caller_is_marked_as_agent() {
+        let state = agent_state(Uuid::new_v4());
+
+        let caller = require_caller(&state, &headers(&[("x-agent-key", AGENT_KEY)]))
+            .await
+            .unwrap();
+
+        assert!(caller.is_agent);
+    }
+
+    #[tokio::test]
+    async fn wrong_agent_key_is_rejected() {
+        let state = agent_state(Uuid::new_v4());
+
+        let error = require_authenticated_user(&state, &headers(&[("x-agent-key", "wrong")]))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn agent_key_is_rejected_when_agent_access_is_off() {
+        let mut state = agent_state(Uuid::new_v4());
+        state.agent_access = None;
+
+        let error = require_authenticated_user(&state, &headers(&[("x-agent-key", "")]))
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn invalid_on_behalf_of_is_bad_request() {
+        let state = agent_state(Uuid::new_v4());
+
+        let error = require_authenticated_user(
+            &state,
+            &headers(&[("x-agent-key", AGENT_KEY), ("x-agent-on-behalf-of", "not-a-uuid")]),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
     }
 }

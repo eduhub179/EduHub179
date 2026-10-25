@@ -5,7 +5,7 @@ python3 test_ocr_triage.py
   * порог уверенности отделяет печатный текст от рукописного;
   * правило таблиц чисел продолжает работать (иначе таблицы ответов снова станут «фото без текста»);
   * пустое фото не попадает в очередь для будущего движка, рукописное — попадает;
-  * повторное фото берётся из кеша, а не распознаётся заново;
+  * кеша нет: то же фото читается заново (одинаковые байты ≠ одинаковое задание);
   * облачный OCR и модель для картинок объявлены, но выключены (ключей и сети нет).
 """
 import json
@@ -34,14 +34,26 @@ print_text = Reading(text="Первый сплав содержит 10% меди
 handwritten = Reading(text="Яомемикее joparwue", words=45, numbers=3, mean_conf=41.0, psm=3, ms=900, engine="t")
 table = Reading(text="625 12 1:3:5 407", words=2, numbers=14, mean_conf=85.0, psm=3, ms=400, engine="t")
 garbage_nums = Reading(text="45 -37 72 -1 #0 1 2", words=16, numbers=12, mean_conf=35.7, psm=3, ms=400, engine="t")
+table_one_word = Reading(text="Ответы 625 12 1:3:5 407 81 22 9", words=1, numbers=14, mean_conf=88.0,
+                         psm=3, ms=400, engine="t")
 axis = Reading(text="0 5 10 15 20 25 30", words=0, numbers=12, mean_conf=95.0, psm=3, ms=200, engine="t",
                axis_like=True)
 
 check("печатный текст принимается", T.accept(print_text)[0])
 check("рукописное отклоняется", not T.accept(handwritten)[0], T.accept(handwritten)[1])
-check("таблица чисел принимается", T.accept(table)[0], T.accept(table)[1])
+# правило таблиц/осей выключено (TABLE_RULE = False): различать график и таблицу пока не нужно
+check("правило таблиц выключено", T.TABLE_RULE is False)
+check("числовая таблица пока не принимается", not T.accept(table)[0], T.accept(table)[1])
+T.TABLE_RULE = True   # проверяем, что выключенный код рабочий — понадобится, когда включим
+check("при включении правила таблица принимается", T.accept(table)[0], T.accept(table)[1])
+T.TABLE_RULE = False
 check("неразборчивое фото с цифрами отклоняется", not T.accept(garbage_nums)[0], T.accept(garbage_nums)[1])
-check("подписи оси графика отклоняются", not T.accept(axis)[0], T.accept(axis)[1])
+T.TABLE_RULE = True
+check("таблица с одним заголовком принимается", T.accept(table_one_word)[0], T.accept(table_one_word)[1])
+T.TABLE_RULE = False
+check("числа без единого слова — не таблица",
+      not T.accept(Reading(text="625 12 407", words=0, numbers=12, mean_conf=90.0, psm=3, ms=1, engine="t"))[0])
+check("картинка с одними числами не принимается", not T.accept(axis)[0], T.accept(axis)[1])
 check("пустое не принимается", not T.accept(Reading("", 0, 0, 0.0, 3, 10, "t"))[0])
 check("граница порога: 70 берём, 69 нет",
       T.accept(Reading("текст", 10, 0, 70.0, 3, 1, "t"))[0] and not T.accept(Reading("текст", 10, 0, 69.9, 3, 1, "t"))[0])
@@ -55,11 +67,32 @@ text, words, numbers, conf, _axis = P._parse_tsv(TSV)
 check("TSV: слова и строки", words == 2 and text.count("\n") == 1, repr(text))
 check("TSV: уверенность", abs(conf - ((96 + 88 + 0) / 3)) < 0.1, str(conf))
 check("TSV: числа считаются", P._parse_tsv(TSV.replace("задание", "625"))[2] == 1)
-axis_tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\tw\th\tconf\ttext\n" + \
-           "".join(f"5\t1\t1\t1\t1\t{i}\t0\t0\t1\t1\t95.0\t{n}\n" for i, n in enumerate(
-               ["0", "5", "10", "15", "20", "25"], 1))
-check("TSV: ось графика распознаётся", P._parse_tsv(axis_tsv)[4] is True)
-check("TSV: не ось", P._parse_tsv(TSV)[4] is False)
+def tsv_numbers(rows, conf="95.0"):
+    """TSV из чисел: rows — список списков (text, left, top). Размер слова 20x30, уверенность conf."""
+    head = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\tw\th\tconf\ttext\n"
+    out, i = [], 1
+    for r, row in enumerate(rows, 1):
+        for n, (txt, left, top) in enumerate(row, 1):
+            out.append(f"5\t1\t{r}\t1\t1\t{n}\t{left}\t{top}\t20\t30\t{conf}\t{txt}\n")
+            i += 1
+    return head + "".join(out)
+
+
+# ось X: ровные тики на одной высоте, под ними пусто
+x_axis = [[("0", 100, 700), ("5", 270, 700), ("10", 440, 700), ("15", 610, 700),
+           ("20", 780, 700), ("25", 950, 700)]]
+check("TSV: ось X распознаётся", P._parse_tsv(tsv_numbers(x_axis))[4] is True)
+
+# таблица: та же возрастающая строка, но во второй строке числа стоят в тех же колонках
+x_label = [[(t, x, 700) for t, x in zip(["1", "2", "3", "4", "5", "6"], [100, 270, 440, 610, 780, 950])]]
+x_values = [[(t, x, 800) for t, x in zip(["7", "14", "21", "28", "35", "42"], [100, 270, 440, 610, 780, 950])]]
+check("TSV: таблица с возрастающей строкой — не ось", P._parse_tsv(tsv_numbers(x_label + x_values))[4] is False)
+
+# не ось: промежутки неровные
+uneven = [[("0", 100, 700), ("5", 180, 700), ("10", 500, 700), ("15", 540, 700),
+           ("20", 900, 700), ("25", 940, 700)]]
+check("TSV: неровные промежутки — не ось", P._parse_tsv(tsv_numbers(uneven))[4] is False)
+check("TSV: обычный текст — не ось", P._parse_tsv(TSV)[4] is False)
 
 # --- провайдеры ----------------------------------------------------------------------
 ok, why = P.get("local_tesseract").available()
@@ -74,9 +107,8 @@ else:
     from PIL import Image, ImageDraw, ImageFont
 
     tmpdir = Path(tempfile.mkdtemp())
-    T.CHATS = tmpdir
+    T.STATE = tmpdir
     T.QUEUE = tmpdir / "ocr_queue.jsonl"
-    T.CACHE = tmpdir / "ocr_cache.json"
     T._cache = None
 
     def picture(name, draw_text=None):
@@ -97,8 +129,9 @@ else:
     check("печатная картинка прочитана", res.route == "tesseract", f"{res.route}/{res.reason} conf={res.conf}")
     check("текст непустой", bool(res.text and "HOMEWORK" in res.text.upper()), repr((res.text or "")[:60]))
 
+    # кеша нет намеренно: то же фото читается заново, а не отдаётся из памяти
     again = T.read_image(printed)
-    check("повтор берётся из кеша", again.engine.startswith("cache:") and again.ms == 0, again.engine)
+    check("повтор читается заново, а не из кеша", again.engine == "tesseract-5/rus+eng", again.engine)
 
     blank = picture("blank.png")
     res2 = T.read_image(blank)
@@ -111,7 +144,7 @@ else:
     T._queue(printed, handwritten, "рукописное")
     check("очередь: запись появилась", T.queue_size() == 1, str(T.queue_size()))
     T._queue(printed, handwritten, "рукописное")
-    check("очередь: повтор не дублируется", T.queue_size() == 1, str(T.queue_size()))
+    check("очередь: без склейки повторов", T.queue_size() == 2, str(T.queue_size()))
     rows = [json.loads(l) for l in open(T.QUEUE, encoding="utf-8")]
     check("очередь: форма записи", rows[0]["shape"] == "handwriting" and rows[0]["conf"] == 41.0, rows[0]["shape"])
 

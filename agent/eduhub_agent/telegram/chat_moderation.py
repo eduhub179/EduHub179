@@ -47,14 +47,15 @@ def save(p, data):
 
 
 def fields(it):
-    """Что показать на карточке: название, срок, урок, кабинет, класс, цитата, откуда."""
+    """Что показать на карточке: название, срок, урок, кабинет, класс, цитата, откуда, файлы (уйдут в бэкенд вместе с ДЗ)."""
     dl = it.get("due_lesson") or {}
     when = it.get("time") or (f"{dl['num']} урок, {dl['start']}" if dl.get("num") and dl.get("start") else None)
     room = it.get("room") or dl.get("room")
     who = ", ".join(x for x in (it.get("class"), it.get("subject")) if x)
     return {"title": it["summary"], "date": it.get("date"), "time": when, "place": room and f"каб. {room}",
             "audience": who or None, "quote": it.get("quote"),
-            "source": f"чат «{it['chat']}», сообщение #{it['message_id']}"}
+            "source": f"чат «{it['chat']}», сообщение #{it['message_id']}",
+            "files": ", ".join(it["files"]) if it.get("files") and it.get("file_paths") else None}
 
 
 def ref(it):

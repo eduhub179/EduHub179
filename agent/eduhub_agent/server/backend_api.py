@@ -11,21 +11,30 @@ GET /api/classes/schedule/day?date=...&class_id=... Из уроков на да�
 Если сервер недоступен или урок не нашёлся, находка ждёт в api_queue.json и уходит при следующей отправке
 (или командой python3 backend_api.py retry — обёртка в корне agent/).
 
+Файлы. Вложения находки (file_paths: что агент скачал из чата) загружаются к тому же уроку:
+POST /api/lessons/{id}/files. На сдвоенный урок — только к первому. Что загрузили, помнит api_sent.json:
+второй раз тот же файл не грузим, а при переезде на другой урок удаляем со старого (DELETE /api/homework/files/{id}).
+Если хранилище файлов на сервере выключено (503) или файл не подходит (413, 422), текст всё равно записывается.
+
 Настройки (.env):
   API_URL=http://localhost:8080          адрес бэкенда (SERVER_PORT из backend/.env)
   AGENT_USER_ID=<uuid>                   кто записывается автором домашки (created_by)
   AGENT_USER_ROLE=teacher                его роль: student / teacher / admin, как в таблице users
-  AGENT_KEY=<секрет>                     тот же, что AGENT_KEY в backend/.env: по нему бэкенд отвечает, кто пишет боту
+  AGENT_KEY=<секрет>                     тот же, что AGENT_KEY в backend/.env: без него бэкенд не пускает агента (401)
 Без API_URL ничего не отправляется. ДЗ из личных сообщений боту (dm.py) записывается от имени того, кто прислал:
 в находке есть author_user_id и author_role, тогда AGENT_USER_ID не нужен.
 """
 import json
+import mimetypes
+import re
+import uuid
 import sys
 import urllib.error
 import urllib.request
 from datetime import date
+from pathlib import Path
 
-from eduhub_agent.paths import data
+from eduhub_agent.paths import ROOT, data
 
 from eduhub_agent.server import timetable
 from eduhub_agent.config import env
@@ -53,12 +62,18 @@ class ApiError(Exception):
         self.status = status
 
 
-def call(method, path, body=None, headers=None):
+def call(method, path, body=None, headers=None, raw=None, timeout=15):
+    """Запрос к бэкенду. Cookie сессии у агента нет: бэкенд пускает по X-Agent-Key (AGENT_KEY из .env)
+    и считает автором пользователя агента или того, чей id в X-Agent-On-Behalf-Of.
+    raw — готовое тело (bytes, например multipart); тогда Content-Type передаётся в headers."""
+    base = {"Content-Type": "application/json"}
+    if env("AGENT_KEY"):
+        base["X-Agent-Key"] = env("AGENT_KEY")
     req = urllib.request.Request(env("API_URL").rstrip("/") + path, method=method,
-                                 data=None if body is None else json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json", **(headers or {})})
+                                 data=raw if raw is not None else None if body is None else json.dumps(body).encode(),
+                                 headers={**base, **(headers or {})})
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read() or "null")
     except urllib.error.HTTPError as e:
         try:
@@ -103,7 +118,7 @@ def telegram_user(telegram_id):
     """Кто пишет боту: {"user_id", "login", "role", "class_id"} по Telegram id, если человек вошёл в основном боте
     (таблица telegram_bindings, статус active). None — не вошёл. Нужен AGENT_KEY в .env и в backend/.env."""
     try:
-        return call("GET", f"/api/telegram/users/{int(telegram_id)}", headers={"X-Agent-Key": env("AGENT_KEY") or ""})
+        return call("GET", f"/api/telegram/users/{int(telegram_id)}")
     except ApiError as e:
         if e.status == 404:
             return None
@@ -159,9 +174,14 @@ def pair_of(day, lesson):
     return day[lo:hi + 1]
 
 
+TEST_HEAD = re.compile(r"(контрольн|самостоятельн|проверочн|кр\b|к/р|ср\b|с/р|зач[её]т|диктант|тест)", re.I)
+
+
 def text_of(it):
     """Текст для ученика: что задано, слова учителя и откуда это."""
-    head = ("Контрольная: " if it["type"] == "test" else "") + (it.get("summary") or it.get("quote") or "").strip()
+    head = (it.get("summary") or it.get("quote") or "").strip()
+    if it["type"] == "test":  # «контрольная» уже в тексте — второй раз не пишем
+        head = head[:1].upper() + head[1:] if TEST_HEAD.match(head) else "Контрольная: " + head
     quote = (it.get("quote") or "").strip()
     lines = [head]
     if quote and quote != head:
@@ -198,7 +218,8 @@ def add_to(lesson, text, by=None):
         try:
             return call("POST", "/api/homework", {
                 "lesson_instance_id": lesson["id"], "created_by": by[0], "created_by_role": by[1],
-                "text_content": text, "status": "published"})["id"]
+                "text_content": text, "status": "published"},
+                        headers={"X-Agent-On-Behalf-Of": by[0]} if by[0] else None)["id"]  # автор берётся из заголовка, не из тела
         except ApiError as e:
             if e.status != 409:
                 raise
@@ -211,8 +232,77 @@ def add_to(lesson, text, by=None):
     return hw["id"]
 
 
+MAX_FILE = 100 * 1024 * 1024  # как MAX_FILE_SIZE в бэкенде (upload_file.rs)
+SKIP_FILE = (413, 415, 422, 503)  # слишком большой, не тот тип, плохое имя, хранилище выключено: повтор не поможет
+
+
+def upload(lesson_id, path, by=None):
+    """Загружает файл к уроку (если домашки нет, бэкенд её создаст). -> {"id", "homework_id"}."""
+    path = Path(path)
+    boundary = uuid.uuid4().hex
+    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    name = path.name.replace('"', "'").replace("\r", " ").replace("\n", " ")
+    body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            f"Content-Type: {mime}\r\n\r\n").encode() + path.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    if by and by[0]:
+        headers["X-Agent-On-Behalf-Of"] = by[0]
+    r = call("POST", f"/api/lessons/{lesson_id}/files", raw=body, headers=headers, timeout=120)
+    return {"id": r["file"]["id"], "homework_id": r["homework_id"]}
+
+
+def local_file(p):
+    """Путь из file_paths: относительный считается от рабочей папки агента, а если там нет — от agent/."""
+    p = Path(p)
+    return p if p.is_file() or p.is_absolute() else ROOT / p
+
+
+def attach_files(rec, it, lesson):
+    """Догружает к уроку вложения находки, которых ещё нет в rec["files"] (путь -> {"id", "homework_id"}).
+    -> None или почему не все файлы загрузились (тогда находка подождёт в очереди и попробует снова)."""
+    done = rec.setdefault("files", {})
+    why = None
+    for p in it.get("file_paths") or []:
+        if p in done:
+            continue
+        f = local_file(p)
+        if not f.is_file():
+            print(f"  в бэкенд: файла {p} нет на диске, пропускаю")
+            done[p] = None
+            continue
+        if f.stat().st_size > MAX_FILE:
+            print(f"  в бэкенд: {f.name} больше 100 МБ, не загружаю")
+            done[p] = None
+            continue
+        try:
+            done[p] = upload(lesson["id"], f, author(it))
+            print(f"  в бэкенд: файл {f.name} -> урок {it['date']} {lesson['start_time']} {lesson['subject_name']}")
+        except ApiError as e:
+            if e.status not in SKIP_FILE:
+                why = f"файл {f.name}: {e}"
+                continue
+            print(f"  в бэкенд: файл {f.name} не загружен ({e})")
+            if e.status != 503:  # 503 — хранилище выключено: файл загрузится, когда находку отправят снова
+                done[p] = None
+        except OSError as e:
+            why = f"файл {f.name}: {e}"
+    return why
+
+
+def remove_files(prev):
+    """Удаляет с урока файлы, которые загрузили туда раньше."""
+    for f in (prev.get("files") or {}).values():
+        if f:
+            try:
+                call("DELETE", f"/api/homework/files/{f['id']}")
+            except ApiError as e:
+                if e.status != 404:  # уже удалили руками
+                    raise
+
+
 def remove_from(prev):
-    """Убирает наш текст из домашки урока, куда записали раньше."""
+    """Убирает наш текст и наши файлы из домашки урока, куда записали раньше."""
+    remove_files(prev)
     try:
         lesson = next((l for l in day_lessons(prev.get("class_id"), prev["date"]) if l["id"] == prev["lesson_id"]), None)
     except ApiError:
@@ -231,8 +321,9 @@ def _send(key, it):
     if not lesson:
         return why
     targets = [lesson] + lesson.pop("_pair")
+    why = None
     for n, l in enumerate(targets):
-        _send_to(key if n == 0 else f"{key}+{n}", it, l)
+        why = _send_to(key if n == 0 else f"{key}+{n}", it, l, files=n == 0) or why
     sent = load(SENT, {})
     for k in [k for k in sent if k.startswith(key + "+") and int(k.rsplit("+", 1)[1]) >= len(targets)]:
         remove_from(sent.pop(k))  # раньше урок был сдвоенный, теперь нет: убираем лишнюю копию
@@ -242,15 +333,20 @@ def _send(key, it):
             ON_SENT(key, it, lesson)
         except Exception as e:  # уведомление не должно мешать записи
             print("  в бэкенд: уведомление не ушло:", repr(e))
-    return None
+    return why
 
 
-def _send_to(key, it, lesson):
+def _send_to(key, it, lesson, files=True):
+    """Текст находки (и, если files, её вложения) в домашку урока. -> None или почему не все файлы загрузились."""
     text = text_of(it)
     sent = load(SENT, {})
     prev = sent.get(key)
     if prev and prev["lesson_id"] == lesson["id"] and prev["text"] == text:
-        return None  # уже записано
+        if not files:
+            return None  # уже записано
+        why = attach_files(prev, it, lesson)  # текст уже там; могли добавиться или не загрузиться файлы
+        save(SENT, sent)
+        return why
     hw = lesson.get("homework")
     if prev and prev["lesson_id"] == lesson["id"] and hw and hw["id"] == prev["homework_id"]:
         rest = without(hw["text"], prev["text"])  # тот же урок, поменялся текст: заменяем свой кусок
@@ -260,12 +356,16 @@ def _send_to(key, it, lesson):
         if prev:
             remove_from(prev)
         homework_id = add_to(lesson, text, author(it))
-    sent[key] = {"homework_id": homework_id, "lesson_id": lesson["id"], "date": it["date"],
-                 "class_id": lesson["_class"], "text": text}
+    rec = sent[key] = {"homework_id": homework_id, "lesson_id": lesson["id"], "date": it["date"],
+                       "class_id": lesson["_class"], "text": text}
+    if prev and prev["homework_id"] == homework_id and prev.get("files"):
+        rec["files"] = prev["files"]  # тот же урок, поменялся только текст: файлы остаются
     save(SENT, sent)
     print(f"  в бэкенд: {it['type']} «{it.get('summary', '')[:40]}» -> урок {it['date']} {lesson['start_time']} "
           f"{lesson['subject_name']}")
-    return None
+    why = attach_files(rec, it, lesson) if files else None
+    save(SENT, sent)
+    return why
 
 
 ON_SENT = None  # dm.py ставит сюда функцию: написать ученику, что его ДЗ записали
