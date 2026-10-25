@@ -48,6 +48,17 @@ def _norm(s):
     return re.sub(r"\s+", " ", (s or "").lower().replace("ё", "е")).strip()
 
 
+# Обратная сторона SYNONYMS: код -> название, как его пишут в расписании. Берём первый синоним:
+# он и есть человеческое имя предмета («физика» -> «Физика»). Нужно там, где код уходит в бэкенд:
+# backend_api.find_lesson() сравнивает уроки по русскому названию (timetable.same_subject).
+_NAMES = {code: words[0].capitalize() for code, words in SYNONYMS.items()}
+
+
+def ru_name(code):
+    """«physics» -> «Физика». None, если код не наш: выдумывать предмет нельзя."""
+    return _NAMES.get(code) if code else None
+
+
 def code_for(name):
     """«Физика 11б» → physics. None, если предмет не опознан: угадывать нельзя."""
     n = _norm(name)

@@ -1,8 +1,11 @@
 {
   "name": "eduhub-agent",
-  "check": ["python3 -m compileall -q eduhub_agent"],
+  "check": [
+    "python3 -m compileall -q eduhub_agent"
+  ],
   "test": [
     "python3 tests/test_labels.py",
+    "python3 tests/test_act.py",
     "python3 tests/test_ingest.py",
     "python3 tests/test_read.py",
     "python3 tests/test_ocr_triage.py",
