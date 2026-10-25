@@ -18,6 +18,9 @@
    ждёт следующее сообщение с заданием (10 минут) и прикладывает файл к нему. Альбом (несколько фото одним
    сообщением) приходит по одному фото: остальные фото альбома добавляются к черновику первого. После «Записать»
    файлы уходят в бэкенд к тому же уроку, что и текст (backend_api.attach_files). Лежат в chats/files/ЛС/<id чата>/.
+   Файл сразу попадает в очередь разметки (files/queue.py), а при сборке черновика получает подпись и класс.
+   Учителю с уверенными метками (предмет и тип сошлись без модели: подпись/имя файла/класс) бот пишет сразу,
+   без кнопки «Записать» — DM_AUTO_SUBMIT=0 это выключает. Ученик и спорные метки — всегда через черновик.
 7. Вопросы своими словами («что задали по химии?», «расписание на среду», «где алгебра?»): questions.py понимает,
    о чём спросили (правила, потом модель), а ответ собирается из расписания бэкенда, как у кнопок.
 Черновики лежат в chats/dm_drafts.json (там тексты учеников, папка chats/ не коммитится).
@@ -35,6 +38,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from eduhub_agent.files import attachments
+from eduhub_agent.files import labels as labels_mod
 from eduhub_agent.files import queue as file_queue
 from eduhub_agent.server import backend_api
 from eduhub_agent.telegram import chat_moderation, questions
@@ -44,6 +48,7 @@ from eduhub_agent.config import env
 DRAFTS = "chats/dm_drafts.json"
 FILES_DIR = "chats/files/ЛС"  # вложения из лички: chats/ не коммитится
 PENDING = 600  # сколько секунд файл без подписи ждёт сообщения с заданием
+AUTO_SUBMIT = env("DM_AUTO_SUBMIT", "1") != "0"  # учителю с уверенными метками пишем без кнопки
 HORIZON = 14  # на сколько дней вперёд ищем уроки предмета
 MAX_ITEMS = 3  # больше находок из одного сообщения не показываем
 WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
@@ -629,6 +634,30 @@ def typing(chat_id):
     return stop.set
 
 
+def _file_labels(paths, names, text, cls):
+    """Метки файлов черновика: подпись, имя, класс. Без модели и без чтения содержимого."""
+    out = []
+    for i, p in enumerate(paths or []):
+        name = names[i] if i < len(names) else Path(p).name
+        try:
+            out.append(labels_mod.label(p, name, "", caption=text, chat="ЛС", chat_class=cls, model=False))
+        except Exception as e:  # метки — не повод терять черновик
+            print("ЛС: метки файла не получились:", repr(e))
+    return out
+
+
+def _auto_ok(d):
+    """Записать без подтверждения? Только учителю, только с файлами и только при high.
+
+    Уверенность high у файла — это когда предмет и тип сошлись без модели (подпись/имя/класс).
+    Ученик всегда через черновик и модерацию; учитель со спорными метками — тоже через кнопку.
+    """
+    return bool(AUTO_SUBMIT and d["user"]["role"] == "teacher" and d.get("files")
+                and d.get("file_labels")
+                and all(x.get("confidence") == "high" for x in d["file_labels"])
+                and all(it.get("lesson") for it in d["items"]))
+
+
 def _draft(msg, chat_id, text, user, cls, cid):
     posted = datetime.fromtimestamp(msg["date"]).strftime("%Y-%m-%dT%H:%M:%S")
     names = class_subjects(cid, date.fromisoformat(posted[:10]))
@@ -650,8 +679,21 @@ def _draft(msg, chat_id, text, user, cls, cid):
     for path_ in d.get("files") or []:
         file_queue.enqueue(path_, Path(path_).name, source="telegram_dm", path=path_,
                            caption=text, chat="ЛС", chat_class=cls)
+    if d.get("files"):
+        # Метки без модели и без чтения файла: подпись + имя + класс. Дёшево — и сразу видно,
+        # хватает ли уверенности, чтобы записать без кнопки (запись без подтверждения — только
+        # учителю и только при high, см. _auto_ok).
+        d["file_labels"] = _file_labels(d["files"], d.get("names") or [], text, cls)
     for it in d["items"]:
         resolve(d, it)
+    if _auto_ok(d):
+        d["preview"] = tg("sendMessage", chat_id=chat_id,
+                          text="📎 Файл понял сам, записываю без подтверждения…")["message_id"]
+        drafts = load()
+        drafts[d["id"]] = d
+        save(drafts)
+        submit(d)
+        return
     body, kb = preview(d)
     d["preview"] = tg("sendMessage", chat_id=chat_id, text=body, reply_markup=kb)["message_id"]
     drafts = load()
