@@ -29,6 +29,7 @@
         ├── ingest/   → manifest.jsonl, review.csv, report.md
         ├── crawler/  → events.jsonl, summary.md
         ├── queue.py  → state/file_queue.jsonl, state/file_labels.jsonl
+        ├── due.py    → дата сдачи по расписанию, если в метке её нет (mtime/Drive)
         ├── act.py    → POST /api/lessons/{id}/files (accepted) / state/review.jsonl
         └── Telegram  → карточка/модератор
 ```
@@ -48,6 +49,7 @@
 | `classify/` | модель P2: `prompt.md` (шаблон), JSON-схема, строгий `parse()`. Предметы — из `taxonomy`, типы — из `TYPE_HINTS`; честный ответ `unknown` разрешён | не читает файл, текст ему передают |
 | `decide.py` | решатель **только для файлов**: `accepted / queued / review / skip` по статусу чтения и меткам. `queued` — очередь OCR, не сообщений | не смотрит текст сообщений |
 | `queue.py` | фоновая очередь разметки: `enqueue()` сразу, `process()` позже; JSONL, идемпотентно, 3 попытки на файл. Повторный `enqueue()` того же файла дописывает контекст (подпись, класс), а не теряет его | не запускает сам себя (нужен воркер/таймер) |
+| `due.py` | дата сдачи по расписанию: уроки предмета, которые ещё не начались на момент появления файла (`seen_at` = mtime или `modifiedTime`). «Через урок» в имени/подписи — берём следующий. Правила те же, что у чатов (`timetable.link`) | не угадывает класс и предмет: без них — review |
 | `act.py` | последний шаг: `accepted` + `high` → урок по предмету и дате (`backend_api.find_lesson`) → `POST /api/lessons/{id}/files`. `review` → `state/review.jsonl`, повторно не пишется. `state/file_actions.jsonl` помнит (файл, урок): второй раз не грузим, 413/415/422 не повторяем | не угадывает дату и класс: нет контекста — в review |
 | `__init__.py` | пакет | — |
 
