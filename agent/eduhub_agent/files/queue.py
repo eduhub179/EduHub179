@@ -15,6 +15,7 @@
 """
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 
 from eduhub_agent.files.decide import decide
@@ -39,8 +40,16 @@ def _rows(path):
     return out
 
 
+def seen_at(path):
+    """Когда файл появился на диске (mtime). Для Drive время приходит своим полем."""
+    try:
+        return datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat(timespec="seconds")
+    except (OSError, TypeError, ValueError):
+        return None
+
+
 def enqueue(file_id, name, source="unknown", path=None, link=None, caption=None,
-            chat=None, chat_subjects=None, chat_class=None):
+            chat=None, chat_subjects=None, chat_class=None, seen_at_=None):
     """Поставить файл в очередь. Тот же id второй раз не добавляется, но контекст дополняется.
 
     Файл в ЛС приходит раньше задания: сначала фото без подписи, через минуту текст «физика
@@ -52,10 +61,11 @@ def enqueue(file_id, name, source="unknown", path=None, link=None, caption=None,
     for row in rows:
         if row["id"] == file_id:
             return _fill(row, {"source": source, "path": path, "link": link, "caption": caption,
-                                "chat": chat, "chat_subjects": chat_subjects, "chat_class": chat_class})
+                                "chat": chat, "chat_subjects": chat_subjects, "chat_class": chat_class,
+                                "seen_at": seen_at_ or seen_at(path)})
     row = {"id": file_id, "name": name, "source": source, "path": path, "link": link,
            "caption": caption, "chat": chat, "chat_subjects": chat_subjects,
-           "chat_class": chat_class, "ts": int(time.time())}
+           "chat_class": chat_class, "seen_at": seen_at_ or seen_at(path), "ts": int(time.time())}
     with open(QUEUE, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
     return True
