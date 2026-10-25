@@ -6,6 +6,7 @@
   "test": [
     "python3 tests/test_labels.py",
     "python3 tests/test_act.py",
+    "python3 tests/test_work.py",
     "python3 tests/test_ingest.py",
     "python3 tests/test_read.py",
     "python3 tests/test_ocr_triage.py",

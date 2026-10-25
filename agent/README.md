@@ -92,6 +92,42 @@ BOT_TOKEN=*** .venv/bin/python chat_agent.py live --channel  # основной 
 
 Без ручной модерации находки сразу уходят на сервер, а в бот приходит уведомление.
 
+## Как проверить классификатор файлов
+
+Ни Telegram, ни бэкенд, ни модель для этого не нужны (модель — только если попросить).
+
+**1. Один файл через весь конвейер.** Самое быстрое: видно чтение, метки, маршрут и урок:
+
+```
+python3 -m eduhub_agent.files.check ~/Downloads/ДЗ-15.pdf --caption "физика к пятнице" --class 11Б
+python3 -m eduhub_agent.files.check photo.jpg --no-model        # только подсказки и имена, 0 секунд
+python3 -m eduhub_agent.files.check file.pdf --lesson           # + урок по расписанию (нужен API_URL)
+```
+
+**2. Файл в ЛС боту — без Telegram.** `python3 tests/test_dm.py` поднимает поддельные Telegram,
+бэкенд и модель: 75 проверок, включая файл с подписью, фото без подписи и альбом. Сценарий
+добавляется одной строкой (`write(...)` + `press(...)`), см. конец файла.
+
+**3. Очередь и действие.** Файл из ЛС попадает в `state/file_queue.jsonl`; разбирает его воркер:
+
+```
+python3 -m eduhub_agent.files.work              # разобрать ожидающие файлы
+python3 -m eduhub_agent.files.work --apply      # разобрать и отдать accepted в бэкенд
+python3 -m eduhub_agent.files.act               # только показать, что уйдёт (dry-run)
+```
+
+Смотреть результат: `state/file_labels.jsonl` (метки и маршрут), `state/review.jsonl` (что
+человеку глазами), `state/file_actions.jsonl` (что реально загружено).
+
+**4. Живой Telegram.** В `.env`: `BOT_TOKEN`, `API_URL`, `AGENT_KEY`, `LOGIN_BOT`, `CLASSIFY_MODEL`;
+человек должен быть привязан к бэкенду (`telegram_bindings`) — иначе бот попросит войти в основном.
+Запуск: `python3 chat_agent.py live --no-moderator` (без второго бота-модератора), дальше прислать
+файл в личку. Учителю с уверенными метками бот запишет сразу (`DM_AUTO_SUBMIT=0` выключает),
+ученику покажет черновик с кнопкой.
+
+**5. Всё сразу** (как в гейте): `python3 pipeline/run_pipeline.py --mode generic --target agent`
+из корня workspace — гоняет `agent/pipeline.json`: компиляция + 11 сюит.
+
 ## Что не коммитится
 
 Экспорты чатов и всё в `chats/` (личные переписки), обученный фильтр `*.pkl` (в нём слова из переписок), настоящее расписание с фамилиями учителей, кеши ответов модели и результаты прогонов. Список — в `.gitignore`.
