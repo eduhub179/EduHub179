@@ -35,6 +35,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from eduhub_agent.files import attachments
+from eduhub_agent.files import queue as file_queue
 from eduhub_agent.server import backend_api
 from eduhub_agent.telegram import chat_moderation, questions
 from eduhub_agent.server import timetable
@@ -497,6 +498,10 @@ def _on_file(msg, chat_id):
     if not paths:
         tg("sendMessage", chat_id=chat_id, text="Не смог скачать файл (Telegram отдаёт ботам файлы до 20 МБ).")
         return
+    # Пока человек печатает задание, файл уже читается и размечается: к моменту черновика
+    # метки готовы. Контекст (подпись, класс) допишется в ту же строку очереди в _draft.
+    for path_ in paths:
+        file_queue.enqueue(path_, Path(path_).name, source="telegram_dm", path=path_)
     group = msg.get("media_group_id")
     drafts = load()
     d = next((x for x in reversed(list(drafts.values())) if group and x.get("group") == group and x["tg"] == chat_id), None)
@@ -639,6 +644,12 @@ def _draft(msg, chat_id, text, user, cls, cid):
         paths, fnames = fetch_files(msg)
         d["files"], d["names"] = d.get("files", []) + paths, d.get("names", []) + fnames
         d["group"] = msg.get("media_group_id")
+    # Классификация файла смотрит и на содержимое, и на контекст: подпись («физика к пятнице»)
+    # и класс из профиля. chat_subjects здесь не передаём: в ЛС это весь список предметов
+    # класса, а не тема чата — подсказкой он быть не может.
+    for path_ in d.get("files") or []:
+        file_queue.enqueue(path_, Path(path_).name, source="telegram_dm", path=path_,
+                           caption=text, chat="ЛС", chat_class=cls)
     for it in d["items"]:
         resolve(d, it)
     body, kb = preview(d)
