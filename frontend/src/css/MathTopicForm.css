@@ -1,0 +1,112 @@
+.math-topic-modal__backdrop {
+    position: fixed;
+    z-index: 1000;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgb(15 23 42 / 55%);
+}
+
+.math-topic-modal {
+    width: min(100%, 560px);
+    max-height: min(90vh, 760px);
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 20px 60px rgb(15 23 42 / 25%);
+}
+
+.math-topic-modal__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.math-topic-modal__heading h2 {
+    margin: 0;
+    color: var(--color-text);
+    font-size: 20px;
+}
+
+.math-topic-modal__close {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 26px;
+    line-height: 1;
+}
+
+.math-topic-modal__close:hover,
+.math-topic-modal__close:focus-visible {
+    outline: none;
+    background: rgb(15 23 42 / 8%);
+}
+
+.math-topic-modal__actions {
+    display: flex;
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.math-topic-modal__cancel {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--color-text);
+    cursor: pointer;
+    font: inherit;
+}
+
+.math-topic-modal__cancel:hover,
+.math-topic-modal__cancel:focus-visible {
+    outline: none;
+    background: var(--color-bg);
+}
+
+.math-topic-modal__cancel:disabled,
+.math-topic-modal__close:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+.math-topic-modal__remove {
+    grid-column: 1 / -1;
+    justify-self: start;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid #b42318;
+    border-radius: 6px;
+    background: #fff;
+    color: #b42318;
+    cursor: pointer;
+    font: inherit;
+}
+
+.math-topic-modal__remove:hover,
+.math-topic-modal__remove:focus-visible {
+    outline: none;
+    background: rgb(180 35 24 / 10%);
+}
+
+.math-topic-modal__remove:disabled {
+    cursor: wait;
+    opacity: 0.6;
+}
+
+@media (max-width: 760px) {
+    .math-topic-modal {
+        padding: 16px;
+    }
+}
