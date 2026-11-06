@@ -80,6 +80,41 @@ pub trait PlusnikRepository: Send + Sync {
     /// Returns `PlusnikTaskHasRecords` if records prevent deletion.
     async fn delete_task(&self, task_id: Uuid) -> Result<(), DomainError>;
 
+    /// Inserts `tasks` (all of `sheet_id`) at `position` among the existing tasks
+    /// (0-based; `None` or past the end = append) and renumbers `sort_order` of the
+    /// whole sheet to 0..n. The incoming `sort_order` values are ignored.
+    ///
+    /// One transaction with the sheet row locked: concurrent inserts do not interleave.
+    /// Returns all tasks of the sheet in the new order.
+    /// Errors: `PlusnikSheetNotFound`; `PlusnikTaskAlreadyExists` on a duplicate number
+    /// (nothing is inserted then).
+    async fn insert_tasks(
+        &self,
+        sheet_id: Uuid,
+        tasks: Vec<PlusnikTask>,
+        position: Option<usize>,
+    ) -> Result<Vec<PlusnikTask>, DomainError>;
+
+    /// Sets the order of the sheet's tasks: `task_ids` must list every task exactly once.
+    ///
+    /// Errors: `PlusnikSheetNotFound`; `InvalidTaskOrder` if the list is not a
+    /// permutation of the sheet's tasks (nothing changes then).
+    async fn reorder_tasks(
+        &self,
+        sheet_id: Uuid,
+        task_ids: &[Uuid],
+    ) -> Result<Vec<PlusnikTask>, DomainError>;
+
+    /// Deletes several tasks of a sheet, all or nothing.
+    ///
+    /// Errors: `PlusnikTaskNotFound` if any id is not a task of this sheet;
+    /// `PlusnikTaskHasRecords` if any of them has pluses (even revoked).
+    async fn delete_tasks(&self, sheet_id: Uuid, task_ids: &[Uuid]) -> Result<(), DomainError>;
+
+    /// Tasks of every sheet of a lesson (for the course summary), ordered by sheet
+    /// and `sort_order`.
+    async fn get_tasks_by_lesson(&self, lesson_id: Uuid) -> Result<Vec<PlusnikTask>, DomainError>;
+
     // ========================================================================
     // Record (child) operations — the "pluses"
     // ========================================================================
@@ -148,4 +183,27 @@ pub trait PlusnikRepository: Send + Sync {
         revoked_by: Uuid,
         revoke_comment: Option<String>,
     ) -> Result<(), DomainError>;
+
+    /// Active records of every sheet of a lesson (for the course summary).
+    async fn get_active_records_by_lesson(
+        &self,
+        lesson_id: Uuid,
+    ) -> Result<Vec<PlusnikRecord>, DomainError>;
+
+    /// Grants and revokes pluses of one sheet in one transaction.
+    ///
+    /// `grants` are new active records; one that already has an active plus for its
+    /// `(student_id, task_id)` is skipped (repeat-safe). `revokes` are
+    /// `(task_id, student_id)` pairs; one without an active plus is skipped.
+    /// The caller validates that tasks belong to `sheet_id` and students to the lesson.
+    ///
+    /// Returns `(granted, revoked)` — how many rows actually changed.
+    async fn apply_pluses(
+        &self,
+        sheet_id: Uuid,
+        grants: Vec<PlusnikRecord>,
+        revokes: &[(Uuid, Uuid)],
+        revoked_by: Uuid,
+        revoke_comment: Option<String>,
+    ) -> Result<(usize, usize), DomainError>;
 }

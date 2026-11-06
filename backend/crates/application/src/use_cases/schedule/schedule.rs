@@ -258,11 +258,16 @@ impl ScheduleService {
     /// class or groups are returned. Fail-safe: a missing or draft week
     /// returns `DomainError::ScheduleWeekNotFound`; repository failures are
     /// propagated unchanged.
+    ///
+    /// `viewer` is who asks: a student sees only their own schedule, teachers and
+    /// admins anyone's (`InsufficientPermissions` otherwise, before anything is loaded).
     pub async fn day_schedule(
         &self,
+        viewer: &User,
         student_id: Uuid,
         date: NaiveDate,
     ) -> Result<ScheduleDay, DomainError> {
+        require_student_schedule_viewer(viewer, student_id)?;
         let week_start_date = monday_of(date);
         let week = self.schedule_weeks.get_by_id(week_start_date).await?;
         if !week.is_published() {
@@ -286,11 +291,15 @@ impl ScheduleService {
     /// Only published weeks are returned because draft weeks are invisible to
     /// students. Fail-safe: a missing or draft week returns
     /// `DomainError::ScheduleWeekNotFound` and no partial response is emitted.
+    ///
+    /// `viewer`: the same rule as in `day_schedule`.
     pub async fn current_week_schedule(
         &self,
+        viewer: &User,
         student_id: Uuid,
         date: NaiveDate,
     ) -> Result<WeeklySchedule, DomainError> {
+        require_student_schedule_viewer(viewer, student_id)?;
         let student = self.users.get_by_id(student_id).await?;
         if !student.is_active {
             return Err(DomainError::UserIsInactive);
@@ -844,6 +853,23 @@ impl ScheduleService {
 }
 
 /// Calculates the Monday identifying the ISO-style school week.
+/// Who may see a student's personal schedule: the student themself, any teacher or
+/// admin. The class and teacher timetables are public to every logged-in user; only the
+/// personal one (with the student's groups) is limited.
+///
+/// # Fail-safe поведение
+/// `UserIsInactive` for a deactivated viewer, `InsufficientPermissions` for another
+/// student.
+fn require_student_schedule_viewer(viewer: &User, student_id: Uuid) -> Result<(), DomainError> {
+    if !viewer.is_active {
+        return Err(DomainError::UserIsInactive);
+    }
+    if viewer.role.is_student() && viewer.id != student_id {
+        return Err(DomainError::InsufficientPermissions);
+    }
+    Ok(())
+}
+
 fn monday_of(date: NaiveDate) -> NaiveDate {
     date - chrono::Duration::days(i64::from(date.weekday().num_days_from_monday()))
 }

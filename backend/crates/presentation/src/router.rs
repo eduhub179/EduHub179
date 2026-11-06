@@ -128,6 +128,7 @@ impl ApiError {
                 (StatusCode::BAD_REQUEST, "Invalid homework status")
             }
             DomainError::InvalidNameFormat => (StatusCode::BAD_REQUEST, "Invalid role format"),
+            DomainError::UserIsInactive => (StatusCode::FORBIDDEN, "User account is inactive"),
             DomainError::InsufficientPermissions => {
                 (StatusCode::FORBIDDEN, "Insufficient permissions")
             }
@@ -178,6 +179,17 @@ impl ApiError {
             DomainError::StudentNotInLesson => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "The student is not in this lesson")
             }
+            DomainError::TaskNotInSheet => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "The task is not on this sheet")
+            }
+            DomainError::InvalidTaskOrder => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "The order must list every task of the sheet exactly once",
+            ),
+            DomainError::InvalidPlusnikBatch => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "The batch is empty, too large, or grants and revokes the same cell",
+            ),
             DomainError::InsufficientPermissions => {
                 (StatusCode::FORBIDDEN, "Insufficient permissions")
             }
@@ -409,12 +421,6 @@ pub(crate) struct Caller {
     pub(crate) user: User,
     /// True only after a valid `X-Agent-Key`: routes may trust the agent beyond the user's role.
     pub(crate) is_agent: bool,
-}
-
-/// Who may create, edit and delete homework and its files: teachers, admins, and the
-/// agent (which acts on behalf of whoever sent the homework to the bot).
-pub(crate) fn can_edit_homework(user: &User, is_agent: bool) -> bool {
-    is_agent || user.is_teacher() || user.is_admin()
 }
 
 /// Same as `require_authenticated_user`, but also tells whether the request came from the agent.
@@ -813,9 +819,23 @@ fn plusnik_routes() -> Router<AppState> {
             "/api/plusnik/sheets/:sheet_id",
             patch(plusnik::update_sheet_handler).delete(plusnik::delete_sheet_handler),
         )
+        .route(
+            "/api/plusnik/lessons/:lesson_id/summary",
+            get(plusnik::course_summary_handler),
+        )
         .route("/api/plusnik/sheets/:sheet_id/matrix", get(plusnik::sheet_matrix_handler))
-        .route("/api/plusnik/sheets/:sheet_id/tasks", post(plusnik::add_task_handler))
-        .route("/api/plusnik/tasks/:task_id", delete(plusnik::delete_task_handler))
+        .route("/api/plusnik/sheets/:sheet_id/history", get(plusnik::sheet_history_handler))
+        .route(
+            "/api/plusnik/sheets/:sheet_id/tasks",
+            post(plusnik::add_task_handler).delete(plusnik::delete_tasks_handler),
+        )
+        .route("/api/plusnik/sheets/:sheet_id/tasks/batch", post(plusnik::add_tasks_handler))
+        .route("/api/plusnik/sheets/:sheet_id/tasks/order", put(plusnik::reorder_tasks_handler))
+        .route("/api/plusnik/sheets/:sheet_id/pluses", post(plusnik::apply_pluses_handler))
+        .route(
+            "/api/plusnik/tasks/:task_id",
+            patch(plusnik::rename_task_handler).delete(plusnik::delete_task_handler),
+        )
         .route(
             "/api/plusnik/tasks/:task_id/pluses/:student_id",
             put(plusnik::grant_plus_handler).delete(plusnik::revoke_plus_handler),
@@ -1058,21 +1078,6 @@ mod tests {
             .route("/api/homework/files/:file_id", delete(ok))
             .route("/api/classes/schedule/week", get(ok))
             .route("/api/teachers/schedule/week", get(ok));
-    }
-
-    #[test]
-    fn homework_editors_are_teachers_admins_and_the_agent() {
-        let with_role = |role: UserRole| {
-            let mut user = create_test_user();
-            user.role = role;
-            user
-        };
-
-        assert!(can_edit_homework(&with_role(UserRole::Teacher), false));
-        assert!(can_edit_homework(&with_role(UserRole::Admin), false));
-        assert!(!can_edit_homework(&with_role(UserRole::Student), false));
-        // The agent may write on behalf of a student who sent homework to the bot.
-        assert!(can_edit_homework(&with_role(UserRole::Student), true));
     }
 
     #[test]

@@ -26,6 +26,20 @@ struct World {
     student: Uuid,
 }
 
+/// The student as the one asking for their own schedule.
+fn as_viewer(id: Uuid) -> domain::entities::user::User {
+    domain::entities::user::User::try_new(
+        id,
+        format!("student.{id}@example.com"),
+        domain::value_objects::role::UserRole::Student,
+        "Ученик".to_string(),
+        "Тест".to_string(),
+        None,
+        None,
+    )
+    .unwrap()
+}
+
 fn day(raw: &str) -> NaiveDate {
     NaiveDate::parse_from_str(raw, "%Y-%m-%d").unwrap()
 }
@@ -200,7 +214,7 @@ async fn draft_week_is_hidden(pool: PgPool) {
 async fn student_schedule_also_gets_target_names(pool: PgPool) {
     let w = seed(pool, "published").await;
 
-    let week = w.service.current_week_schedule(w.student, day(MONDAY)).await.unwrap();
+    let week = w.service.current_week_schedule(&as_viewer(w.student), w.student, day(MONDAY)).await.unwrap();
 
     let targets: Vec<_> = week.days[0].lessons.iter().map(|l| l.target_name.as_str()).collect();
     assert_eq!(targets, vec!["2027б", "2027б"]);

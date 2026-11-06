@@ -9,9 +9,10 @@ use domain::{errors::DomainError, value_objects::homework_status::HomeworkStatus
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use application::use_cases::homework::editor::HomeworkEditor;
 use application::use_cases::notifications::notify_homework_changed::HomeworkChange;
 
-use crate::router::{can_edit_homework, require_caller, ApiError, AppState, Caller};
+use crate::router::{require_caller, ApiError, AppState, Caller};
 use crate::routes::notifications::{notify_homework_change_for_lesson, notify_homework_changed};
 
 /// The author is always the authenticated caller (or `X-Agent-On-Behalf-Of` for the agent),
@@ -63,10 +64,8 @@ pub async fn create_homework_handler(
     Json(payload): Json<CreateHomeworkRequest>,
 ) -> Result<Json<CreateHomeworkResponse>, ApiError> {
     let Caller { user, is_agent } = require_caller(&state, &headers).await?;
-    // The agent may write homework on behalf of any user, e.g. a student who sent it to the bot in DM.
-    if !can_edit_homework(&user, is_agent) {
-        return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
-    }
+    // The rule (teachers, admins, anyone through the agent) lives in `HomeworkEditor`.
+    let editor = HomeworkEditor::authorize(&user, is_agent).map_err(ApiError::from_homework_domain)?;
 
     let create_homework_use_case = state.create_homework_use_case.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -81,8 +80,7 @@ pub async fn create_homework_handler(
     let homework = create_homework_use_case
         .execute(application::use_cases::homework::create_homework::CreateHomeworkCommand::new(
             lesson_instance_id,
-            user.id,
-            user.role,
+            editor,
             payload.text_content,
             status,
         ))
@@ -111,9 +109,8 @@ pub async fn update_homework_text_handler(
     Json(payload): Json<UpdateHomeworkRequest>,
 ) -> Result<Json<UpdateHomeworkResponse>, ApiError> {
     let Caller { user, is_agent } = require_caller(&state, &headers).await?;
-    if !can_edit_homework(&user, is_agent) {
-        return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
-    }
+    // The rule (teachers, admins, anyone through the agent) lives in `HomeworkEditor`.
+    let editor = HomeworkEditor::authorize(&user, is_agent).map_err(ApiError::from_homework_domain)?;
 
     let update_homework_use_case = state.update_homework_use_case.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -124,7 +121,10 @@ pub async fn update_homework_text_handler(
         .map_err(|_| ApiError::from_homework_domain(DomainError::HomeworkNotFound))?;
 
     let homework = update_homework_use_case
-        .execute(application::use_cases::homework::update_homework_text::UpdateHomeworkTextCommand::new(homework_uuid, payload.text_content))
+        .execute(
+            editor,
+            application::use_cases::homework::update_homework_text::UpdateHomeworkTextCommand::new(homework_uuid, payload.text_content),
+        )
         .await
         .map_err(ApiError::from_homework_domain)?;
 
@@ -160,9 +160,8 @@ pub async fn delete_homework_handler(
     Query(query): Query<DeleteHomeworkQuery>,
 ) -> Result<StatusCode, ApiError> {
     let Caller { user, is_agent } = require_caller(&state, &headers).await?;
-    if !can_edit_homework(&user, is_agent) {
-        return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
-    }
+    // The rule (teachers, admins, anyone through the agent) lives in `HomeworkEditor`.
+    let editor = HomeworkEditor::authorize(&user, is_agent).map_err(ApiError::from_homework_domain)?;
 
     let delete_homework_use_case = state.delete_homework_use_case.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -173,7 +172,7 @@ pub async fn delete_homework_handler(
         .map_err(|_| ApiError::from_homework_domain(DomainError::HomeworkNotFound))?;
 
     let deleted = delete_homework_use_case
-        .execute(homework_uuid)
+        .execute(editor, homework_uuid)
         .await
         .map_err(ApiError::from_homework_domain)?;
     let mut removed = vec![(deleted, homework_uuid)];
@@ -194,7 +193,7 @@ pub async fn delete_homework_handler(
         for partner in partners {
             let Some(details) = partner.homework else { continue };
             let partner_id = details.homework.id;
-            match delete_homework_use_case.execute(partner_id).await {
+            match delete_homework_use_case.execute(editor, partner_id).await {
                 Ok(deleted) => removed.push((deleted, partner_id)),
                 Err(error) => eprintln!("double lesson: could not delete homework {partner_id}: {error}"),
             }

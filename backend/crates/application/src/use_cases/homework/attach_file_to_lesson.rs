@@ -25,6 +25,7 @@ use domain::{
 };
 use uuid::Uuid;
 
+use super::editor::HomeworkEditor;
 use super::upload_file::UploadHomeworkFileCommand;
 
 /// Input for attaching a file to a lesson.
@@ -32,9 +33,9 @@ use super::upload_file::UploadHomeworkFileCommand;
 pub struct AttachFileToLessonCommand {
     /// Concrete lesson on a concrete date.
     pub lesson_instance_id: Uuid,
-    /// Who attaches the file; becomes the homework author if the homework is created now.
-    pub uploaded_by: Uuid,
-    pub uploaded_by_role: UserRole,
+    /// Who attaches the file (checked permission); becomes the homework author if the
+    /// homework is created now.
+    pub editor: HomeworkEditor,
     pub file: UploadHomeworkFileCommand,
 }
 
@@ -80,7 +81,7 @@ impl AttachFileToLessonUseCase {
             .await?;
 
         match self
-            .save_metadata(cmd.lesson_instance_id, cmd.uploaded_by, cmd.uploaded_by_role, &stored)
+            .save_metadata(cmd.lesson_instance_id, cmd.editor.user_id(), cmd.editor.role(), &stored)
             .await
         {
             Ok(attached) => Ok(attached),
@@ -272,8 +273,7 @@ mod tests {
     fn command(file_name: &str, bytes: Vec<u8>) -> AttachFileToLessonCommand {
         AttachFileToLessonCommand {
             lesson_instance_id: Uuid::new_v4(),
-            uploaded_by: Uuid::new_v4(),
-            uploaded_by_role: UserRole::Teacher,
+            editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             file: UploadHomeworkFileCommand::new(
                 file_name.to_string(),
                 "application/pdf".to_string(),

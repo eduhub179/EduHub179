@@ -22,11 +22,15 @@ use domain::ports::file_storage::FileStorage;
 use domain::repositories::homework_repository::HomeworkRepository;
 use uuid::Uuid;
 
+use super::editor::HomeworkEditor;
+
 /// Input for deleting a homework file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeleteHomeworkFileCommand {
     /// File ID to delete.
     pub file_id: Uuid,
+    /// Proves the caller may change homework (see `HomeworkEditor`).
+    pub editor: HomeworkEditor,
 }
 
 /// Result of a successful delete.
@@ -104,6 +108,7 @@ impl DeleteHomeworkFileUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::value_objects::role::UserRole;
     use domain::entities::homework::Homework;
     use std::sync::Mutex;
 
@@ -249,6 +254,7 @@ mod tests {
         let result = use_case
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
+                editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             })
             .await
             .unwrap();
@@ -270,6 +276,7 @@ mod tests {
         let result = use_case
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
+                editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             })
             .await
             .unwrap();
@@ -292,6 +299,7 @@ mod tests {
         let result = use_case
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
+                editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             })
             .await
             .unwrap();
@@ -311,6 +319,7 @@ mod tests {
         let result = use_case
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
+                editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             })
             .await;
 
@@ -328,6 +337,7 @@ mod tests {
         let result = use_case
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
+                editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             })
             .await
             .unwrap();

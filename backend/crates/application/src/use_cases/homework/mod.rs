@@ -20,5 +20,6 @@ pub mod create_homework;
 pub mod delete_file;
 pub mod delete_homework;
 pub mod download_file;
+pub mod editor;
 pub mod update_homework_text;
 pub mod upload_file;

@@ -100,9 +100,63 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+/** A cell of the matrix. */
+export interface PlusnikCell {
+  task_id: string;
+  student_id: string;
+}
+
+export interface PlusBatchRequest {
+  grant?: PlusnikCell[];
+  revoke?: PlusnikCell[];
+  /** Stored on every revoked record. */
+  comment?: string;
+}
+
+export interface PlusBatchResponse {
+  /** Pluses actually added (present ones are skipped). */
+  granted: number;
+  /** Pluses actually removed (absent ones are skipped). */
+  revoked: number;
+  /** All active pluses of the sheet after the change. */
+  pluses: PlusnikPlusDto[];
+}
+
+export interface PlusnikCourseSummaryDto {
+  lesson: PlusnikLessonDto;
+  /** Published and archived sheets, oldest first. */
+  sheets: {
+    id: string;
+    name: string;
+    issue_date: string;
+    deadline: string | null;
+    status: PlusnikSheetStatus;
+    total_tasks: number;
+  }[];
+  /** Sorted by name; `solved[i]` is for `sheets[i]`. */
+  students: { id: string; name: string; solved: number[]; solved_total: number }[];
+  total_tasks: number;
+}
+
+export interface PlusnikHistoryEntryDto {
+  record_id: string;
+  task_id: string;
+  task_number: string;
+  student_id: string;
+  student_name: string;
+  granted_by: string;
+  granted_by_name: string;
+  granted_at: string;
+  /** Null while the plus is active. */
+  revoked_at: string | null;
+  revoked_by: string | null;
+  revoked_by_name: string | null;
+  revoke_comment: string | null;
+}
+
 /**
- * Courses where the current user can manage sheets and pluses: own courses for a teacher,
- * all for an admin. With `classId`, only courses of that class — whole-class courses and
+ * Courses where the current user can manage sheets and pluses: every active course of the
+ * school for teachers and admins alike. With `classId`, only courses of that class — whole-class courses and
  * group courses its students attend.
  */
 export async function fetchPlusnikLessons(classId?: string): Promise<PlusnikLessonDto[]> {
@@ -151,12 +205,61 @@ export async function fetchPlusnikMatrix(sheetId: string): Promise<PlusnikMatrix
   return apiFetch<PlusnikMatrixDto>(`/api/plusnik/sheets/${sheetId}/matrix`);
 }
 
-/** Appends a task to the end of the sheet. */
-export async function addPlusnikTask(sheetId: string, number: string): Promise<PlusnikTaskDto> {
+/**
+ * Adds a task. Without `position` (0-based) it goes to the end; tasks after it shift down.
+ */
+export async function addPlusnikTask(
+  sheetId: string,
+  number: string,
+  position?: number,
+): Promise<PlusnikTaskDto> {
   requireTeacherOrAdminUser();
   return apiFetch<PlusnikTaskDto>(
     `/api/plusnik/sheets/${sheetId}/tasks`,
-    jsonInit('POST', { number }),
+    jsonInit('POST', { number, position }),
+  );
+}
+
+/** Adds several tasks at once (all or nothing); returns all tasks of the sheet in order. */
+export async function addPlusnikTasks(
+  sheetId: string,
+  numbers: string[],
+  position?: number,
+): Promise<PlusnikTaskDto[]> {
+  requireTeacherOrAdminUser();
+  return apiFetch<PlusnikTaskDto[]>(
+    `/api/plusnik/sheets/${sheetId}/tasks/batch`,
+    jsonInit('POST', { numbers, position }),
+  );
+}
+
+/** Renames a task ("1а" → "1а*"); its pluses stay. 409 if the number is taken. */
+export async function renamePlusnikTask(taskId: string, number: string): Promise<PlusnikTaskDto> {
+  requireTeacherOrAdminUser();
+  return apiFetch<PlusnikTaskDto>(`/api/plusnik/tasks/${taskId}`, jsonInit('PATCH', { number }));
+}
+
+/** New order of the sheet's tasks: must list every task exactly once. */
+export async function reorderPlusnikTasks(
+  sheetId: string,
+  taskIds: string[],
+): Promise<PlusnikTaskDto[]> {
+  requireTeacherOrAdminUser();
+  return apiFetch<PlusnikTaskDto[]>(
+    `/api/plusnik/sheets/${sheetId}/tasks/order`,
+    jsonInit('PUT', { task_ids: taskIds }),
+  );
+}
+
+/** Deletes several tasks, all or nothing (409 if any has pluses); returns the rest. */
+export async function deletePlusnikTasks(
+  sheetId: string,
+  taskIds: string[],
+): Promise<PlusnikTaskDto[]> {
+  requireTeacherOrAdminUser();
+  return apiFetch<PlusnikTaskDto[]>(
+    `/api/plusnik/sheets/${sheetId}/tasks`,
+    jsonInit('DELETE', { task_ids: taskIds }),
   );
 }
 
@@ -185,6 +288,40 @@ export async function revokePlus(
     `/api/plusnik/tasks/${taskId}/pluses/${studentId}`,
     comment ? jsonInit('DELETE', { comment }) : { method: 'DELETE' },
   );
+}
+
+/**
+ * Many pluses of one sheet in one transaction: a whole column, a whole row, any cells.
+ * Repeat-safe. Grants need a published sheet; revokes work on any status.
+ */
+export async function applyPluses(
+  sheetId: string,
+  payload: PlusBatchRequest,
+): Promise<PlusBatchResponse> {
+  requireTeacherOrAdminUser();
+  return apiFetch<PlusBatchResponse>(
+    `/api/plusnik/sheets/${sheetId}/pluses`,
+    jsonInit('POST', payload),
+  );
+}
+
+/** Students × sheets of a course with solved counts (published and archived sheets). */
+export async function fetchPlusnikCourseSummary(lessonId: string): Promise<PlusnikCourseSummaryDto> {
+  requireTeacherOrAdminUser();
+  return apiFetch<PlusnikCourseSummaryDto>(`/api/plusnik/lessons/${lessonId}/summary`);
+}
+
+/** Every plus ever put on the sheet (revoked included), newest first, with names. */
+export async function fetchPlusnikHistory(
+  sheetId: string,
+  filter: { studentId?: string; taskId?: string } = {},
+): Promise<PlusnikHistoryEntryDto[]> {
+  requireTeacherOrAdminUser();
+  const params = new URLSearchParams();
+  if (filter.studentId) params.set('student_id', filter.studentId);
+  if (filter.taskId) params.set('task_id', filter.taskId);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch<PlusnikHistoryEntryDto[]>(`/api/plusnik/sheets/${sheetId}/history${query}`);
 }
 
 /** The student's dashboard: solved/total per published sheet. */

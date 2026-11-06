@@ -333,7 +333,7 @@ async fn substitute_shows_in_student_and_substitute_schedules(pool: PgPool) {
         )
         .await
         .unwrap();
-    let student_day = w.schedule.day_schedule(w.student.id, day(MONDAY)).await.unwrap();
+    let student_day = w.schedule.day_schedule(&w.student, w.student.id, day(MONDAY)).await.unwrap();
     let substitute_day = w.schedule.teacher_day_schedule(w.substitute, day(MONDAY)).await.unwrap();
 
     assert_eq!(lesson.cabinet.map(|c| c.number), Some(204));

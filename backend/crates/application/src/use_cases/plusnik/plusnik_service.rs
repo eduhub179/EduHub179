@@ -107,6 +107,15 @@ pub struct UpdateSheetCommand {
     pub status: Option<SheetStatus>,
 }
 
+/// Tasks of a sheet after an insert, and which of them are new.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AddedTasks {
+    /// All tasks of the sheet in the new order.
+    pub tasks: Vec<PlusnikTask>,
+    /// Ids of the inserted tasks, in the order given.
+    pub new_ids: Vec<Uuid>,
+}
+
 /// Result of granting a plus.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GrantedPlus {
@@ -115,9 +124,87 @@ pub struct GrantedPlus {
     pub created: bool,
 }
 
+/// Most tasks one batch call may add or delete.
+pub const MAX_TASKS_PER_BATCH: usize = 200;
+/// Most plus changes (grants + revokes) in one batch call: a class of 40 × 50 tasks.
+pub const MAX_PLUSES_PER_BATCH: usize = 2000;
+
+/// A cell of the matrix: which task, which student.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PlusCell {
+    pub task_id: Uuid,
+    pub student_id: Uuid,
+}
+
+/// Input for changing many cells of one sheet at once ("whole column", "whole row").
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PlusBatchCommand {
+    pub grant: Vec<PlusCell>,
+    pub revoke: Vec<PlusCell>,
+    /// Reason stored on every revoked record.
+    pub comment: Option<String>,
+}
+
+/// Result of a batch: what changed and the sheet's active pluses afterwards.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlusBatchResult {
+    /// Pluses actually added (already present ones are skipped).
+    pub granted: usize,
+    /// Pluses actually removed (absent ones are skipped).
+    pub revoked: usize,
+    pub pluses: Vec<PlusnikRecord>,
+}
+
+/// A column of the course summary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SummarySheet {
+    pub sheet: PlusnikSheet,
+    pub total_tasks: usize,
+}
+
+/// A row of the course summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryStudent {
+    pub id: Uuid,
+    pub name: String,
+    /// Solved tasks per sheet, aligned with `CourseSummary::sheets`.
+    pub solved: Vec<usize>,
+    pub solved_total: usize,
+}
+
+/// Students × sheets of a course with solved counts (published and archived sheets).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CourseSummary {
+    pub lesson: LessonSummary,
+    /// Oldest first (the order the course went).
+    pub sheets: Vec<SummarySheet>,
+    /// Sorted by name.
+    pub students: Vec<SummaryStudent>,
+    /// Tasks of all `sheets`.
+    pub total_tasks: usize,
+}
+
+/// One record of a sheet's history with names resolved.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlusHistoryEntry {
+    pub record: PlusnikRecord,
+    pub task_number: String,
+    pub student_name: String,
+    pub granted_by_name: String,
+    pub revoked_by_name: Option<String>,
+}
+
+/// Filters of the history; `None` = any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HistoryFilter {
+    pub student_id: Option<Uuid>,
+    pub task_id: Option<Uuid>,
+}
+
 pub struct PlusnikService {
     plusnik: Arc<dyn PlusnikRepository>,
     lessons: Arc<dyn LessonRepository>,
+    users: Arc<dyn UserRepository>,
     groups: Arc<dyn StudentGroupRepository>,
     subjects: Arc<dyn SubjectRepository>,
     access: LessonAccess,
@@ -135,13 +222,14 @@ impl PlusnikService {
         Self {
             access: LessonAccess::new(
                 lessons.clone(),
-                users,
+                users.clone(),
                 groups.clone(),
                 subjects.clone(),
                 classes,
             ),
             plusnik,
             lessons,
+            users,
             groups,
             subjects,
         }
@@ -250,14 +338,18 @@ impl PlusnikService {
         }
 
         let sheet = self.plusnik.save_sheet(sheet).await?;
-        let mut saved_tasks = Vec::with_capacity(tasks.len());
-        for task in tasks {
-            saved_tasks.push(self.plusnik.save_task(task).await?);
+        if tasks.is_empty() {
+            return Ok(SheetWithTasks { sheet, tasks });
         }
-        Ok(SheetWithTasks {
-            sheet,
-            tasks: saved_tasks,
-        })
+        // Tasks go in one transaction; if it fails, the new empty sheet is removed so
+        // that a retry does not leave a half-made duplicate behind.
+        match self.plusnik.insert_tasks(sheet.id, tasks, None).await {
+            Ok(tasks) => Ok(SheetWithTasks { sheet, tasks }),
+            Err(error) => {
+                let _ = self.plusnik.delete_sheet(sheet.id).await;
+                Err(error)
+            }
+        }
     }
 
     /// Changes name, dates or status (publish / archive) of a sheet.
@@ -310,19 +402,116 @@ impl PlusnikService {
         sheet_id: Uuid,
         task_number: String,
     ) -> Result<PlusnikTask, DomainError> {
+        self.insert_task(user, sheet_id, task_number, None).await
+    }
+
+    /// Inserts one task at `position` (0-based; `None` or past the end = append).
+    /// Tasks after it shift down.
+    pub async fn insert_task(
+        &self,
+        user: &User,
+        sheet_id: Uuid,
+        task_number: String,
+        position: Option<usize>,
+    ) -> Result<PlusnikTask, DomainError> {
+        let tasks = self.add_tasks(user, sheet_id, vec![task_number], position).await?;
+        let created = tasks.new_ids.first().copied().ok_or(DomainError::InternalError)?;
+        tasks
+            .tasks
+            .into_iter()
+            .find(|task| task.id == created)
+            .ok_or(DomainError::InternalError)
+    }
+
+    /// Inserts several tasks, in the given order, at `position` (0-based; `None` or past
+    /// the end = append). All or nothing.
+    ///
+    /// # Fail-safe поведение
+    /// `InvalidPlusnikBatch` for an empty list or more than `MAX_TASKS_PER_BATCH`;
+    /// `InvalidTaskNumber` / `PlusnikTaskAlreadyExists` (also for a repeat inside the
+    /// list) — nothing is saved then.
+    pub async fn add_tasks(
+        &self,
+        user: &User,
+        sheet_id: Uuid,
+        task_numbers: Vec<String>,
+        position: Option<usize>,
+    ) -> Result<AddedTasks, DomainError> {
+        if task_numbers.is_empty() || task_numbers.len() > MAX_TASKS_PER_BATCH {
+            return Err(DomainError::InvalidPlusnikBatch);
+        }
         let sheet = self.plusnik.get_sheet_by_id(sheet_id).await?;
         self.require_manager(user, sheet.lesson_id).await?;
 
-        let sort_order = self
-            .plusnik
-            .get_tasks(sheet_id)
-            .await?
-            .iter()
-            .map(|task| task.sort_order)
-            .max()
-            .map_or(0, |last| last.saturating_add(1));
-        let task = PlusnikTask::try_new(Uuid::new_v4(), sheet_id, task_number, sort_order, Utc::now())?;
-        self.plusnik.save_task(task).await
+        let now = Utc::now();
+        let mut seen = HashSet::new();
+        let mut new_tasks = Vec::with_capacity(task_numbers.len());
+        for number in task_numbers {
+            let task = PlusnikTask::try_new(Uuid::new_v4(), sheet_id, number, 0, now)?;
+            if !seen.insert(task.task_number.clone()) {
+                return Err(DomainError::PlusnikTaskAlreadyExists);
+            }
+            new_tasks.push(task);
+        }
+        let new_ids = new_tasks.iter().map(|task| task.id).collect();
+        let tasks = self.plusnik.insert_tasks(sheet_id, new_tasks, position).await?;
+        Ok(AddedTasks { tasks, new_ids })
+    }
+
+    /// Changes the number of a task ("1а" → "1а*"). Pluses stay with the task.
+    ///
+    /// # Fail-safe поведение
+    /// `InvalidTaskNumber`; `PlusnikTaskAlreadyExists` if another task has this number.
+    pub async fn rename_task(
+        &self,
+        user: &User,
+        task_id: Uuid,
+        task_number: String,
+    ) -> Result<PlusnikTask, DomainError> {
+        let task = self.plusnik.get_task_by_id(task_id).await?;
+        let sheet = self.plusnik.get_sheet_by_id(task.sheet_id).await?;
+        self.require_manager(user, sheet.lesson_id).await?;
+
+        let renamed = PlusnikTask::try_new(task.id, task.sheet_id, task_number, task.sort_order, task.created_at)?;
+        if renamed.task_number == task.task_number {
+            return Ok(task);
+        }
+        self.plusnik.save_task(renamed).await
+    }
+
+    /// Sets the order of all tasks of a sheet.
+    ///
+    /// # Fail-safe поведение
+    /// `InvalidTaskOrder` unless `task_ids` lists every task of the sheet exactly once.
+    pub async fn reorder_tasks(
+        &self,
+        user: &User,
+        sheet_id: Uuid,
+        task_ids: Vec<Uuid>,
+    ) -> Result<Vec<PlusnikTask>, DomainError> {
+        let sheet = self.plusnik.get_sheet_by_id(sheet_id).await?;
+        self.require_manager(user, sheet.lesson_id).await?;
+        self.plusnik.reorder_tasks(sheet_id, &task_ids).await
+    }
+
+    /// Deletes several tasks of a sheet, all or nothing. Returns the remaining tasks.
+    ///
+    /// # Fail-safe поведение
+    /// `InvalidPlusnikBatch` for an empty or too large list; `PlusnikTaskNotFound` if any
+    /// id is not a task of this sheet; `PlusnikTaskHasRecords` if any has pluses.
+    pub async fn delete_tasks(
+        &self,
+        user: &User,
+        sheet_id: Uuid,
+        task_ids: Vec<Uuid>,
+    ) -> Result<Vec<PlusnikTask>, DomainError> {
+        if task_ids.is_empty() || task_ids.len() > MAX_TASKS_PER_BATCH {
+            return Err(DomainError::InvalidPlusnikBatch);
+        }
+        let sheet = self.plusnik.get_sheet_by_id(sheet_id).await?;
+        self.require_manager(user, sheet.lesson_id).await?;
+        self.plusnik.delete_tasks(sheet_id, &task_ids).await?;
+        self.plusnik.get_tasks(sheet_id).await
     }
 
     /// Deletes a task.
@@ -472,6 +661,216 @@ impl PlusnikService {
             Err(DomainError::PlusnikRecordNotFound) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+
+    /// Grants and revokes many pluses of one sheet in one transaction: a whole column
+    /// ("everyone solved 3а"), a whole row, or any set of cells.
+    ///
+    /// # Fail-safe поведение
+    /// Everything is validated before anything changes:
+    /// `InvalidPlusnikBatch` — empty, more than `MAX_PLUSES_PER_BATCH`, or a cell both
+    /// granted and revoked; `TaskNotInSheet` — a task of another sheet;
+    /// `PlusnikSheetNotPublished` — grants on a draft/archived sheet (revokes work on any
+    /// status, like `revoke_plus`); `StudentNotInLesson` — a grant to an outsider.
+    /// Cells already in the wanted state are skipped, so a repeated call is safe.
+    pub async fn apply_pluses(
+        &self,
+        user: &User,
+        sheet_id: Uuid,
+        cmd: PlusBatchCommand,
+    ) -> Result<PlusBatchResult, DomainError> {
+        let changes = cmd.grant.len().saturating_add(cmd.revoke.len());
+        if changes == 0 || changes > MAX_PLUSES_PER_BATCH {
+            return Err(DomainError::InvalidPlusnikBatch);
+        }
+        let grant: HashSet<PlusCell> = cmd.grant.into_iter().collect();
+        let revoke: HashSet<PlusCell> = cmd.revoke.into_iter().collect();
+        if !grant.is_disjoint(&revoke) {
+            return Err(DomainError::InvalidPlusnikBatch);
+        }
+
+        let sheet = self.plusnik.get_sheet_by_id(sheet_id).await?;
+        self.require_manager(user, sheet.lesson_id).await?;
+        if !grant.is_empty() && sheet.status != SheetStatus::Published {
+            return Err(DomainError::PlusnikSheetNotPublished);
+        }
+
+        let task_ids: HashSet<Uuid> = self
+            .plusnik
+            .get_tasks(sheet_id)
+            .await?
+            .into_iter()
+            .map(|task| task.id)
+            .collect();
+        if grant.iter().chain(revoke.iter()).any(|cell| !task_ids.contains(&cell.task_id)) {
+            return Err(DomainError::TaskNotInSheet);
+        }
+
+        if !grant.is_empty() {
+            let lesson = self.lessons.get_by_id(sheet.lesson_id).await?;
+            let audience: HashSet<Uuid> = self
+                .lesson_students(&lesson)
+                .await?
+                .into_iter()
+                .map(|student| student.id)
+                .collect();
+            if grant.iter().any(|cell| !audience.contains(&cell.student_id)) {
+                return Err(DomainError::StudentNotInLesson);
+            }
+        }
+
+        let now = Utc::now();
+        let records = grant
+            .iter()
+            .map(|cell| {
+                PlusnikRecord::try_new_active(Uuid::new_v4(), cell.student_id, sheet_id, cell.task_id, user.id, now)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let revoke_pairs: Vec<(Uuid, Uuid)> =
+            revoke.iter().map(|cell| (cell.task_id, cell.student_id)).collect();
+        let comment = cmd
+            .comment
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty());
+
+        let (granted, revoked) = self
+            .plusnik
+            .apply_pluses(sheet_id, records, &revoke_pairs, user.id, comment)
+            .await?;
+        let pluses = self
+            .plusnik
+            .get_records_by_sheet(sheet_id)
+            .await?
+            .into_iter()
+            .filter(PlusnikRecord::is_active)
+            .collect();
+        Ok(PlusBatchResult { granted, revoked, pluses })
+    }
+
+    /// The course summary for a teacher: students × sheets with solved counts, over
+    /// published and archived sheets (drafts have no pluses). Only active pluses of
+    /// current students of the course count.
+    ///
+    /// # Fail-safe поведение
+    /// `InsufficientPermissions` unless the user manages the course.
+    pub async fn course_summary(&self, user: &User, lesson_id: Uuid) -> Result<CourseSummary, DomainError> {
+        self.require_manager(user, lesson_id).await?;
+        let lesson = self.lessons.get_by_id(lesson_id).await?;
+
+        let mut sheets: Vec<PlusnikSheet> = self
+            .plusnik
+            .get_sheets_by_lesson(lesson_id)
+            .await?
+            .into_iter()
+            .filter(|sheet| sheet.status != SheetStatus::Draft)
+            .collect();
+        sheets.sort_by(|a, b| (a.issue_date, a.created_at).cmp(&(b.issue_date, b.created_at)));
+        let column: HashMap<Uuid, usize> =
+            sheets.iter().enumerate().map(|(index, sheet)| (sheet.id, index)).collect();
+
+        let mut task_counts = vec![0usize; sheets.len()];
+        for task in self.plusnik.get_tasks_by_lesson(lesson_id).await? {
+            if let Some(&index) = column.get(&task.sheet_id) {
+                task_counts[index] += 1;
+            }
+        }
+
+        let mut students: Vec<SummaryStudent> = self
+            .lesson_students(&lesson)
+            .await?
+            .into_iter()
+            .map(|student| SummaryStudent {
+                id: student.id,
+                name: format!("{} {}", student.last_name, student.first_name),
+                solved: vec![0; sheets.len()],
+                solved_total: 0,
+            })
+            .collect();
+        students.sort_by(|a, b| a.name.cmp(&b.name));
+        let row: HashMap<Uuid, usize> =
+            students.iter().enumerate().map(|(index, student)| (student.id, index)).collect();
+
+        for record in self.plusnik.get_active_records_by_lesson(lesson_id).await? {
+            if let (Some(&r), Some(&c)) = (row.get(&record.student_id), column.get(&record.sheet_id)) {
+                students[r].solved[c] += 1;
+                students[r].solved_total += 1;
+            }
+        }
+
+        Ok(CourseSummary {
+            lesson: self.lesson_summary(&lesson).await?,
+            total_tasks: task_counts.iter().sum(),
+            sheets: sheets
+                .into_iter()
+                .zip(task_counts)
+                .map(|(sheet, total_tasks)| SummarySheet { sheet, total_tasks })
+                .collect(),
+            students,
+        })
+    }
+
+    /// Every plus of a sheet ever put, including revoked ones, newest first, with who
+    /// put and removed it — settles "who put / removed this plus" disputes.
+    ///
+    /// # Fail-safe поведение
+    /// `InsufficientPermissions` unless the user manages the course. A user deleted
+    /// from the directory shows as "—" instead of failing the whole history.
+    pub async fn sheet_history(
+        &self,
+        user: &User,
+        sheet_id: Uuid,
+        filter: HistoryFilter,
+    ) -> Result<Vec<PlusHistoryEntry>, DomainError> {
+        let sheet = self.plusnik.get_sheet_by_id(sheet_id).await?;
+        self.require_manager(user, sheet.lesson_id).await?;
+
+        let numbers: HashMap<Uuid, String> = self
+            .plusnik
+            .get_tasks(sheet_id)
+            .await?
+            .into_iter()
+            .map(|task| (task.id, task.task_number))
+            .collect();
+        let records: Vec<PlusnikRecord> = self
+            .plusnik
+            .get_records_by_sheet(sheet_id)
+            .await?
+            .into_iter()
+            .filter(|record| filter.student_id.map_or(true, |id| record.student_id == id))
+            .filter(|record| filter.task_id.map_or(true, |id| record.task_id == id))
+            .collect();
+
+        // Collected before the loop: an iterator held across `.await` makes the future !Send.
+        let mut people: Vec<Uuid> = Vec::new();
+        for record in &records {
+            people.push(record.student_id);
+            people.push(record.granted_by);
+            people.extend(record.revoked_by);
+        }
+        let mut names: HashMap<Uuid, String> = HashMap::new();
+        for id in people {
+            if names.contains_key(&id) {
+                continue;
+            }
+            let name = match self.users.get_by_id(id).await {
+                Ok(found) => format!("{} {}", found.last_name, found.first_name),
+                Err(DomainError::UserNotFound) => "—".to_string(),
+                Err(error) => return Err(error),
+            };
+            names.insert(id, name);
+        }
+        let name_of = |id: Uuid| names.get(&id).cloned().unwrap_or_else(|| "—".to_string());
+
+        Ok(records
+            .into_iter()
+            .map(|record| PlusHistoryEntry {
+                task_number: numbers.get(&record.task_id).cloned().unwrap_or_default(),
+                student_name: name_of(record.student_id),
+                granted_by_name: name_of(record.granted_by),
+                revoked_by_name: record.revoked_by.map(name_of),
+                record,
+            })
+            .collect())
     }
 
     // ========================================================================
