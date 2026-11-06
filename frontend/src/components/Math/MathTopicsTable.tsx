@@ -7,6 +7,8 @@ import {
     getSchoolClassLabel,
     hasStudentRole,
     hasTeacherOrAdminRole,
+    type PlusnikTaskDto,
+    type PlusnikSheetStatus,
     type SchoolClassDto,
 } from '../../api';
 import type {User} from '../../auth/authService';
@@ -25,6 +27,8 @@ interface MathTopic {
     issueDate: string;
     deadline: string | null;
     taskCount: number | null;
+    status: PlusnikSheetStatus;
+    tasks: PlusnikTaskDto[];
 }
 
 const isMathSubject = (subject: string) => /математ|алгебр|геометр/i.test(subject);
@@ -65,6 +69,8 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, classes, 
                         issueDate: sheet.issue_date,
                         deadline: sheet.deadline,
                         taskCount: total_tasks,
+                        status: sheet.status,
+                        tasks: [],
                     }));
             }
 
@@ -87,6 +93,8 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, classes, 
                         issueDate: sheet.issue_date,
                         deadline: sheet.deadline,
                         taskCount: sheet.tasks.length,
+                        status: sheet.status,
+                        tasks: sheet.tasks,
                     }));
             }));
 
@@ -121,14 +129,16 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, classes, 
         setEditingTopic(topic);
     };
 
-    const removeTopicFromPage = (topicId: string) => {
-        setTopics((currentTopics) => currentTopics.filter(({id}) => id !== topicId));
-        setEditingTopic(null);
-    };
-
     const updateTopicInList = (
         topicId: string,
-        updates: {name: string; issueDate: string; deadline: string | null},
+        updates: {
+            name: string;
+            issueDate: string;
+            deadline: string | null;
+            status?: PlusnikSheetStatus;
+            taskCount?: number;
+            tasks?: PlusnikTaskDto[];
+        },
     ) => {
         setTopics((currentTopics) => currentTopics.map((topic) =>
             topic.id === topicId ? {...topic, ...updates} : topic,
@@ -233,7 +243,6 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, classes, 
                     key={editingTopic.id}
                     mode="edit"
                     onClose={() => setEditingTopic(null)}
-                    onRemoved={removeTopicFromPage}
                     onSaved={updateTopicInList}
                     topic={editingTopic}
                 />
