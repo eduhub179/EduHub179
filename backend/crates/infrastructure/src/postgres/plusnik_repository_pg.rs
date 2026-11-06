@@ -234,6 +234,66 @@ impl PlusnikRepositoryPg {
             mapped
         }
     }
+
+    /// Locks the sheet row for the rest of the transaction, so task edits of one sheet
+    /// run one after another. `PlusnikSheetNotFound` if there is no such sheet.
+    async fn lock_sheet(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        sheet_id: Uuid,
+    ) -> Result<(), DomainError> {
+        sqlx::query("SELECT sheet_id FROM plusnik_sheets WHERE sheet_id = $1 FOR UPDATE")
+            .bind(sheet_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(Self::map_db_err)?;
+        Ok(())
+    }
+
+    /// Tasks of a sheet inside a transaction; ties in `sort_order` broken by creation.
+    async fn tasks_in_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        sheet_id: Uuid,
+    ) -> Result<Vec<PlusnikTask>, DomainError> {
+        let rows = sqlx::query_as::<_, PlusnikTaskRow>(
+            r#"
+            SELECT task_id, sheet_id, task_number, sort_order, created_at
+            FROM plusnik_tasks
+            WHERE sheet_id = $1
+            ORDER BY sort_order, created_at, task_id
+            "#,
+        )
+        .bind(sheet_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(Self::map_db_err)?;
+        rows.into_iter().map(PlusnikTaskRow::into_domain).collect()
+    }
+
+    /// Sets `sort_order` = position in `ordered_ids` for every listed task, in one UPDATE.
+    async fn renumber(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        sheet_id: Uuid,
+        ordered_ids: &[Uuid],
+    ) -> Result<(), DomainError> {
+        let orders = (0..ordered_ids.len())
+            .map(|index| i32::try_from(index).map_err(|_| DomainError::InvalidTaskOrder))
+            .collect::<Result<Vec<i32>, DomainError>>()?;
+        sqlx::query(
+            r#"
+            UPDATE plusnik_tasks AS t
+            SET sort_order = o.ord
+            FROM unnest($2::uuid[], $3::int[]) AS o(task_id, ord)
+            WHERE t.sheet_id = $1 AND t.task_id = o.task_id AND t.sort_order <> o.ord
+            "#,
+        )
+        .bind(sheet_id)
+        .bind(ordered_ids)
+        .bind(&orders)
+        .execute(&mut **tx)
+        .await
+        .map_err(Self::map_db_err_task)?;
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -614,5 +674,214 @@ impl PlusnikRepository for PlusnikRepositoryPg {
         }
 
         Ok(())
+    }
+
+    // ========================================================================
+    // Batch task operations
+    // ========================================================================
+
+    async fn insert_tasks(
+        &self,
+        sheet_id: Uuid,
+        tasks: Vec<PlusnikTask>,
+        position: Option<usize>,
+    ) -> Result<Vec<PlusnikTask>, DomainError> {
+        let mut tx = self.pool.begin().await.map_err(Self::map_db_err)?;
+        Self::lock_sheet(&mut tx, sheet_id).await?;
+
+        let mut order: Vec<Uuid> = Self::tasks_in_tx(&mut tx, sheet_id)
+            .await?
+            .into_iter()
+            .map(|task| task.id)
+            .collect();
+        let at = position.unwrap_or(order.len()).min(order.len());
+
+        for (offset, task) in tasks.iter().enumerate() {
+            if task.sheet_id != sheet_id {
+                return Err(DomainError::TaskNotInSheet);
+            }
+            // Temporary order; `renumber` below sets the final one.
+            let sort_order = i32::try_from(at + offset).map_err(|_| DomainError::InvalidTaskOrder)?;
+            sqlx::query(
+                r#"
+                INSERT INTO plusnik_tasks (task_id, sheet_id, task_number, sort_order, created_at)
+                VALUES ($1, $2, $3, $4, $5)
+                "#,
+            )
+            .bind(task.id)
+            .bind(sheet_id)
+            .bind(&task.task_number)
+            .bind(sort_order)
+            .bind(task.created_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(Self::map_db_err_task)?;
+        }
+        order.splice(at..at, tasks.iter().map(|task| task.id));
+
+        Self::renumber(&mut tx, sheet_id, &order).await?;
+        let result = Self::tasks_in_tx(&mut tx, sheet_id).await?;
+        tx.commit().await.map_err(Self::map_db_err)?;
+        Ok(result)
+    }
+
+    async fn reorder_tasks(
+        &self,
+        sheet_id: Uuid,
+        task_ids: &[Uuid],
+    ) -> Result<Vec<PlusnikTask>, DomainError> {
+        let mut tx = self.pool.begin().await.map_err(Self::map_db_err)?;
+        Self::lock_sheet(&mut tx, sheet_id).await?;
+
+        let current: std::collections::HashSet<Uuid> = Self::tasks_in_tx(&mut tx, sheet_id)
+            .await?
+            .into_iter()
+            .map(|task| task.id)
+            .collect();
+        let requested: std::collections::HashSet<Uuid> = task_ids.iter().copied().collect();
+        if requested.len() != task_ids.len() || requested != current {
+            return Err(DomainError::InvalidTaskOrder);
+        }
+
+        Self::renumber(&mut tx, sheet_id, task_ids).await?;
+        let result = Self::tasks_in_tx(&mut tx, sheet_id).await?;
+        tx.commit().await.map_err(Self::map_db_err)?;
+        Ok(result)
+    }
+
+    async fn delete_tasks(&self, sheet_id: Uuid, task_ids: &[Uuid]) -> Result<(), DomainError> {
+        let unique: std::collections::HashSet<Uuid> = task_ids.iter().copied().collect();
+        let ids: Vec<Uuid> = unique.into_iter().collect();
+
+        let mut tx = self.pool.begin().await.map_err(Self::map_db_err)?;
+        let result = sqlx::query("DELETE FROM plusnik_tasks WHERE sheet_id = $1 AND task_id = ANY($2)")
+            .bind(sheet_id)
+            .bind(&ids)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| {
+                Self::map_delete_err(err, DomainError::PlusnikTaskHasRecords, Self::map_db_err_task)
+            })?;
+        if usize::try_from(result.rows_affected()).ok() != Some(ids.len()) {
+            // Dropping `tx` rolls the delete back.
+            return Err(DomainError::PlusnikTaskNotFound);
+        }
+        tx.commit().await.map_err(Self::map_db_err)?;
+        Ok(())
+    }
+
+    async fn get_tasks_by_lesson(&self, lesson_id: Uuid) -> Result<Vec<PlusnikTask>, DomainError> {
+        let rows = sqlx::query_as::<_, PlusnikTaskRow>(
+            r#"
+            SELECT t.task_id, t.sheet_id, t.task_number, t.sort_order, t.created_at
+            FROM plusnik_tasks t
+            JOIN plusnik_sheets s ON s.sheet_id = t.sheet_id
+            WHERE s.lesson_id = $1
+            ORDER BY t.sheet_id, t.sort_order
+            "#,
+        )
+        .bind(lesson_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Self::map_db_err)?;
+
+        rows.into_iter().map(PlusnikTaskRow::into_domain).collect()
+    }
+
+    // ========================================================================
+    // Batch record operations
+    // ========================================================================
+
+    async fn get_active_records_by_lesson(
+        &self,
+        lesson_id: Uuid,
+    ) -> Result<Vec<PlusnikRecord>, DomainError> {
+        let rows = sqlx::query_as::<_, PlusnikRecordRow>(
+            r#"
+            SELECT r.record_id, r.student_id, r.sheet_id, r.task_id, r.granted_by,
+                   r.granted_at, r.revoked_at, r.revoked_by, r.revoke_comment
+            FROM plusnik_records r
+            JOIN plusnik_sheets s ON s.sheet_id = r.sheet_id
+            WHERE s.lesson_id = $1 AND r.revoked_at IS NULL
+            "#,
+        )
+        .bind(lesson_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Self::map_db_err_record)?;
+
+        rows.into_iter().map(PlusnikRecordRow::into_domain).collect()
+    }
+
+    async fn apply_pluses(
+        &self,
+        sheet_id: Uuid,
+        grants: Vec<PlusnikRecord>,
+        revokes: &[(Uuid, Uuid)],
+        revoked_by: Uuid,
+        revoke_comment: Option<String>,
+    ) -> Result<(usize, usize), DomainError> {
+        let mut tx = self.pool.begin().await.map_err(Self::map_db_err_record)?;
+
+        let mut revoked = 0;
+        if !revokes.is_empty() {
+            let task_ids: Vec<Uuid> = revokes.iter().map(|(task, _)| *task).collect();
+            let student_ids: Vec<Uuid> = revokes.iter().map(|(_, student)| *student).collect();
+            let result = sqlx::query(
+                r#"
+                UPDATE plusnik_records AS r
+                SET revoked_at = NOW(), revoked_by = $2, revoke_comment = $3
+                FROM unnest($4::uuid[], $5::uuid[]) AS p(task_id, student_id)
+                WHERE r.sheet_id = $1
+                  AND r.task_id = p.task_id
+                  AND r.student_id = p.student_id
+                  AND r.revoked_at IS NULL
+                "#,
+            )
+            .bind(sheet_id)
+            .bind(revoked_by)
+            .bind(&revoke_comment)
+            .bind(&task_ids)
+            .bind(&student_ids)
+            .execute(&mut *tx)
+            .await
+            .map_err(Self::map_db_err_record)?;
+            revoked = usize::try_from(result.rows_affected()).map_err(|_| DomainError::InternalError)?;
+        }
+
+        let mut granted = 0;
+        if !grants.is_empty() {
+            if grants.iter().any(|record| record.sheet_id != sheet_id) {
+                return Err(DomainError::TaskNotInSheet);
+            }
+            let ids: Vec<Uuid> = grants.iter().map(|r| r.id).collect();
+            let students: Vec<Uuid> = grants.iter().map(|r| r.student_id).collect();
+            let tasks: Vec<Uuid> = grants.iter().map(|r| r.task_id).collect();
+            let granters: Vec<Uuid> = grants.iter().map(|r| r.granted_by).collect();
+            let times: Vec<DateTime<Utc>> = grants.iter().map(|r| r.granted_at).collect();
+            let result = sqlx::query(
+                r#"
+                INSERT INTO plusnik_records
+                    (record_id, student_id, sheet_id, task_id, granted_by, granted_at)
+                SELECT g.record_id, g.student_id, $1, g.task_id, g.granted_by, g.granted_at
+                FROM unnest($2::uuid[], $3::uuid[], $4::uuid[], $5::uuid[], $6::timestamptz[])
+                     AS g(record_id, student_id, task_id, granted_by, granted_at)
+                ON CONFLICT (student_id, task_id) WHERE revoked_at IS NULL DO NOTHING
+                "#,
+            )
+            .bind(sheet_id)
+            .bind(&ids)
+            .bind(&students)
+            .bind(&tasks)
+            .bind(&granters)
+            .bind(&times)
+            .execute(&mut *tx)
+            .await
+            .map_err(Self::map_db_err_record)?;
+            granted = usize::try_from(result.rows_affected()).map_err(|_| DomainError::InternalError)?;
+        }
+
+        tx.commit().await.map_err(Self::map_db_err_record)?;
+        Ok((granted, revoked))
     }
 }

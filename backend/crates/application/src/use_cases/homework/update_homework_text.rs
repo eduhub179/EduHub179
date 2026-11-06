@@ -15,6 +15,8 @@ use domain::{
 };
 use uuid::Uuid;
 
+use super::editor::HomeworkEditor;
+
 /// Command for updating homework text content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateHomeworkTextCommand {
@@ -52,7 +54,12 @@ impl UpdateHomeworkTextUseCase {
         Self { homeworks }
     }
 
-    pub async fn execute(&self, cmd: UpdateHomeworkTextCommand) -> Result<Homework, DomainError> {
+    /// `editor` proves the caller may change homework (see `HomeworkEditor`).
+    pub async fn execute(
+        &self,
+        _editor: HomeworkEditor,
+        cmd: UpdateHomeworkTextCommand,
+    ) -> Result<Homework, DomainError> {
         cmd.validate()?;
 
         let mut homework = self.homeworks.get_by_id(cmd.homework_id).await?;
@@ -152,7 +159,7 @@ mod tests {
         let use_case = UpdateHomeworkTextUseCase::new(repo);
 
         let cmd = UpdateHomeworkTextCommand::new(homework.id, Some("New text".to_string()));
-        let result = use_case.execute(cmd).await;
+        let result = use_case.execute(HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher), cmd).await;
 
         assert!(result.is_ok());
         let updated = result.unwrap();

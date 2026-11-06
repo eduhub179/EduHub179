@@ -86,6 +86,7 @@ async fn returns_only_students_class_for_day_and_week() {
         ),
     ];
     let subject = Subject::try_new(subject_id, "Mathematics".to_string()).unwrap();
+    let viewer = student.clone();
     let service = service_with_personal_schedule(
         student,
         instances,
@@ -94,11 +95,11 @@ async fn returns_only_students_class_for_day_and_week() {
         vec![subject],
     );
 
-    let day = service.day_schedule(student_id, week_start).await.unwrap();
+    let day = service.day_schedule(&viewer, student_id, week_start).await.unwrap();
     assert_eq!(day.lessons.len(), 1);
     assert_eq!(day.lessons[0].lesson.id, matching_lesson_id);
 
-    let week = service.current_week_schedule(student_id, week_start).await.unwrap();
+    let week = service.current_week_schedule(&viewer, student_id, week_start).await.unwrap();
     assert_eq!(week.days[0].lessons.len(), 1);
     assert_eq!(
         week.days.iter().map(|day| day.lessons.len()).sum::<usize>(),

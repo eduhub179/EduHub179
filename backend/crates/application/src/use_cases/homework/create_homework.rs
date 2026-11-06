@@ -15,19 +15,19 @@ use domain::{
     entities::homework::Homework,
     errors::DomainError,
     repositories::homework_repository::HomeworkRepository,
-    value_objects::{homework_status::HomeworkStatus, role::UserRole},
+    value_objects::homework_status::HomeworkStatus,
 };
 use uuid::Uuid;
+
+use super::editor::HomeworkEditor;
 
 /// Command for creating a homework record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateHomeworkCommand {
     /// Concrete lesson instance this homework belongs to.
     pub lesson_instance_id: Uuid,
-    /// User who created the homework.
-    pub created_by: Uuid,
-    /// Role of the creator at the moment of creation.
-    pub created_by_role: UserRole,
+    /// Who creates it (checked permission); gives `created_by` and `created_by_role`.
+    pub editor: HomeworkEditor,
     /// Optional textual assignment content.
     pub text_content: Option<String>,
     /// Homework status.
@@ -37,15 +37,13 @@ pub struct CreateHomeworkCommand {
 impl CreateHomeworkCommand {
     pub fn new(
         lesson_instance_id: Uuid,
-        created_by: Uuid,
-        created_by_role: UserRole,
+        editor: HomeworkEditor,
         text_content: Option<String>,
         status: HomeworkStatus,
     ) -> Self {
         Self {
             lesson_instance_id,
-            created_by,
-            created_by_role,
+            editor,
             text_content,
             status,
         }
@@ -81,8 +79,8 @@ impl CreateHomeworkUseCase {
         let homework = Homework::try_new(
             Uuid::new_v4(),
             cmd.lesson_instance_id,
-            cmd.created_by,
-            cmd.created_by_role,
+            cmd.editor.user_id(),
+            cmd.editor.role(),
             cmd.text_content,
             cmd.status,
             false,
@@ -150,8 +148,7 @@ mod tests {
     fn test_validate_rejects_empty_text() {
         let cmd = CreateHomeworkCommand::new(
             Uuid::new_v4(),
-            Uuid::new_v4(),
-            UserRole::Teacher,
+            HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             Some("   ".to_string()),
             HomeworkStatus::Draft,
         );
@@ -163,8 +160,7 @@ mod tests {
     fn test_validate_accepts_empty_text() {
         let cmd = CreateHomeworkCommand::new(
             Uuid::new_v4(),
-            Uuid::new_v4(),
-            UserRole::Teacher,
+            HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             None,
             HomeworkStatus::Draft,
         );
@@ -179,8 +175,7 @@ mod tests {
 
         let cmd = CreateHomeworkCommand::new(
             Uuid::new_v4(),
-            Uuid::new_v4(),
-            UserRole::Teacher,
+            HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
             Some("Solve tasks 1-5".to_string()),
             HomeworkStatus::Draft,
         );

@@ -6,7 +6,8 @@
 use std::str::FromStr;
 
 use application::use_cases::plusnik::plusnik_service::{
-    CreateSheetCommand, PlusnikService, SheetWithTasks, UpdateSheetCommand,
+    CourseSummary, CreateSheetCommand, HistoryFilter, PlusBatchCommand, PlusCell,
+    PlusHistoryEntry, PlusnikService, SheetWithTasks, UpdateSheetCommand,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -181,6 +182,165 @@ pub struct UpdateSheetRequest {
 #[derive(Debug, Deserialize)]
 pub struct AddTaskRequest {
     pub number: String,
+    /// 0-based place among the existing tasks; absent or past the end = append.
+    #[serde(default)]
+    pub position: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddTasksRequest {
+    /// Task numbers in display order: ["1а", "1б", "2"].
+    pub numbers: Vec<String>,
+    /// 0-based place among the existing tasks; absent or past the end = append.
+    #[serde(default)]
+    pub position: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenameTaskRequest {
+    pub number: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TaskIdsRequest {
+    pub task_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlusCellRequest {
+    pub task_id: String,
+    pub student_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlusBatchRequest {
+    #[serde(default)]
+    pub grant: Vec<PlusCellRequest>,
+    #[serde(default)]
+    pub revoke: Vec<PlusCellRequest>,
+    /// Stored on every revoked record.
+    #[serde(default)]
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlusBatchResponse {
+    /// Pluses actually added (present ones are skipped).
+    pub granted: usize,
+    /// Pluses actually removed (absent ones are skipped).
+    pub revoked: usize,
+    /// All active pluses of the sheet after the change.
+    pub pluses: Vec<PlusResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SummarySheetResponse {
+    pub id: String,
+    pub name: String,
+    pub issue_date: String,
+    pub deadline: Option<String>,
+    /// published | archived.
+    pub status: String,
+    pub total_tasks: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SummaryStudentResponse {
+    pub id: String,
+    pub name: String,
+    /// Solved tasks per sheet, aligned with `sheets`.
+    pub solved: Vec<usize>,
+    pub solved_total: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CourseSummaryResponse {
+    pub lesson: LessonResponse,
+    /// Published and archived sheets, oldest first.
+    pub sheets: Vec<SummarySheetResponse>,
+    /// Sorted by name.
+    pub students: Vec<SummaryStudentResponse>,
+    pub total_tasks: usize,
+}
+
+impl From<CourseSummary> for CourseSummaryResponse {
+    fn from(summary: CourseSummary) -> Self {
+        Self {
+            lesson: LessonResponse {
+                lesson_id: summary.lesson.lesson_id.to_string(),
+                subject_name: summary.lesson.subject_name,
+                target_name: summary.lesson.target_name,
+            },
+            sheets: summary
+                .sheets
+                .into_iter()
+                .map(|item| SummarySheetResponse {
+                    id: item.sheet.id.to_string(),
+                    name: item.sheet.name,
+                    issue_date: item.sheet.issue_date.to_string(),
+                    deadline: item.sheet.deadline.map(|deadline| deadline.to_rfc3339()),
+                    status: item.sheet.status.to_string(),
+                    total_tasks: item.total_tasks,
+                })
+                .collect(),
+            students: summary
+                .students
+                .into_iter()
+                .map(|student| SummaryStudentResponse {
+                    id: student.id.to_string(),
+                    name: student.name,
+                    solved: student.solved,
+                    solved_total: student.solved_total,
+                })
+                .collect(),
+            total_tasks: summary.total_tasks,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct HistoryEntryResponse {
+    pub record_id: String,
+    pub task_id: String,
+    pub task_number: String,
+    pub student_id: String,
+    pub student_name: String,
+    pub granted_by: String,
+    pub granted_by_name: String,
+    pub granted_at: String,
+    /// Null while the plus is active.
+    pub revoked_at: Option<String>,
+    pub revoked_by: Option<String>,
+    pub revoked_by_name: Option<String>,
+    pub revoke_comment: Option<String>,
+}
+
+impl From<PlusHistoryEntry> for HistoryEntryResponse {
+    fn from(entry: PlusHistoryEntry) -> Self {
+        let record = entry.record;
+        Self {
+            record_id: record.id.to_string(),
+            task_id: record.task_id.to_string(),
+            task_number: entry.task_number,
+            student_id: record.student_id.to_string(),
+            student_name: entry.student_name,
+            granted_by: record.granted_by.to_string(),
+            granted_by_name: entry.granted_by_name,
+            granted_at: record.granted_at.to_rfc3339(),
+            revoked_at: record.revoked_at.map(|at| at.to_rfc3339()),
+            revoked_by: record.revoked_by.map(|id| id.to_string()),
+            revoked_by_name: entry.revoked_by_name,
+            revoke_comment: record.revoke_comment,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryQuery {
+    #[serde(default)]
+    pub student_id: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -237,6 +397,31 @@ fn parse_deadline(raw: &str) -> Result<DateTime<Utc>, ApiError> {
     DateTime::parse_from_rfc3339(raw.trim())
         .map(|deadline| deadline.with_timezone(&Utc))
         .map_err(|_| bad_input("deadline must be RFC 3339, e.g. 2026-10-20T18:00:00+03:00"))
+}
+
+fn parse_task_ids(raw: &[String]) -> Result<Vec<Uuid>, ApiError> {
+    raw.iter()
+        .map(|id| parse_id(id.trim(), DomainError::PlusnikTaskNotFound))
+        .collect()
+}
+
+fn parse_cells(raw: Vec<PlusCellRequest>) -> Result<Vec<PlusCell>, ApiError> {
+    raw.into_iter()
+        .map(|cell| {
+            Ok(PlusCell {
+                task_id: parse_id(cell.task_id.trim(), DomainError::PlusnikTaskNotFound)?,
+                student_id: parse_id(cell.student_id.trim(), DomainError::UserNotFound)?,
+            })
+        })
+        .collect()
+}
+
+/// Empty or missing = no filter.
+fn optional_id(raw: Option<&str>, not_found: DomainError) -> Result<Option<Uuid>, ApiError> {
+    raw.map(str::trim)
+        .filter(|raw| !raw.is_empty())
+        .map(|raw| parse_id(raw, not_found))
+        .transpose()
 }
 
 fn parse_status(raw: &str) -> Result<SheetStatus, ApiError> {
@@ -400,7 +585,8 @@ pub async fn sheet_matrix_handler(
     }))
 }
 
-/// `POST /api/plusnik/sheets/:sheet_id/tasks` — appends a task.
+/// `POST /api/plusnik/sheets/:sheet_id/tasks` — adds a task: `{number, position?}`.
+/// Without `position` it goes to the end; tasks after it shift down.
 pub async fn add_task_handler(
     State(state): State<AppState>,
     Path(sheet_id): Path<String>,
@@ -410,11 +596,154 @@ pub async fn add_task_handler(
     let (user, service) = caller(&state, &headers).await?;
     let sheet_id = parse_id(&sheet_id, DomainError::PlusnikSheetNotFound)?;
     let task = service
-        .add_task(&user, sheet_id, payload.number)
+        .insert_task(&user, sheet_id, payload.number, payload.position)
         .await
         .map_err(ApiError::from_plusnik_domain)?;
 
     Ok((StatusCode::CREATED, Json(task.into())))
+}
+
+/// `POST /api/plusnik/sheets/:sheet_id/tasks/batch` — adds several tasks at once:
+/// `{numbers: ["5а","5б"], position?}`. All or nothing; returns all tasks of the sheet.
+pub async fn add_tasks_handler(
+    State(state): State<AppState>,
+    Path(sheet_id): Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<AddTasksRequest>,
+) -> Result<(StatusCode, Json<Vec<TaskResponse>>), ApiError> {
+    let (user, service) = caller(&state, &headers).await?;
+    let sheet_id = parse_id(&sheet_id, DomainError::PlusnikSheetNotFound)?;
+    let added = service
+        .add_tasks(&user, sheet_id, payload.numbers, payload.position)
+        .await
+        .map_err(ApiError::from_plusnik_domain)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(added.tasks.into_iter().map(TaskResponse::from).collect()),
+    ))
+}
+
+/// `DELETE /api/plusnik/sheets/:sheet_id/tasks` — deletes several tasks:
+/// `{task_ids: [...]}`. All or nothing (409 if any has pluses); returns the rest.
+pub async fn delete_tasks_handler(
+    State(state): State<AppState>,
+    Path(sheet_id): Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<TaskIdsRequest>,
+) -> Result<Json<Vec<TaskResponse>>, ApiError> {
+    let (user, service) = caller(&state, &headers).await?;
+    let sheet_id = parse_id(&sheet_id, DomainError::PlusnikSheetNotFound)?;
+    let task_ids = parse_task_ids(&payload.task_ids)?;
+    let tasks = service
+        .delete_tasks(&user, sheet_id, task_ids)
+        .await
+        .map_err(ApiError::from_plusnik_domain)?;
+
+    Ok(Json(tasks.into_iter().map(TaskResponse::from).collect()))
+}
+
+/// `PUT /api/plusnik/sheets/:sheet_id/tasks/order` — new order of all tasks:
+/// `{task_ids: [...]}` listing every task once.
+pub async fn reorder_tasks_handler(
+    State(state): State<AppState>,
+    Path(sheet_id): Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<TaskIdsRequest>,
+) -> Result<Json<Vec<TaskResponse>>, ApiError> {
+    let (user, service) = caller(&state, &headers).await?;
+    let sheet_id = parse_id(&sheet_id, DomainError::PlusnikSheetNotFound)?;
+    let task_ids = parse_task_ids(&payload.task_ids)?;
+    let tasks = service
+        .reorder_tasks(&user, sheet_id, task_ids)
+        .await
+        .map_err(ApiError::from_plusnik_domain)?;
+
+    Ok(Json(tasks.into_iter().map(TaskResponse::from).collect()))
+}
+
+/// `PATCH /api/plusnik/tasks/:task_id` — renames a task: `{number}`. Pluses stay.
+pub async fn rename_task_handler(
+    State(state): State<AppState>,
+    Path(task_id): Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<RenameTaskRequest>,
+) -> Result<Json<TaskResponse>, ApiError> {
+    let (user, service) = caller(&state, &headers).await?;
+    let task_id = parse_id(&task_id, DomainError::PlusnikTaskNotFound)?;
+    let task = service
+        .rename_task(&user, task_id, payload.number)
+        .await
+        .map_err(ApiError::from_plusnik_domain)?;
+
+    Ok(Json(task.into()))
+}
+
+/// `POST /api/plusnik/sheets/:sheet_id/pluses` — many pluses at once:
+/// `{grant: [{task_id, student_id}], revoke: [...], comment?}`. One transaction,
+/// repeat-safe; returns counts and the sheet's active pluses.
+pub async fn apply_pluses_handler(
+    State(state): State<AppState>,
+    Path(sheet_id): Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<PlusBatchRequest>,
+) -> Result<Json<PlusBatchResponse>, ApiError> {
+    let (user, service) = caller(&state, &headers).await?;
+    let sheet_id = parse_id(&sheet_id, DomainError::PlusnikSheetNotFound)?;
+    let command = PlusBatchCommand {
+        grant: parse_cells(payload.grant)?,
+        revoke: parse_cells(payload.revoke)?,
+        comment: payload.comment,
+    };
+    let result = service
+        .apply_pluses(&user, sheet_id, command)
+        .await
+        .map_err(ApiError::from_plusnik_domain)?;
+
+    Ok(Json(PlusBatchResponse {
+        granted: result.granted,
+        revoked: result.revoked,
+        pluses: result.pluses.into_iter().map(PlusResponse::from).collect(),
+    }))
+}
+
+/// `GET /api/plusnik/lessons/:lesson_id/summary` — students × sheets with solved
+/// counts over published and archived sheets (teachers and admins).
+pub async fn course_summary_handler(
+    State(state): State<AppState>,
+    Path(lesson_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<CourseSummaryResponse>, ApiError> {
+    let (user, service) = caller(&state, &headers).await?;
+    let lesson_id = parse_id(&lesson_id, DomainError::LessonNotFound)?;
+    let summary = service
+        .course_summary(&user, lesson_id)
+        .await
+        .map_err(ApiError::from_plusnik_domain)?;
+
+    Ok(Json(summary.into()))
+}
+
+/// `GET /api/plusnik/sheets/:sheet_id/history[?student_id=&task_id=]` — every plus
+/// ever put on the sheet, revoked included, newest first, with names.
+pub async fn sheet_history_handler(
+    State(state): State<AppState>,
+    Path(sheet_id): Path<String>,
+    headers: HeaderMap,
+    Query(query): Query<HistoryQuery>,
+) -> Result<Json<Vec<HistoryEntryResponse>>, ApiError> {
+    let (user, service) = caller(&state, &headers).await?;
+    let sheet_id = parse_id(&sheet_id, DomainError::PlusnikSheetNotFound)?;
+    let filter = HistoryFilter {
+        student_id: optional_id(query.student_id.as_deref(), DomainError::UserNotFound)?,
+        task_id: optional_id(query.task_id.as_deref(), DomainError::PlusnikTaskNotFound)?,
+    };
+    let history = service
+        .sheet_history(&user, sheet_id, filter)
+        .await
+        .map_err(ApiError::from_plusnik_domain)?;
+
+    Ok(Json(history.into_iter().map(HistoryEntryResponse::from).collect()))
 }
 
 /// `DELETE /api/plusnik/tasks/:task_id` — only tasks without pluses (409 otherwise).

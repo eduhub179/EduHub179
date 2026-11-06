@@ -214,7 +214,7 @@ fn slot(lesson_id: Uuid, day: DayOfWeek, start: &str, end: &str) -> SlotInput {
 
 async fn student_lessons(w: &World, date: &str) -> Vec<(String, String, LessonInstanceStatus)> {
     w.schedule
-        .day_schedule(w.student.id, day(date))
+        .day_schedule(&w.student, w.student.id, day(date))
         .await
         .unwrap()
         .lessons

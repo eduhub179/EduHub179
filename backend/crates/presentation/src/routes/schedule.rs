@@ -168,9 +168,6 @@ pub async fn schedule_week_handler(
         .and_then(|id| Uuid::parse_str(id).ok())
         .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
 
-    if user.role.is_student() && user.id != student_id {
-        return Err(ApiError::from_schedule_domain(DomainError::InsufficientPermissions));
-    }
 
     let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -178,7 +175,7 @@ pub async fn schedule_week_handler(
     })?;
 
     let response = schedule_service
-        .current_week_schedule(student_id, date)
+        .current_week_schedule(&user, student_id, date)
         .await
         .map_err(ApiError::from_schedule_domain)?;
 
@@ -228,9 +225,6 @@ pub async fn day_schedule_handler(
         .and_then(|id| Uuid::parse_str(id).ok())
         .ok_or_else(|| ApiError::from_schedule_domain(DomainError::UserNotFound))?;
 
-    if user.role.is_student() && user.id != student_id {
-        return Err(ApiError::from_schedule_domain(DomainError::InsufficientPermissions));
-    }
 
     let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
         status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -238,7 +232,7 @@ pub async fn day_schedule_handler(
     })?;
 
     let response = schedule_service
-        .day_schedule(student_id, date)
+        .day_schedule(&user, student_id, date)
         .await
         .map_err(ApiError::from_schedule_domain)?;
 

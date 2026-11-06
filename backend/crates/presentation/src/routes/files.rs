@@ -17,12 +17,16 @@ use application::use_cases::homework::{
     upload_file::UploadHomeworkFileCommand,
 };
 use application::use_cases::notifications::notify_homework_changed::HomeworkChange;
-use domain::{entities::homework::HomeworkFile, errors::DomainError};
+use application::use_cases::homework::editor::HomeworkEditor;
+use domain::{
+    entities::{homework::HomeworkFile, user::User},
+    errors::DomainError,
+};
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::routes::notifications::{notify_homework_change_for_lesson, notify_homework_changed};
-use crate::router::{can_edit_homework, require_authenticated_user, require_caller, ApiError, AppState, Caller, FileUseCases};
+use crate::router::{require_authenticated_user, require_caller, ApiError, AppState, FileUseCases};
 
 /// Multipart field with the file.
 const FILE_FIELD: &str = "file";
@@ -83,13 +87,16 @@ fn parse_id(raw: &str, not_found: DomainError) -> Result<Uuid, ApiError> {
     Uuid::parse_str(raw).map_err(|_| ApiError::from_homework_domain(not_found))
 }
 
-/// Teachers, admins and the agent manage homework files, the same rule as for homework text.
-async fn require_file_editor(state: &AppState, headers: &HeaderMap) -> Result<Caller, ApiError> {
+/// The caller as a homework editor: the same rule as for homework text, kept in
+/// `HomeworkEditor` (teachers, admins, anyone through the agent).
+async fn require_file_editor(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(User, HomeworkEditor), ApiError> {
     let caller = require_caller(state, headers).await?;
-    if !can_edit_homework(&caller.user, caller.is_agent) {
-        return Err(ApiError::from_homework_domain(DomainError::InsufficientPermissions));
-    }
-    Ok(caller)
+    let editor = HomeworkEditor::authorize(&caller.user, caller.is_agent)
+        .map_err(ApiError::from_homework_domain)?;
+    Ok((caller.user, editor))
 }
 
 pub(crate) fn multipart_error(error: MultipartError) -> ApiError {
@@ -109,7 +116,7 @@ pub async fn attach_file_to_lesson_handler(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<AttachFileResponse>, ApiError> {
-    let Caller { user, .. } = require_file_editor(&state, &headers).await?;
+    let (user, editor) = require_file_editor(&state, &headers).await?;
     let use_cases = file_use_cases(&state)?;
     let lesson_instance_id = parse_id(&lesson_instance_id, DomainError::LessonInstanceNotFound)?;
 
@@ -136,8 +143,7 @@ pub async fn attach_file_to_lesson_handler(
         .attach_to_lesson
         .execute(AttachFileToLessonCommand {
             lesson_instance_id,
-            uploaded_by: user.id,
-            uploaded_by_role: user.role,
+            editor,
             file,
         })
         .await
@@ -220,13 +226,13 @@ pub async fn delete_homework_file_handler(
     Path(file_id): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<DeleteFileResponse>, ApiError> {
-    let Caller { user, .. } = require_file_editor(&state, &headers).await?;
+    let (user, editor) = require_file_editor(&state, &headers).await?;
     let use_cases = file_use_cases(&state)?;
     let file_id = parse_id(&file_id, DomainError::HomeworkFileNotFound)?;
 
     let deleted = use_cases
         .delete
-        .execute(DeleteHomeworkFileCommand { file_id })
+        .execute(DeleteHomeworkFileCommand { file_id, editor })
         .await
         .map_err(ApiError::from_homework_domain)?;
     if let Some(key) = deleted.orphaned_storage_key {

@@ -169,6 +169,10 @@ pub enum DomainError {
     PlusnikSheetNotPublished,
     // The student is not in the lesson's audience (its class or group).
     StudentNotInLesson,
+    // A new task order must list every task of the sheet exactly once.
+    InvalidTaskOrder,
+    // A batch of tasks or pluses is empty, too large, or contradicts itself.
+    InvalidPlusnikBatch,
 
     // Course material topic with the specified ID was not found (or belongs to another course).
     MaterialTopicNotFound,
@@ -317,6 +321,8 @@ impl fmt::Display for DomainError {
             DomainError::TaskNotInSheet => write!(f, "Task does not belong to sheet"),
             DomainError::PlusnikSheetNotPublished => write!(f, "Plusnik sheet is not published"),
             DomainError::StudentNotInLesson => write!(f, "Student is not in this lesson"),
+            DomainError::InvalidTaskOrder => write!(f, "Invalid task order"),
+            DomainError::InvalidPlusnikBatch => write!(f, "Invalid plusnik batch"),
             DomainError::MaterialTopicNotFound => write!(f, "Material topic not found"),
             DomainError::InvalidMaterialTopicName => write!(f, "Invalid material topic name"),
             DomainError::MaterialTopicAlreadyExists => write!(f, "Material topic already exists"),

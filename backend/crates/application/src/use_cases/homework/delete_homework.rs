@@ -19,6 +19,8 @@ use domain::{
 };
 use uuid::Uuid;
 
+use super::editor::HomeworkEditor;
+
 /// Result of a successful delete.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletedHomework {
@@ -48,7 +50,12 @@ impl DeleteHomeworkUseCase {
     /// `Err(HomeworkNotFound)` if there is no such homework; storage is not touched then.
     /// A storage failure after the DB delete does not fail the operation: for the user the
     /// homework is gone, the leftovers are listed in `orphaned_storage_keys`.
-    pub async fn execute(&self, homework_id: Uuid) -> Result<DeletedHomework, DomainError> {
+    /// `editor` proves the caller may change homework (see `HomeworkEditor`).
+    pub async fn execute(
+        &self,
+        _editor: HomeworkEditor,
+        homework_id: Uuid,
+    ) -> Result<DeletedHomework, DomainError> {
         let homework = self.homeworks.get_by_id(homework_id).await?;
         let files = self.homeworks.get_files(homework_id).await?;
         self.homeworks.delete(homework_id).await?;
@@ -74,6 +81,7 @@ impl DeleteHomeworkUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::value_objects::role::UserRole;
     use domain::entities::homework::{Homework, HomeworkFile};
     use domain::ports::file_storage::{StoredFile, UploadFileRequest};
     use std::sync::Mutex;
@@ -204,7 +212,7 @@ mod tests {
         let storage = storage(None);
         let use_case = DeleteHomeworkUseCase::new(repo.clone(), Some(storage.clone()));
 
-        let result = use_case.execute(Uuid::new_v4()).await.unwrap();
+        let result = use_case.execute(HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher), Uuid::new_v4()).await.unwrap();
 
         assert!(*repo.deleted.lock().unwrap());
         assert!(result.orphaned_storage_keys.is_empty());
@@ -219,7 +227,7 @@ mod tests {
         let storage = storage(None);
         let use_case = DeleteHomeworkUseCase::new(Arc::new(repo), Some(storage.clone()));
 
-        let result = use_case.execute(Uuid::new_v4()).await;
+        let result = use_case.execute(HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher), Uuid::new_v4()).await;
 
         assert_eq!(result, Err(DomainError::HomeworkNotFound));
         assert!(storage.deleted.lock().unwrap().is_empty());
@@ -231,7 +239,7 @@ mod tests {
         let use_case =
             DeleteHomeworkUseCase::new(repo.clone(), Some(storage(Some("homeworks/a"))));
 
-        let result = use_case.execute(Uuid::new_v4()).await.unwrap();
+        let result = use_case.execute(HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher), Uuid::new_v4()).await.unwrap();
 
         assert!(*repo.deleted.lock().unwrap());
         assert_eq!(result.orphaned_storage_keys, vec!["homeworks/a"]);
@@ -242,7 +250,7 @@ mod tests {
         let repo = Arc::new(MockHomeworkRepository::with_files(&["homeworks/a"]));
         let use_case = DeleteHomeworkUseCase::new(repo.clone(), None);
 
-        let result = use_case.execute(Uuid::new_v4()).await.unwrap();
+        let result = use_case.execute(HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher), Uuid::new_v4()).await.unwrap();
 
         assert!(*repo.deleted.lock().unwrap());
         assert_eq!(result.orphaned_storage_keys, vec!["homeworks/a"]);
