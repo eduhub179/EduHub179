@@ -81,32 +81,157 @@
     opacity: 0.6;
 }
 
-.math-topic-modal__remove {
+.math-topic-modal__visibility {
     grid-column: 1 / -1;
     justify-self: start;
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+}
+
+.math-topic-modal__visibility button {
     min-height: 36px;
-    padding: 0 12px;
-    border: 1px solid #b42318;
-    border-radius: 6px;
-    background: #fff;
-    color: #b42318;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--color-text);
     cursor: pointer;
     font: inherit;
 }
 
-.math-topic-modal__remove:hover,
-.math-topic-modal__remove:focus-visible {
+.math-topic-modal__visibility button:hover:not(.is-selected),
+.math-topic-modal__visibility button:focus-visible {
     outline: none;
-    background: rgb(180 35 24 / 10%);
+    background: rgb(15 23 42 / 8%);
 }
 
-.math-topic-modal__remove:disabled {
+.math-topic-modal__visibility button.is-selected {
+    background: #fff;
+    box-shadow: 0 1px 3px rgb(15 23 42 / 18%);
+    font-weight: 600;
+}
+
+.math-topic-modal__visibility button:disabled {
     cursor: wait;
     opacity: 0.6;
+}
+
+.math-topic-form__placeholder {
+    grid-column: 1 / -1;
+    margin: -8px 0 0;
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+.math-topic-form__existing-points {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--color-text);
+    font-size: 14px;
+}
+
+.math-topic-form__existing-points span {
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+.math-topic-form__existing-points label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.math-topic-form__existing-points input {
+    min-height: 38px;
+    padding: 7px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--color-text);
+    font: inherit;
+}
+
+.math-topic-form__points {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-text);
+}
+
+.math-topic-form__add-points {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--color-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 22px;
+    line-height: 1;
+}
+
+.math-topic-form__points-editor {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-bg);
+}
+
+.math-topic-form__points-editor label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.math-topic-form__points-editor input,
+.math-topic-form__points-editor select {
+    min-height: 38px;
+    padding: 7px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--color-text);
+    font: inherit;
+}
+
+.math-topic-form__points-editor p,
+.math-topic-form__pending-points {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 13px;
+}
+
+.math-topic-form__points-editor button {
+    justify-self: start;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--color-text);
+    cursor: pointer;
+    font: inherit;
 }
 
 @media (max-width: 760px) {
     .math-topic-modal {
         padding: 16px;
+    }
+
+    .math-topic-form__points-editor {
+        grid-template-columns: 1fr;
     }
 }
