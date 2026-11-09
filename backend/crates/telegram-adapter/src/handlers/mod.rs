@@ -5,8 +5,8 @@
 
 pub mod auth;
 pub mod help;
-pub mod homework;
 pub mod schedule;
+pub mod view;
 
 use crate::bot::HandlerError;
 use crate::state::BotState;
@@ -26,10 +26,14 @@ pub enum Command {
     Start,
     #[command(description = "показать справку")]
     Help,
-    #[command(description = "посмотреть расписание")]
-    Schedule,
-    #[command(description = "посмотреть домашние задания")]
-    Homework,
+    #[command(description = "расписание с заменами, можно добавить: завтра, неделя")]
+    Schedule(String),
+    #[command(description = "расписание на завтра")]
+    Tomorrow,
+    #[command(description = "расписание на неделю")]
+    Week,
+    #[command(description = "домашнее задание на завтра, можно добавить: неделя")]
+    Homework(String),
 }
 
 pub async fn message_handler(bot: Bot, state: BotState, msg: Message) -> Result<(), HandlerError> {
@@ -41,8 +45,12 @@ pub async fn message_handler(bot: Bot, state: BotState, msg: Message) -> Result<
             return match cmd {
                 Command::Start => auth::handle_start(bot, state, msg).await,
                 Command::Help => help::handle_help(bot, msg).await,
-                Command::Schedule => schedule::handle_schedule(bot, msg).await,
-                Command::Homework => homework::handle_homework(bot, msg).await,
+                Command::Schedule(arg) => schedule::handle_schedule(bot, state, msg, arg).await,
+                Command::Tomorrow => {
+                    schedule::handle_schedule(bot, state, msg, "завтра".to_string()).await
+                }
+                Command::Week => schedule::handle_schedule(bot, state, msg, "неделя".to_string()).await,
+                Command::Homework(arg) => schedule::handle_homework(bot, state, msg, arg).await,
             };
         }
 
@@ -51,8 +59,11 @@ pub async fn message_handler(bot: Bot, state: BotState, msg: Message) -> Result<
             return help::handle_unknown_command(bot, msg, &text).await;
         }
 
-        // 3. Plain text → treat as auth payload
-        return auth::handle_text_input(bot, state, msg, text).await;
+        // 3. Plain text → treat as auth payload, but only in a private chat: in a class
+        //    chat it is people talking, not an email or a code.
+        if msg.chat.is_private() {
+            return auth::handle_text_input(bot, state, msg, text).await;
+        }
     }
 
     Ok(())

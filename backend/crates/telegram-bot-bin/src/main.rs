@@ -10,7 +10,13 @@ use application::use_cases::telegram::TelegramAuthUseCase;
 use domain::settings::Settings;
 use infrastructure::auth::{Argon2PasswordHasher, NumericCodeGenerator};
 use infrastructure::config::Config;
-use infrastructure::postgres::{create_pool, TelegramBindingRepositoryPg, UserRepositoryPg};
+use application::use_cases::schedule::ScheduleService;
+use infrastructure::postgres::{
+    create_pool, CabinetRepositoryPg, ClassRepositoryPg, HomeworkRepositoryPg,
+    LessonInstanceRepositoryPg, LessonRepositoryPg, LessonSubstitutionRepositoryPg,
+    LessonTemplateRepositoryPg, ScheduleWeekRepositoryPg, StudentGroupRepositoryPg,
+    SubjectRepositoryPg, TelegramBindingRepositoryPg, UserRepositoryPg,
+};
 use infrastructure::redis::{AuthCodeStoreRedis, TelegramSessionRepositoryRedis};
 use telegram_adapter::agent_forward::AgentForwarder;
 use telegram_adapter::bot::run_bot;
@@ -44,10 +50,28 @@ async fn main() {
     // 5. Repositories
     let user_repo: Arc<dyn domain::repositories::user_repository::UserRepository> =
         Arc::new(UserRepositoryPg::new(pg_pool.clone()));
+    let bot_users = user_repo.clone();
 
     let tg_binding_repo: Arc<
         dyn domain::repositories::telegram_bindigs_repository::TelegramBindingRepository,
-    > = Arc::new(TelegramBindingRepositoryPg::new(pg_pool));
+    > = Arc::new(TelegramBindingRepositoryPg::new(pg_pool.clone()));
+
+    // Timetable for /schedule and /homework: the same service the website uses.
+    let schedule = Arc::new(
+        ScheduleService::new(
+            Arc::new(ScheduleWeekRepositoryPg::new(pg_pool.clone())),
+            Arc::new(StudentGroupRepositoryPg::new(pg_pool.clone())),
+            Arc::new(LessonInstanceRepositoryPg::new(pg_pool.clone())),
+            Arc::new(LessonTemplateRepositoryPg::new(pg_pool.clone())),
+            Arc::new(LessonRepositoryPg::new(pg_pool.clone())),
+            Arc::new(SubjectRepositoryPg::new(pg_pool.clone())),
+            Arc::new(UserRepositoryPg::new(pg_pool.clone())),
+            Arc::new(CabinetRepositoryPg::new(pg_pool.clone())),
+            Arc::new(HomeworkRepositoryPg::new(pg_pool.clone())),
+            Arc::new(ClassRepositoryPg::new(pg_pool.clone())),
+        )
+        .with_substitutions(Arc::new(LessonSubstitutionRepositoryPg::new(pg_pool.clone()))),
+    );
     let agent_bindings = tg_binding_repo.clone();
 
     let tg_session_repo: Arc<
@@ -109,6 +133,8 @@ async fn main() {
             .clone()
             .unwrap_or("".to_string()),
         bindings: agent_bindings,
+        schedule,
+        users: bot_users,
         agent: config
             .agent_url
             .clone()

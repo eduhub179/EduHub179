@@ -5,8 +5,10 @@
 //! MASTER-DOC: docs/copilot-instructions.md §6.7
 
 use crate::agent_forward::AgentForwarder;
+use application::use_cases::schedule::ScheduleService;
 use application::use_cases::telegram::TelegramAuthUseCase;
 use domain::repositories::telegram_bindigs_repository::TelegramBindingRepository;
+use domain::repositories::user_repository::UserRepository;
 use std::sync::Arc;
 use teloxide::Bot;
 
@@ -19,7 +21,10 @@ pub struct BotState {
     pub bot: Bot,
     /// Unified Telegram authorization flow.
     pub auth_use_case: Arc<TelegramAuthUseCase>,
-    // Future: pub schedule_service: Arc<ScheduleService>,
+    /// Timetable with substitutions and homework for /schedule and /homework.
+    pub schedule: Arc<ScheduleService>,
+    /// Who is behind a Telegram binding (role, class).
+    pub users: Arc<dyn UserRepository>,
     pub bot_username: String,
     /// "Is this Telegram account logged in?" — plain DM text from a logged-in user goes to the agent.
     pub bindings: Arc<dyn TelegramBindingRepository>,

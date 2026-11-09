@@ -15,7 +15,15 @@ use teloxide::prelude::*;
 ///
 /// Resets or initializes the auth session. If the user is already bound, the use case will return `AlreadyAuthenticated`.
 pub async fn handle_start(bot: Bot, state: BotState, msg: Message) -> Result<(), HandlerError> {
-    let telegram_id = msg.chat.id.0; // teloxide ChatId is i64
+    // Login only in a private chat: in a group the email and code would be seen by everyone.
+    if !msg.chat.is_private() {
+        bot.send_message(msg.chat.id, "🔒 Чтобы войти, напишите мне в личку /start.")
+            .await?;
+        return Ok(());
+    }
+    // The binding is for the person (`from.id`), not the chat: in a private chat they are
+    // equal, so existing bindings stay valid; the agent and /schedule look up `from.id` too.
+    let Some(telegram_id) = sender_id(&msg) else { return Ok(()) };
 
     let cmd = TelegramAuthCommand {
         telegram_id,
@@ -37,7 +45,10 @@ pub async fn handle_text_input(
     msg: Message,
     text: String,
 ) -> Result<(), HandlerError> {
-    let telegram_id = msg.chat.id.0;
+    if !msg.chat.is_private() {
+        return Ok(());
+    }
+    let Some(telegram_id) = sender_id(&msg) else { return Ok(()) };
 
     let action = if text.len() == 6 && text.chars().all(|c| c.is_ascii_digit()) {
         TelegramAuthAction::VerifyCode { code: text }
@@ -88,6 +99,11 @@ pub async fn handle_text_input(
     };
 
     respond_with_result(bot, msg, result).await
+}
+
+/// Telegram id of the person who sent the message.
+fn sender_id(msg: &Message) -> Option<i64> {
+    msg.from().and_then(|u| i64::try_from(u.id.0).ok())
 }
 
 /// Maps the domain's `TelegramAuthResult` to a user-facing Telegram message.
