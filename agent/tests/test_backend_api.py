@@ -221,7 +221,18 @@ def main():
           files_of(phys2) == ["9_задачи.pdf", "9_задачи.pdf"] and "f3" not in {x["key"] for x in b.load(b.QUEUE, [])}
           and HOMEWORK[phys2]["text"].count("лаба 5") == 1)
 
-    total = 20
+    def L(start, end, subj, target="2027б", status="scheduled"):
+        return {"start_time": start, "end_time": end, "subject_name": subj, "target_name": target, "status": status}
+    alg1, eng1, alg2, eng2 = (L("11:00", "11:45", "Алгебра"), L("11:00", "11:45", "Английский язык", "Англ. 2"),
+                              L("11:55", "12:40", "Алгебра"), L("11:55", "12:40", "Английский язык", "Англ. 2"))
+    check("сдвоенный урок: английский другой группы между уроками пару не рвёт",
+          b.pair_of([alg1, eng1, alg2, eng2], alg2) == [alg1, alg2])
+    far = L("14:15", "15:00", "Алгебра")
+    check("алгебра через два урока — не пара", b.pair_of([alg1, alg2, far], far) == [far])
+    other = L("11:55", "12:40", "Алгебра", "Алгебра гр. 2")
+    check("алгебра другой группы — не пара", b.pair_of([alg1, other], alg1) == [alg1])
+
+    total = 23
     print(f"{ok}/{total}")
     server.shutdown()
     raise SystemExit(0 if ok == total else 1)

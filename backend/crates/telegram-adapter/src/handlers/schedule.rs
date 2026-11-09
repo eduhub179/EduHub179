@@ -13,6 +13,7 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use domain::entities::user::User;
 use domain::errors::DomainError;
 use teloxide::prelude::*;
+use teloxide::types::ParseMode;
 
 use super::view;
 
@@ -126,7 +127,7 @@ pub async fn handle_schedule(bot: Bot, state: BotState, msg: Message, arg: Strin
         Ok(Some(days)) => {
             let mut parts: Vec<String> = days.iter().map(|d| view::format_day(d, today, with_target)).collect();
             if count == 1 {
-                parts.push("Ещё: /schedule завтра, /schedule неделя, /homework".to_string());
+                parts.push("\nЕщё: /schedule завтра · /schedule неделя · /homework".to_string());
             }
             parts.join("\n")
         }
@@ -173,19 +174,23 @@ pub async fn handle_homework(bot: Bot, state: BotState, msg: Message, arg: Strin
     send_long(&bot, &msg, text).await
 }
 
+/// Sends with `ParseMode::Html` (the texts from `view` are escaped there).
 /// Telegram's limit is 4096 characters; a week of a teacher can be longer.
+/// Split only between lines: `view` never opens a tag on one line and closes it on another.
 async fn send_long(bot: &Bot, msg: &Message, text: String) -> Result<(), HandlerError> {
     const LIMIT: usize = 3800;
     let mut chunk = String::new();
     for line in text.lines() {
         if chunk.chars().count() + line.chars().count() + 1 > LIMIT && !chunk.is_empty() {
-            bot.send_message(msg.chat.id, std::mem::take(&mut chunk)).await?;
+            bot.send_message(msg.chat.id, std::mem::take(&mut chunk))
+                .parse_mode(ParseMode::Html)
+                .await?;
         }
         chunk.push_str(line);
         chunk.push('\n');
     }
     if !chunk.trim().is_empty() {
-        bot.send_message(msg.chat.id, chunk).await?;
+        bot.send_message(msg.chat.id, chunk).parse_mode(ParseMode::Html).await?;
     }
     Ok(())
 }

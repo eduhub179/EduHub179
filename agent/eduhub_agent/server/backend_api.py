@@ -163,15 +163,29 @@ def find_lesson(it):
     return lesson, None
 
 
+def _minutes(hhmm):
+    h, m = hhmm.split(":")[:2]
+    return int(h) * 60 + int(m)
+
+
 def pair_of(day, lesson):
-    """Сдвоенный урок: lesson и стоящие вплотную к нему уроки того же предмета (домашку пишем на каждый)."""
-    i = day.index(lesson)
+    """Сдвоенный урок: lesson и уроки того же предмета у того же класса/группы (target_name), идущие вплотную
+    (перемена не больше 30 минут), — домашку пишем на каждый. Уроки других групп в то же время пару не разрывают:
+    в расписании класса (все группы сразу) между двумя уроками алгебры может стоять английский второй группы."""
+    same = sorted((l for l in day if l is lesson or (
+        l["subject_name"] == lesson["subject_name"] and l.get("target_name") == lesson.get("target_name")
+        and l.get("status") != "cancelled")), key=lambda l: l["start_time"])
+    i = next(n for n, l in enumerate(same) if l is lesson)
+
+    def next_to(a, b):  # b идёт сразу после a
+        return 0 <= _minutes(b["start_time"]) - _minutes(a.get("end_time") or a["start_time"]) <= 30
+
     lo, hi = i, i
-    while lo > 0 and day[lo - 1]["subject_name"] == lesson["subject_name"]:
+    while lo > 0 and next_to(same[lo - 1], same[lo]):
         lo -= 1
-    while hi + 1 < len(day) and day[hi + 1]["subject_name"] == lesson["subject_name"]:
+    while hi + 1 < len(same) and next_to(same[hi], same[hi + 1]):
         hi += 1
-    return day[lo:hi + 1]
+    return same[lo:hi + 1]
 
 
 TEST_HEAD = re.compile(r"(контрольн|самостоятельн|проверочн|кр\b|к/р|ср\b|с/р|зач[её]т|диктант|тест)", re.I)
