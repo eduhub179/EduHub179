@@ -28,8 +28,8 @@ problems=()
 for s in eduhub-api eduhub-telegram-bot eduhub-agent nginx docker; do
   systemctl is-active --quiet "$s" || problems+=("служба $s: $(systemctl is-active "$s")")
 done
-for s in eduhub-publish-week; do
-  systemctl is-failed --quiet "$s.service" && problems+=("публикация недели не удалась: journalctl -u $s -n 20")
+for s in eduhub-publish-week eduhub-backup; do
+  systemctl is-failed --quiet "$s.service" && problems+=("не удалось: $s (journalctl -u $s -n 20)")
 done
 curl -fsS -m 10 -o /dev/null http://127.0.0.1:8080/api/health || problems+=("API не отвечает на /api/health")
 running=$(docker ps --filter name=infra- --format '{{.Names}}' | wc -l)
