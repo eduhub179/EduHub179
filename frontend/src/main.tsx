@@ -11,6 +11,7 @@ import MathPage from "./pages/MathPage.tsx";
 import PlusnikPage from "./pages/PlusnikPage.tsx";
 import CourseMaterialsPage from "./pages/CourseMaterialsPage.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
+import TeacherDayPage from "./pages/TeacherDayPage.tsx";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
 
 const root = ReactDOM.createRoot(
@@ -24,6 +25,7 @@ root.render(
                 <Routes>
                     <Route path="/main/*" element={<MainPage />} />
                     <Route path="/schedule" element={<SchedulePage />} />
+                    <Route path="/teacher" element={<TeacherDayPage />} />
                     <Route path="/register" element={<RegisterPage />} />
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/profile" element={<ProfilePage />} />

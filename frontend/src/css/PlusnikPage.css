@@ -149,3 +149,35 @@
 .plusnik-page__table .is-solved.is-hovered-column {
     box-shadow: inset 0 0 0 999px rgb(255 255 255 / 14%);
 }
+
+/* Teachers: a cell is a button that puts or removes the plus. */
+.plusnik-page__hint {
+    margin: -12px 0 12px;
+    color: var(--color-text-muted);
+    font-size: 14px;
+}
+
+.plusnik-page__table td.plusnik-page__cell:has(.plusnik-page__cell-button) {
+    padding: 0;
+}
+
+.plusnik-page__cell-button {
+    width: 100%;
+    min-height: 32px;
+    padding: 4px 6px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.plusnik-page__cell-button:hover:not(:disabled),
+.plusnik-page__cell-button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+}
+
+.plusnik-page__cell-button:disabled {
+    cursor: default;
+}

@@ -1,0 +1,42 @@
+.teacher-day {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+}
+
+.teacher-day__heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.teacher-day__heading h1 {
+    margin: 0 0 4px;
+    font-size: 1.8rem;
+}
+
+.teacher-day__date,
+.teacher-day__summary,
+.teacher-day__more {
+    margin: 0;
+    color: var(--color-text-muted);
+}
+
+.teacher-day__summary {
+    margin-bottom: 12px;
+}
+
+.teacher-day__more {
+    margin-top: 20px;
+    font-size: 14px;
+}
+
+.teacher-day__more a,
+.teacher-day a {
+    color: var(--color-accent);
+}

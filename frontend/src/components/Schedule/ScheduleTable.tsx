@@ -7,6 +7,8 @@ interface FullScheduleTableProps {
     onLessonSelect: (lesson: ScheduleItem) => void;
     selectedClass: string;
     scheduleType?: 'class' | 'teacher';
+    /** Any date of the week to show; default: the current week. */
+    weekDate?: string;
 }
 
 const WEEKDAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -65,8 +67,9 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({
     onLessonSelect,
     selectedClass,
     scheduleType = 'class',
+    weekDate,
 }) => {
-    const {days, isLoading, error, hasClass} = useSchedule(selectedClass, scheduleType);
+    const {days, isLoading, error, hasClass} = useSchedule(selectedClass, scheduleType, weekDate);
     const [hoveredDay, setHoveredDay] = useState<string | null>(null);
     const scheduleDays = WEEKDAYS.map((name) => ({
         name,
@@ -108,7 +111,7 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({
             ) : !hasClass ? (
                 <p>Укажите класс в профиле, чтобы увидеть расписание.</p>
             ) : !days.length ? (
-                <p>На этой неделе расписание не найдено.</p>
+                <p>Расписание на эту неделю ещё не опубликовано.</p>
             ) : (
                 <div className="full-schedule-table__scroll">
                     <table className="schedule-grid" onMouseLeave={() => setHoveredDay(null)}>

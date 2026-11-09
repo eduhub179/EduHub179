@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { hasAdminRole } from '../api/access';
+import { hasAdminRole, hasTeacherRole } from '../api/access';
 import { useAuth } from '../auth/AuthProvider';
 import '../css/Header.css';
 
@@ -23,6 +23,12 @@ const Header: React.FC = () => {
                 <Link to="/main" className="header__link">
                     Главная
                 </Link>
+
+                {hasTeacherRole(user) && (
+                    <Link to="/teacher" className="header__link">
+                        Мой день
+                    </Link>
+                )}
 
                 <Link to="/schedule" className="header__link">
                     Расписание

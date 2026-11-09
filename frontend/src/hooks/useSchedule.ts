@@ -23,7 +23,7 @@ interface ScheduleState {
     hasClass: boolean;
 }
 
-const getLocalDate = (date: Date): string => {
+export const getLocalDate = (date: Date): string => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -31,6 +31,15 @@ const getLocalDate = (date: Date): string => {
 };
 
 type ApiLesson = WeeklyScheduleDto['days'][number]['lessons'][number];
+
+/** The backend's answer for a week that is not created or not published yet. */
+const WEEK_NOT_FOUND = 'Schedule week not found';
+
+/** A missing week is an empty one, not an error: weeks ahead are published on Fridays. */
+const scheduleError = (error: unknown): string | null => {
+    if (error instanceof Error && error.message === WEEK_NOT_FOUND) return null;
+    return error instanceof Error ? error.message : 'Не удалось загрузить расписание.';
+};
 
 /**
  * Hides a cancelled lesson when a lesson that takes place overlaps it in time
@@ -89,9 +98,30 @@ const mapScheduleWeek = (week: WeeklyScheduleDto, includeTargetName = false): Da
         };
     });
 
+/** Monday (`YYYY-MM-DD`) of the week containing `date`. */
+export const mondayOf = (date: string): string => {
+    const day = new Date(`${date}T00:00:00`);
+    const shift = (day.getDay() + 6) % 7;
+    day.setDate(day.getDate() - shift);
+    return getLocalDate(day);
+};
+
+/** `date` moved by `days` (may be negative). */
+export const addDays = (date: string, days: number): string => {
+    const day = new Date(`${date}T00:00:00`);
+    day.setDate(day.getDate() + days);
+    return getLocalDate(day);
+};
+
+/**
+ * Lessons of the week containing `weekDate` (default: today).
+ * `source`: the class schedule (a student's own one if no class is chosen) or the
+ * logged-in teacher's.
+ */
 export const useSchedule = (
     selectedClassOverride?: string,
     source: 'class' | 'teacher' = 'class',
+    weekDate?: string,
 ): ScheduleState => {
     const {user} = useAuth();
     const schoolClass = (selectedClassOverride ?? user?.schoolClass ?? '').trim();
@@ -102,6 +132,7 @@ export const useSchedule = (
         hasClass: false,
     });
     const [reloadTick, setReloadTick] = useState(0);
+    const weekStart = mondayOf(weekDate ?? getLocalDate(new Date()));
     // Which class/user the shown days belong to: a reload of the same schedule keeps them
     // on screen instead of flashing "loading".
     const loadedKey = useRef<string | null>(null);
@@ -130,7 +161,7 @@ export const useSchedule = (
             }
 
             const teacherId = user.id;
-            const key = `teacher|${teacherId}`;
+            const key = `teacher|${teacherId}|${weekStart}`;
             if (loadedKey.current !== key) {
                 loadedKey.current = key;
                 setState({days: [], isLoading: true, error: null, hasClass: true});
@@ -138,7 +169,7 @@ export const useSchedule = (
 
             const loadTeacherSchedule = async () => {
                 try {
-                    const week = await fetchTeacherWeekSchedule(getLocalDate(new Date()), teacherId);
+                    const week = await fetchTeacherWeekSchedule(weekStart, teacherId);
                     if (isCurrent) {
                         setState({
                             days: mapScheduleWeek(week, true),
@@ -152,7 +183,7 @@ export const useSchedule = (
                         setState({
                             days: [],
                             isLoading: false,
-                            error: error instanceof Error ? error.message : 'Не удалось загрузить расписание.',
+                            error: scheduleError(error),
                             hasClass: true,
                         });
                     }
@@ -173,7 +204,7 @@ export const useSchedule = (
             };
         }
 
-        const key = `${schoolClass}|${user?.id ?? ''}|${user?.role ?? ''}`;
+        const key = `${schoolClass}|${user?.id ?? ''}|${user?.role ?? ''}|${weekStart}`;
         if (loadedKey.current !== key) {
             loadedKey.current = key;
             setState({days: [], isLoading: true, error: null, hasClass: true});
@@ -203,8 +234,8 @@ export const useSchedule = (
                 const usePersonalStudentSchedule =
                     !selectedClassOverride && hasStudentRole(user) && Boolean(user?.id);
                 const week = usePersonalStudentSchedule
-                    ? await fetchWeekSchedule(getLocalDate(new Date()), user!.id!)
-                    : await fetchClassWeekSchedule(getLocalDate(new Date()), selectedClass.id);
+                    ? await fetchWeekSchedule(weekStart, user!.id!)
+                    : await fetchClassWeekSchedule(weekStart, selectedClass.id);
                 if (isCurrent) {
                     setState({days: mapScheduleWeek(week), isLoading: false, error: null, hasClass: true});
                 }
@@ -213,7 +244,7 @@ export const useSchedule = (
                     setState({
                         days: [],
                         isLoading: false,
-                        error: error instanceof Error ? error.message : 'Не удалось загрузить расписание.',
+                        error: scheduleError(error),
                         hasClass: true,
                     });
                 }
@@ -225,7 +256,7 @@ export const useSchedule = (
         return () => {
             isCurrent = false;
         };
-    }, [schoolClass, source, user, reloadTick]);
+    }, [schoolClass, source, user, reloadTick, weekStart]);
 
     return state;
 };

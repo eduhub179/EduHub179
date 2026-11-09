@@ -6,10 +6,16 @@ import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
 import ScheduleClassSelector from '../components/Schedule/ScheduleClassSelector';
 import FullScheduleTable from '../components/Schedule/ScheduleTable.tsx';
-import MainContent from '../components/MainContent.tsx';
+import ScheduleDayView from '../components/Schedule/ScheduleDayView';
+import LessonModal from '../components/Schedule/LessonModal';
+import WeekNav from '../components/Schedule/WeekNav';
+import {getLocalDate} from '../hooks/useSchedule';
 import type {ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/FullSchedule.css';
+import '../css/DayLessonList.css';
 
+/** On phones the week grid does not fit: start with one day there. */
+const prefersDayView = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches;
 
 const FullSchedule: React.FC = () => {
     const {user} = useAuth();
@@ -18,6 +24,9 @@ const FullSchedule: React.FC = () => {
     const [isTeacherScheduleSelected, setIsTeacherScheduleSelected] = useState(hasTeacherRole(user));
     const [classes, setClasses] = useState<SchoolClassDto[]>([]);
     const [classListError, setClassListError] = useState<string | null>(null);
+    // The shown day (day view) / any day of the shown week (week view).
+    const [date, setDate] = useState(() => getLocalDate(new Date()));
+    const [view, setView] = useState<'week' | 'day'>(() => (prefersDayView() ? 'day' : 'week'));
 
     useEffect(() => {
         let isCurrent = true;
@@ -44,21 +53,6 @@ const FullSchedule: React.FC = () => {
         }
     }, [user?.schoolClass]);
 
-    useEffect(() => {
-        if (!selectedLesson) {
-            return;
-        }
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setSelectedLesson(null);
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedLesson]);
-
     return (
         <>
             <Header />
@@ -79,33 +73,50 @@ const FullSchedule: React.FC = () => {
                     />
                 </div>
 
-                {classListError && <p className="full-schedule__error" role="alert">{classListError}</p>}
-                <FullScheduleTable
-                    onLessonSelect={setSelectedLesson}
-                    selectedClass={selectedClass}
-                    scheduleType={isTeacherScheduleSelected ? 'teacher' : 'class'}
-                />
-            </main>
-            {selectedLesson && (
-                <div
-                    className="schedule-lesson-modal"
-                    onClick={() => setSelectedLesson(null)}
-                >
-                    <div
-                        className="schedule-lesson-modal__dialog"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label={`Урок ${selectedLesson.lessonNumber}: ${selectedLesson.title}`}
-                        onClick={(event) => event.stopPropagation()}
-                    >
-                        <MainContent
-                            selectedLesson={selectedLesson}
-                            onCloseLesson={() => setSelectedLesson(null)}
-                            onLessonUpdated={setSelectedLesson}
-                        />
+                <div className="full-schedule__controls">
+                    <WeekNav weekDate={date} onChange={setDate}/>
+                    <div className="view-switch" role="group" aria-label="Вид расписания">
+                        <button
+                            aria-pressed={view === 'week'}
+                            className="view-switch__option"
+                            onClick={() => setView('week')}
+                            type="button"
+                        >
+                            Неделя
+                        </button>
+                        <button
+                            aria-pressed={view === 'day'}
+                            className="view-switch__option"
+                            onClick={() => setView('day')}
+                            type="button"
+                        >
+                            День
+                        </button>
                     </div>
                 </div>
-            )}
+                {classListError && <p className="full-schedule__error" role="alert">{classListError}</p>}
+                {view === 'week' ? (
+                    <FullScheduleTable
+                        onLessonSelect={setSelectedLesson}
+                        selectedClass={selectedClass}
+                        scheduleType={isTeacherScheduleSelected ? 'teacher' : 'class'}
+                        weekDate={date}
+                    />
+                ) : (
+                    <ScheduleDayView
+                        date={date}
+                        onDateChange={setDate}
+                        onLessonSelect={setSelectedLesson}
+                        scheduleType={isTeacherScheduleSelected ? 'teacher' : 'class'}
+                        selectedClass={selectedClass}
+                    />
+                )}
+            </main>
+            <LessonModal
+                lesson={selectedLesson}
+                onClose={() => setSelectedLesson(null)}
+                onLessonUpdated={setSelectedLesson}
+            />
         </>
     );
 };

@@ -93,7 +93,7 @@ const Schedule: React.FC<ScheduleProps> = ({onLessonSelect}) => {
             ) : !hasClass ? (
                 <p>Укажите класс в профиле, чтобы увидеть расписание.</p>
             ) : !days.length ? (
-                <p>На этой неделе расписание не найдено.</p>
+                <p>Расписание на эту неделю ещё не опубликовано.</p>
             ) : !scheduleData.length ? (
                 <p>На этот день уроков нет.</p>
             ) : (

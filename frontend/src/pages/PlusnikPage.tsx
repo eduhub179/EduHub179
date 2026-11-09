@@ -2,8 +2,10 @@ import React, {useEffect, useState} from 'react';
 import {Link, useParams} from 'react-router-dom';
 import {
     fetchPlusnikMatrix,
+    grantPlus,
     hasStudentRole,
     hasTeacherOrAdminRole,
+    revokePlus,
     type PlusnikMatrixDto,
 } from '../api';
 import {useAuth} from '../auth/AuthProvider';
@@ -40,6 +42,10 @@ const PlusnikPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [hoveredTaskColumn, setHoveredTaskColumn] = useState<number | null>(null);
+    // `task|student` of the cell being saved: one change at a time, no double clicks.
+    const [pendingCell, setPendingCell] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
+    const canEdit = hasTeacherOrAdminRole(user);
 
     useEffect(() => {
         let isCurrent = true;
@@ -80,7 +86,39 @@ const PlusnikPage: React.FC = () => {
         };
     }, [sheetId, user]);
 
+    /** Puts the plus if the cell is empty, removes it otherwise. */
+    const togglePlus = async (taskId: string, studentId: string, hasPlus: boolean) => {
+        if (!matrix || pendingCell) return;
+        setPendingCell(`${taskId}|${studentId}`);
+        setActionError(null);
+        try {
+            if (hasPlus) {
+                await revokePlus(taskId, studentId);
+                setMatrix((current) => current && {
+                    ...current,
+                    pluses: current.pluses.filter((plus) =>
+                        !(plus.task_id === taskId && plus.student_id === studentId)),
+                });
+            } else {
+                const {plus} = await grantPlus(taskId, studentId);
+                setMatrix((current) => current && {
+                    ...current,
+                    pluses: [
+                        ...current.pluses.filter((record) =>
+                            !(record.task_id === taskId && record.student_id === studentId)),
+                        plus,
+                    ],
+                });
+            }
+        } catch (toggleError: unknown) {
+            setActionError(toggleError instanceof Error ? toggleError.message : 'Не удалось сохранить плюс.');
+        } finally {
+            setPendingCell(null);
+        }
+    };
+
     const sheet = matrix?.sheet;
+    const canGrant = canEdit && sheet?.status === 'published';
     const isAuthorizedRole = hasStudentRole(user) || hasTeacherOrAdminRole(user);
     const students = matrix?.students ?? [];
     const orderedStudents = hasStudentRole(user)
@@ -117,6 +155,15 @@ const PlusnikPage: React.FC = () => {
                 ) : error ? (
                     <p className="plusnik-page__error" role="alert">{error}</p>
                 ) : matrix ? (
+                    <>
+                    {canEdit && (
+                        <p className="plusnik-page__hint">
+                            {canGrant
+                                ? 'Нажмите на клетку, чтобы поставить или снять плюс.'
+                                : 'Лист не опубликован: плюсы ставятся только на опубликованном листе. Снять поставленный плюс можно.'}
+                        </p>
+                    )}
+                    {actionError && <p className="plusnik-page__error" role="alert">{actionError}</p>}
                     <div className="plusnik-page__table-wrap">
                         <table className="plusnik-page__table">
                             <thead>
@@ -165,11 +212,27 @@ const PlusnikPage: React.FC = () => {
                                                         hasPlus && 'is-solved',
                                                         hoveredTaskColumn === taskIndex && 'is-hovered-column',
                                                     ].filter(Boolean).join(' ')}
-                                                    aria-label={hasPlus ? 'Сдано' : 'Не сдано'}
+                                                    aria-label={canEdit ? undefined : hasPlus ? 'Сдано' : 'Не сдано'}
                                                     onMouseEnter={() => setHoveredTaskColumn(taskIndex)}
                                                     onMouseLeave={() => setHoveredTaskColumn(null)}
                                                 >
-                                                    {plus ? formatPlusDate(plus.granted_at) : ''}
+                                                    {canEdit ? (
+                                                        <button
+                                                            aria-label={`${student.name}, задача ${task.number}: ${hasPlus ? 'снять плюс' : 'поставить плюс'}`}
+                                                            className="plusnik-page__cell-button"
+                                                            disabled={
+                                                                pendingCell !== null || (!hasPlus && !canGrant)
+                                                            }
+                                                            onClick={() => void togglePlus(task.id, student.id, hasPlus)}
+                                                            type="button"
+                                                        >
+                                                            {pendingCell === `${task.id}|${student.id}`
+                                                                ? '…'
+                                                                : plus ? formatPlusDate(plus.granted_at) : ''}
+                                                        </button>
+                                                    ) : (
+                                                        plus ? formatPlusDate(plus.granted_at) : ''
+                                                    )}
                                                 </td>
                                             );
                                         })}
@@ -185,6 +248,7 @@ const PlusnikPage: React.FC = () => {
                             </tbody>
                         </table>
                     </div>
+                    </>
                 ) : (
                     <p className="plusnik-page__message">Информация о плюснике не найдена.</p>
                 )}
