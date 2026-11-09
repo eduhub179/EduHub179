@@ -109,6 +109,48 @@
     box-shadow: 0 0 0 3px rgb(59 130 246 / 13%);
 }
 
+.auth-panel .register-form__password-control {
+    position: relative;
+    width: 100%;
+}
+
+.auth-panel .register-form__password-control input {
+    padding-right: 48px;
+}
+
+.auth-panel .register-form__password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    display: grid;
+    width: 34px;
+    height: 34px;
+    padding: 6px;
+    transform: translateY(-50%);
+    place-items: center;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.auth-panel .register-form__password-toggle:hover,
+.auth-panel .register-form__password-toggle:focus-visible {
+    outline: none;
+    background: var(--color-bg);
+}
+
+.auth-panel .register-form__password-toggle svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
 .auth-panel .register-form__code-row {
     display: flex;
     align-items: flex-end;
@@ -141,6 +183,12 @@
 .auth-panel .register-form__send-code:focus-visible {
     outline: 3px solid rgb(59 130 246 / 20%);
     outline-offset: 2px;
+}
+
+.auth-panel .register-form__send-code:disabled,
+.auth-panel .register-form__submit:disabled {
+    cursor: wait;
+    opacity: 0.65;
 }
 
 .auth-panel .register-card__code-hint {
