@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use domain::errors::DomainError;
-use domain::ports::auth::{AuthCodeStore, CodeGenerator, CodeSender};
+use domain::ports::auth::{AuthCodeStore, CodeCheck, CodeGenerator, CodeSender};
 use uuid::Uuid;
 
 /// Default lifetime of a one-time code, in seconds.
@@ -94,5 +94,10 @@ impl OneTimeCodeService {
 
     pub async fn verify(&self, user_id: Uuid, code: &str) -> Result<bool, DomainError> {
         self.store.verify_and_consume(user_id, code).await
+    }
+
+    /// Like `verify`, but says whether the person may try the same code again.
+    pub async fn check(&self, user_id: Uuid, code: &str) -> Result<CodeCheck, DomainError> {
+        self.store.check_and_consume(user_id, code).await
     }
 }

@@ -24,6 +24,8 @@ pub enum TelegramAuthAction {
     SubmitEmail { email: String },
     /// User provided the 6-digit code from their email.
     VerifyCode { code: String },
+    /// "Send the code again" (button or /resend) on the code step.
+    ResendCode,
 }
 
 /// The complete command passed to the use case.
@@ -56,6 +58,15 @@ pub enum TelegramAuthResult {
     Authenticated { user_id: Uuid },
     /// The session state does not match the expected step.
     InvalidState,
-    /// The provided code was incorrect or expired.
+    /// The code is gone (expired or burned after too many wrong entries).
+    /// The session stays on the code step, so a new code can be sent to the same email.
     CodeExpired,
+    /// Wrong code; the person may type it again `attempts_left` more times.
+    WrongCode { attempts_left: Option<u32> },
+    /// On the code step the person sent text that is neither a code nor an email.
+    NotACode,
+    /// A new code was emailed on request.
+    CodeResent,
+    /// A code was emailed less than a minute ago; that one is still to be used.
+    ResendTooSoon,
 }

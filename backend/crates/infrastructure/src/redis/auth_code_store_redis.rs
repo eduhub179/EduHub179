@@ -21,7 +21,7 @@
 //! Зависимости: крейт `redis`, `domain` (ports, errors), внутренний `PasswordHasher`.
 //! Гарантии: все методы возвращают `Result`; паники недопустимы.
 use domain::errors::DomainError;
-use domain::ports::auth::AuthCodeStore;
+use domain::ports::auth::{AuthCodeStore, CodeCheck};
 // Префикс `::` обязателен: у крейта есть собственный модуль `redis`
 // (uniform paths в edition 2018 иначе дали бы ambiguity-ошибку).
 use ::redis::aio::ConnectionManager;
@@ -106,6 +106,11 @@ impl AuthCodeStore for AuthCodeStoreRedis {
     /// Возвращает `Ok(false)` во всех fail-safe случаях: кода нет (истёк TTL),
     /// код неверный, хэш повреждён. `Ok(true)` — только точное совпадение.
     async fn verify_and_consume(&self, user_id: Uuid, code: &str) -> Result<bool, DomainError> {
+        Ok(self.check_and_consume(user_id, code).await? == CodeCheck::Valid)
+    }
+
+    /// The same check, telling a wrong code (with tries left) from a gone one.
+    async fn check_and_consume(&self, user_id: Uuid, code: &str) -> Result<CodeCheck, DomainError> {
         let key = self.key(user_id);
         let mut conn = self.conn.clone();
 
@@ -115,7 +120,7 @@ impl AuthCodeStore for AuthCodeStoreRedis {
             .map_err(|_| DomainError::InternalError)?;
         let stored = match stored {
             Some(s) => s,
-            None => return Ok(false), // не запрашивали или истёк TTL
+            None => return Ok(CodeCheck::Gone), // не запрашивали, истёк TTL или сгорел
         };
 
         // Неверный код: считаем попытку; после MAX_WRONG_ATTEMPTS код сгорает.
@@ -136,8 +141,10 @@ impl AuthCodeStore for AuthCodeStoreRedis {
                 conn.del::<_, ()>(&[key.as_str(), attempts_key.as_str()])
                     .await
                     .map_err(|_| DomainError::InternalError)?;
+                return Ok(CodeCheck::Gone);
             }
-            return Ok(false);
+            let attempts_left = u32::try_from(MAX_WRONG_ATTEMPTS - attempts).unwrap_or(0);
+            return Ok(CodeCheck::Wrong { attempts_left: Some(attempts_left) });
         }
 
         // Потребление: одноразовость.
@@ -148,7 +155,7 @@ impl AuthCodeStore for AuthCodeStoreRedis {
         conn.del::<_, ()>(self.attempts_key(user_id))
             .await
             .map_err(|_| DomainError::InternalError)?;
-        Ok(deleted == 1)
+        Ok(if deleted == 1 { CodeCheck::Valid } else { CodeCheck::Gone })
     }
 
     /// `SET {prefix}_sent:{user_id} 1 NX EX cooldown`: true only for the first caller in

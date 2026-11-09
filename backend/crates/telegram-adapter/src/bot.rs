@@ -41,6 +41,11 @@ fn schema() -> UpdateHandler<HandlerError> {
     dptree::entry()
         .branch(dptree::filter_async(for_agent).endpoint(forward_to_agent))
         .branch(Update::filter_message().endpoint(handlers::message_handler))
+        .branch(
+            Update::filter_callback_query()
+                .filter(|q: CallbackQuery| q.data.as_deref() == Some(handlers::auth::RESEND_CALLBACK))
+                .endpoint(handlers::auth::handle_resend_button),
+        )
 }
 
 /// What the agent handles instead of this bot (only when `AGENT_URL` is set):

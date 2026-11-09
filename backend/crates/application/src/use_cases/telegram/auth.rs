@@ -13,8 +13,15 @@ use domain::repositories::user_repository::UserRepository;
 use domain::value_objects::login::Login;
 use domain::value_objects::telegram_session_state::TelegramSessionState;
 
+use domain::ports::auth::CodeCheck;
+
 use crate::use_cases::auth::OneTimeCodeService;
 use super::{TelegramAuthAction, TelegramAuthCommand, TelegramAuthResult};
+
+/// How long the bot waits for the next step (email or code), in seconds.
+const SESSION_TTL_SECONDS: u64 = 600;
+/// A new code can be emailed at most once per this many seconds (same as web login).
+pub const RESEND_COOLDOWN_SECONDS: u64 = 60;
 
 /// Unified use case managing the entire Telegram auth lifecycle.
 ///
@@ -63,6 +70,7 @@ impl TelegramAuthUseCase {
             TelegramAuthAction::VerifyCode { code } => {
                 self.handle_verify_code(telegram_id, code).await
             }
+            TelegramAuthAction::ResendCode => self.handle_resend_code(telegram_id).await,
         }
     }
 
@@ -77,7 +85,7 @@ impl TelegramAuthUseCase {
 
         // Reset or initialize session to AwaitingEmail (TTL 600s)
         self.sessions
-            .set_state(telegram_id, TelegramSessionState::AwaitingEmail, 600)
+            .set_state(telegram_id, TelegramSessionState::AwaitingEmail, SESSION_TTL_SECONDS)
             .await?;
 
         Ok(TelegramAuthResult::AwaitingEmail)
@@ -90,10 +98,14 @@ impl TelegramAuthUseCase {
         telegram_id: i64,
         email: String,
     ) -> Result<TelegramAuthResult, DomainError> {
-        // 1. Verify session state
+        // 1. Verify session state. On the code step a new email is accepted too (the
+        //    person mistyped it); other text there is just not a code.
         let state = self.sessions.get_state(telegram_id).await?;
-        if state != TelegramSessionState::AwaitingEmail {
-            return Ok(TelegramAuthResult::InvalidState);
+        match state {
+            TelegramSessionState::AwaitingEmail => {}
+            TelegramSessionState::AwaitingCode if email.contains('@') => {}
+            TelegramSessionState::AwaitingCode => return Ok(TelegramAuthResult::NotACode),
+            _ => return Ok(TelegramAuthResult::InvalidState),
         }
 
         // 2. Parse email to Login (validates format and domain)
@@ -113,20 +125,30 @@ impl TelegramAuthUseCase {
 
         // 5. Delegate code lifecycle to the shared service:
         //    generate -> hash -> store in Redis (TTL 600s) -> send to email.
+        //    At most one email a minute per account: within the minute the code
+        //    already sent stays valid and the person just enters it.
         //    The raw code never reaches this method's return value.
-        self.codes.issue(user.id, &login.email()).await?;
+        let result = match self
+            .codes
+            .issue_with_cooldown(user.id, &login.email(), RESEND_COOLDOWN_SECONDS)
+            .await
+        {
+            Ok(()) => TelegramAuthResult::CodeGenerated,
+            Err(DomainError::AuthCodeCooldown) => TelegramAuthResult::ResendTooSoon,
+            Err(e) => return Err(e),
+        };
 
         // 6. Store pending binding in PostgreSQL
         self.bindings.store_pending_binding(telegram_id, user.id).await?;
 
         // 7. Advance Telegram-specific state machine
         self.sessions
-            .set_state(telegram_id, TelegramSessionState::AwaitingCode, 600)
+            .set_state(telegram_id, TelegramSessionState::AwaitingCode, SESSION_TTL_SECONDS)
             .await?;
 
         // The bot adapter will catch this and reply:
         // "Код отправлен на вашу школьную почту."
-        Ok(TelegramAuthResult::CodeGenerated)
+        Ok(result)
     }
 
     /// Step 3: Verify the code and activate the binding.
@@ -153,9 +175,14 @@ impl TelegramAuthUseCase {
 
         // 3. Delegate verification to the shared service.
         //    It handles hashing comparison and atomic deletion (consume) in Redis.
-        let is_valid = self.codes.verify(user_id, &code).await?;
-        if !is_valid {
-            return Ok(TelegramAuthResult::CodeExpired);
+        //    A wrong code does not end the session: the person types it again until
+        //    the store burns the code (5 wrong entries), then asks for a new one.
+        match self.codes.check(user_id, &code).await? {
+            CodeCheck::Valid => {}
+            CodeCheck::Wrong { attempts_left } => {
+                return Ok(TelegramAuthResult::WrongCode { attempts_left })
+            }
+            CodeCheck::Gone => return Ok(TelegramAuthResult::CodeExpired),
         }
 
         // 4. Activate the binding in PostgreSQL
@@ -167,5 +194,38 @@ impl TelegramAuthUseCase {
         Ok(TelegramAuthResult::Authenticated {
             user_id: activated_user_id,
         })
+    }
+
+    /// "Send the code again": a new code to the email of the pending binding,
+    /// without typing the email once more.
+    async fn handle_resend_code(&self, telegram_id: i64) -> Result<TelegramAuthResult, DomainError> {
+        let state = self.sessions.get_state(telegram_id).await?;
+        if state != TelegramSessionState::AwaitingCode {
+            return Ok(TelegramAuthResult::InvalidState);
+        }
+        let user_id = match self.bindings.get_pending_user_by_telegram_id(telegram_id).await {
+            Ok(id) => id,
+            Err(DomainError::TelegramBindingNotFound) => return Ok(TelegramAuthResult::InvalidState),
+            Err(e) => return Err(e),
+        };
+        let user = self.users.get_by_id(user_id).await?;
+        if !user.is_active {
+            return Err(DomainError::UserIsInactive);
+        }
+        let login = Login::try_new(&user.login)?;
+        match self
+            .codes
+            .issue_with_cooldown(user.id, &login.email(), RESEND_COOLDOWN_SECONDS)
+            .await
+        {
+            Ok(()) => {}
+            Err(DomainError::AuthCodeCooldown) => return Ok(TelegramAuthResult::ResendTooSoon),
+            Err(e) => return Err(e),
+        }
+        // A fresh code gets the full time again.
+        self.sessions
+            .set_state(telegram_id, TelegramSessionState::AwaitingCode, SESSION_TTL_SECONDS)
+            .await?;
+        Ok(TelegramAuthResult::CodeResent)
     }
 }

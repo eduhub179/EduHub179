@@ -24,6 +24,8 @@ use teloxide::utils::command::BotCommands;
 pub enum Command {
     #[command(description = "начать авторизацию или сбросить сессию")]
     Start,
+    #[command(description = "отправить код входа на почту заново")]
+    Resend,
     #[command(description = "показать справку")]
     Help,
     #[command(description = "расписание с заменами, можно добавить: завтра, неделя")]
@@ -44,6 +46,7 @@ pub async fn message_handler(bot: Bot, state: BotState, msg: Message) -> Result<
         if let Ok(cmd) = Command::parse(&text, &state.bot_username) {
             return match cmd {
                 Command::Start => auth::handle_start(bot, state, msg).await,
+                Command::Resend => auth::handle_resend(bot, state, msg).await,
                 Command::Help => help::handle_help(bot, msg).await,
                 Command::Schedule(arg) => schedule::handle_schedule(bot, state, msg, arg).await,
                 Command::Tomorrow => {

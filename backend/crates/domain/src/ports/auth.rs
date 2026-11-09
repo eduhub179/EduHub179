@@ -77,6 +77,18 @@ pub trait CredentialsStore: Send + Sync {
 // ONE-TIME LOGIN / RECOVERY CODES
 // ============================================================================
 
+/// Outcome of checking a one-time code, for flows that let the person try again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeCheck {
+    /// The code matched and is consumed.
+    Valid,
+    /// Wrong code; the same code can still be entered `attempts_left` more times
+    /// (`None` if the store does not count attempts).
+    Wrong { attempts_left: Option<u32> },
+    /// No live code: never sent, expired, or burned after too many wrong entries.
+    Gone,
+}
+
 /// Stores and consumes one-time authentication codes.
 ///
 /// Codes are stored hashed; at most one active code per user.
@@ -89,6 +101,17 @@ pub trait AuthCodeStore: Send + Sync {
     /// Verifies a code and consumes it on success (one-time use).
     /// Returns `Ok(false)` if the code is wrong, expired, or absent.
     async fn verify_and_consume(&self, user_id: Uuid, code: &str) -> Result<bool, DomainError>;
+
+    /// Like `verify_and_consume`, but tells a wrong code from a gone one and how many
+    /// tries are left. The default cannot tell them apart: every miss is `Wrong` with an
+    /// unknown count, which keeps stores without attempt counting working.
+    async fn check_and_consume(&self, user_id: Uuid, code: &str) -> Result<CodeCheck, DomainError> {
+        Ok(if self.verify_and_consume(user_id, code).await? {
+            CodeCheck::Valid
+        } else {
+            CodeCheck::Wrong { attempts_left: None }
+        })
+    }
 
     /// Reserves the right to send a new code for `cooldown_seconds`.
     ///
