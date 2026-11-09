@@ -157,4 +157,18 @@ impl CredentialsStore for CredentialsStorePg {
         }
         Ok(())
     }
+
+    /// `password_hash IS NOT NULL` for the user.
+    ///
+    /// Returns `Err(DomainError::UserNotFound)` if the user does not exist. Unlike
+    /// `verify_password`, existence is not hidden here: callers already looked the user up.
+    async fn has_password(&self, user_id: Uuid) -> Result<bool, DomainError> {
+        let row: Option<(bool,)> =
+            sqlx::query_as("SELECT password_hash IS NOT NULL FROM users WHERE user_id = $1")
+                .bind(user_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|_| DomainError::InternalError)?;
+        row.map(|(has,)| has).ok_or(DomainError::UserNotFound)
+    }
 }

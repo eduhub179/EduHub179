@@ -1,12 +1,22 @@
 import React, { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { sendAuthCode, verifyAuthCode } from '../../api/authApi';
-import type { RegistrationData } from '../../auth/authService';
+import { resendLoginCode, startEmailLogin, verifyLoginCode } from '../../api/authApi';
+import type { FirstPassword } from '../../auth/authService';
 
+/**
+ * First login ("registration"): accounts are created by the school, the person confirms
+ * the school email with a code and chooses the password, then is logged in.
+ *
+ * Server steps: /api/auth/email/start (sends the code) → /email/code/verify (code → one-time
+ * token) → `onRegister` = /email/password (saves the password, starts the session).
+ */
 interface RegisterFormProps {
-    onRegister: (data: RegistrationData) => void;
+    onRegister: (data: FirstPassword) => Promise<void>;
     onError: (message: string) => void;
 }
+
+const MIN_PASSWORD = 8;
+const MAX_PASSWORD = 128;
 
 const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
     const emailInputRef = useRef<HTMLInputElement>(null);
@@ -16,6 +26,9 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
+    // The code is single-use: once it is accepted, keep its token, so a failed save
+    // (network, server) can be retried without a new code.
+    const [setupToken, setSetupToken] = useState<{ email: string; token: string } | null>(null);
 
     const handleSendCode = async () => {
         if (!emailInputRef.current?.reportValidity()) {
@@ -23,11 +36,23 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
         }
 
         setIsSendingCode(true);
-        setCodeSentMessage('');
         onError('');
         try {
-            const response = await sendAuthCode({ email: email.trim() });
-            setCodeSentMessage(response.message);
+            const address = email.trim();
+            if (codeSentMessage) {
+                await resendLoginCode(address);
+                setCodeSentMessage('Новый код отправлен на почту.');
+            } else {
+                const started = await startEmailLogin(address);
+                if (started.method === 'password') {
+                    onError('У этого аккаунта уже есть пароль. Войдите на вкладке «Вход».');
+                    return;
+                }
+                setCodeSentMessage(started.code_sent
+                    ? 'Код отправлен на почту.'
+                    : 'Код уже отправлен меньше минуты назад — проверьте почту.');
+            }
+            setSetupToken(null);
         } catch (error) {
             onError(error instanceof Error ? error.message : 'Не удалось отправить код.');
         } finally {
@@ -41,6 +66,12 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
         const normalizedEmail = String(formData.get('email') ?? '').trim();
         const password = String(formData.get('password') ?? '');
 
+        // Characters, as the server counts them (not UTF-16 units).
+        const length = [...password].length;
+        if (length < MIN_PASSWORD || length > MAX_PASSWORD) {
+            onError(`Пароль должен быть от ${MIN_PASSWORD} до ${MAX_PASSWORD} символов.`);
+            return;
+        }
         if (password !== String(formData.get('passwordConfirmation') ?? '')) {
             onError('Пароли не совпадают.');
             return;
@@ -49,22 +80,24 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
         setIsSubmitting(true);
         onError('');
         try {
-            const verification = await verifyAuthCode({
-                email: normalizedEmail,
-                code: String(formData.get('verificationCode') ?? '').trim(),
-            });
-            if (!verification.valid) {
-                onError('Неверный код подтверждения.');
-                return;
+            let token = setupToken?.email === normalizedEmail ? setupToken.token : null;
+            if (!token) {
+                const verified = await verifyLoginCode(
+                    normalizedEmail,
+                    String(formData.get('verificationCode') ?? '').trim(),
+                );
+                token = verified.setup_token;
+                setSetupToken({ email: normalizedEmail, token });
             }
 
-            onRegister({
-                name: normalizedEmail,
+            await onRegister({
                 email: normalizedEmail,
+                setupToken: token,
                 password,
+                rememberMe: true,
             });
         } catch (error) {
-            onError(error instanceof Error ? error.message : 'Не удалось создать аккаунт.');
+            onError(error instanceof Error ? error.message : 'Не удалось задать пароль.');
         } finally {
             setIsSubmitting(false);
         }
@@ -78,13 +111,14 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
                     autoComplete="email"
                     ref={emailInputRef}
                     name="email"
-                    placeholder="name@example.com"
+                    placeholder="name@179.ru"
                     required
                     type="email"
                     value={email}
                     onChange={(event) => {
                         setEmail(event.target.value);
                         setCodeSentMessage('');
+                        setSetupToken(null);
                     }}
                 />
             </label>
@@ -94,8 +128,10 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
                 <div className="register-form__password-control">
                     <input
                         autoComplete="new-password"
+                        maxLength={MAX_PASSWORD}
+                        minLength={MIN_PASSWORD}
                         name="password"
-                        placeholder="Введите пароль"
+                        placeholder={`Не меньше ${MIN_PASSWORD} символов`}
                         required
                         type={showPassword ? 'text' : 'password'}
                     />
@@ -184,7 +220,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
                 </p>
             )}
             <button className="register-form__submit" disabled={isSubmitting} type="submit">
-                {isSubmitting ? 'Проверка…' : 'Создать аккаунт'}
+                {isSubmitting ? 'Проверка…' : 'Задать пароль и войти'}
             </button>
         </form>
     );

@@ -66,7 +66,7 @@ impl CodeSender for SmtpCodeSender {
     /// # Fail-safe behavior
     /// - Invalid `from_email` (misconfigured at startup) -> `InternalError`.
     /// - Invalid recipient `email` -> `InvalidEmailFormat`.
-    /// - SMTP delivery failure -> `InternalError` (logged internally, but
+    /// - SMTP delivery failure -> `CodeDeliveryFailed` (logged to stderr, but
     ///   details are hidden from the domain layer to prevent information leakage).
     async fn send_login_code(&self, email: &str, code: &str) -> Result<(), DomainError> {
         // Parse addresses. Invalid formats are mapped to domain errors.
@@ -100,10 +100,11 @@ impl CodeSender for SmtpCodeSender {
 
         // Send the email. Map lettre errors to InternalError.
         self.mailer.send(email_msg).await.map_err(|e| {
-            // Log the actual error for debugging/monitoring,
-            // but return a generic domain error to the caller.
+            // The details go to the server log only (the API binary has no tracing
+            // subscriber, hence also stderr); the caller gets a generic error.
             tracing::error!("SMTP send failed: {:?}", e);
-            DomainError::InternalError
+            eprintln!("SMTP: could not send the login code: {e}");
+            DomainError::CodeDeliveryFailed
         })?;
 
         Ok(())

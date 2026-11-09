@@ -4,12 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { SESSION_EXPIRED_EVENT } from '../api/client';
 import { detachPushOnLogout, syncPushOnStartup } from '../notifications/push';
 import { authService } from './authService';
-import type { Credentials, RegistrationData, User } from './authService';
+import type { Credentials, FirstPassword, User } from './authService';
 
 interface AuthContextValue {
     user: User | null;
-    register: (data: RegistrationData) => void;
     login: (credentials: Credentials) => Promise<void>;
+    /** Saves the first password (after the emailed code) and logs in. */
+    completeFirstLogin: (data: FirstPassword) => Promise<void>;
     updateSchoolClass: (schoolClass: string) => Promise<void>;
     logout: () => Promise<void>;
 }
@@ -25,8 +26,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const navigate = useNavigate();
 
     // The backend rejected our session (expired or revoked): stop pretending to be logged in.
-    // Only when a user is stored — a 401 for a wrong password or code on the login and
-    // register pages must not navigate anywhere.
+    // Only when a user is stored — a 401 for a wrong password or code on the login page
+    // must not navigate anywhere.
     useEffect(() => {
         const handleSessionExpired = () => {
             if (!authService.getCurrentUser()) {
@@ -44,10 +45,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
     }, [navigate]);
 
-    const register = (data: RegistrationData) => setUser(authService.register(data));
     const login = async (credentials: Credentials) => {
         setUser(await authService.login(credentials));
         // This browser already has notifications on: link them to the user who just logged in.
+        void syncPushOnStartup().catch(() => undefined);
+    };
+    const completeFirstLogin = async (data: FirstPassword) => {
+        setUser(await authService.completeFirstLogin(data));
         void syncPushOnStartup().catch(() => undefined);
     };
     const updateSchoolClass = async (schoolClass: string) =>
@@ -61,7 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, register, login, updateSchoolClass, logout }}>
+        <AuthContext.Provider value={{ user, login, completeFirstLogin, updateSchoolClass, logout }}>
             {children}
         </AuthContext.Provider>
     );

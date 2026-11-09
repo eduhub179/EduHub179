@@ -229,6 +229,14 @@ pub enum DomainError {
     ScheduleWeekAlreadyExists,
     /// A password set by an admin must be 8..=128 chars.
     InvalidPasswordFormat,
+    /// The account already has a password: log in with it (first-login code is not sent).
+    PasswordAlreadySet,
+    /// The account has no password yet: the first login goes through an emailed code.
+    PasswordNotSet,
+    /// A new code was requested too soon after the previous one.
+    AuthCodeCooldown,
+    /// The code could not be delivered (mail server down or misconfigured).
+    CodeDeliveryFailed,
 }
 impl fmt::Display for DomainError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -352,6 +360,10 @@ impl fmt::Display for DomainError {
             DomainError::InvalidSubstitutionNote => write!(f, "Invalid substitution note"),
             DomainError::ScheduleWeekAlreadyExists => write!(f, "Schedule week already exists"),
             DomainError::InvalidPasswordFormat => write!(f, "Invalid password format"),
+            DomainError::PasswordAlreadySet => write!(f, "Password is already set"),
+            DomainError::PasswordNotSet => write!(f, "Password is not set"),
+            DomainError::AuthCodeCooldown => write!(f, "Auth code was sent recently"),
+            DomainError::CodeDeliveryFailed => write!(f, "Auth code could not be delivered"),
         }
     }
 }

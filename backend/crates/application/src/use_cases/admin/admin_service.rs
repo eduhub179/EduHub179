@@ -112,7 +112,6 @@ pub struct AdminService {
 }
 
 /// Length limits of a password set by an admin (as in `make-admin.sh`).
-const PASSWORD_CHARS: std::ops::RangeInclusive<usize> = 8..=128;
 
 fn require_admin(actor: &User) -> Result<(), DomainError> {
     if actor.is_admin() && actor.is_active {
@@ -246,9 +245,7 @@ impl AdminService {
     /// `InternalError` when the service was built without a credentials store.
     pub async fn set_password(&self, actor: &User, user_id: Uuid, password: &str) -> Result<(), DomainError> {
         require_admin(actor)?;
-        if !PASSWORD_CHARS.contains(&password.chars().count()) {
-            return Err(DomainError::InvalidPasswordFormat);
-        }
+        domain::value_objects::password::validate_new_password(password)?;
         let credentials = self.credentials.as_ref().ok_or(DomainError::InternalError)?;
         self.users.get_by_id(user_id).await?;
         credentials.set_password(user_id, password).await

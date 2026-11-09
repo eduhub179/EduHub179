@@ -70,6 +70,28 @@ impl OneTimeCodeService {
     /// Wrong, expired and absent codes are indistinguishable on purpose: the
     /// store cannot tell them apart, and exposing the difference would only
     /// help an attacker enumerate live codes.
+    /// Like `issue`, but at most one code per `cooldown_seconds` (no email flood).
+    ///
+    /// # Fail-safe поведение
+    /// `AuthCodeCooldown` if a code was sent less than `cooldown_seconds` ago; the
+    /// previous code stays valid then.
+    pub async fn issue_with_cooldown(
+        &self,
+        user_id: Uuid,
+        email: &str,
+        cooldown_seconds: u64,
+    ) -> Result<(), DomainError> {
+        if !self.store.try_acquire_send_slot(user_id, cooldown_seconds).await? {
+            return Err(DomainError::AuthCodeCooldown);
+        }
+        let issued = self.issue(user_id, email).await;
+        if issued.is_err() {
+            // Nothing reached the person: let them retry at once, not in a minute.
+            let _ = self.store.release_send_slot(user_id).await;
+        }
+        issued
+    }
+
     pub async fn verify(&self, user_id: Uuid, code: &str) -> Result<bool, DomainError> {
         self.store.verify_and_consume(user_id, code).await
     }

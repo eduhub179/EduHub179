@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use application::use_cases::{
     admin::{AdminService, TimetableService},
-    auth::OneTimeCodeService,
+    auth::{EmailLoginService, OneTimeCodeService},
     homework::{
         attach_file_to_lesson::AttachFileToLessonUseCase,
         create_homework::CreateHomeworkUseCase,
@@ -30,7 +30,7 @@ use domain::settings::Settings;
 use infrastructure::{
     auth::{
         Argon2PasswordHasher, HmacSessionTokenHasher, JwtTokenIssuer, LoggingCodeSender,
-        NumericCodeGenerator, SecureSessionTokenGenerator,
+        NumericCodeGenerator, SecureSessionTokenGenerator, SmtpCodeSender,
     },
     config::Config,
     postgres::{
@@ -83,12 +83,44 @@ async fn main() {
             .expect("failed to connect to Redis auth code store"),
     );
     let code_generator = Arc::new(NumericCodeGenerator);
-    let code_sender = Arc::new(LoggingCodeSender);
+    // Login codes go by email (SMTP_* in .env, the same mailbox as the Telegram bot).
+    // AUTH_CODE_DELIVERY=log prints them to this console instead — for local development.
+    let code_sender: Arc<dyn domain::ports::auth::CodeSender> =
+        if std::env::var("AUTH_CODE_DELIVERY").is_ok_and(|mode| mode.trim() == "log") {
+            println!("login codes: printed to the console (AUTH_CODE_DELIVERY=log)");
+            Arc::new(LoggingCodeSender)
+        } else {
+            if config.smtp_host.trim().is_empty() || config.smtp_host.ends_with("example.com") {
+                eprintln!(
+                    "WARNING: SMTP_HOST={} is a placeholder: login codes cannot be emailed. \
+                     Set the SMTP_* settings, or AUTH_CODE_DELIVERY=log for development.",
+                    config.smtp_host
+                );
+            } else {
+                println!("login codes: emailed via {}:{}", config.smtp_host, config.smtp_port);
+            }
+            Arc::new(
+                SmtpCodeSender::try_new(
+                    config.smtp_host.clone(),
+                    config.smtp_port,
+                    config.smtp_user.clone(),
+                    config.smtp_password.clone(),
+                    config.smtp_from_email.clone(),
+                )
+                .expect("SMTP settings are invalid (or set AUTH_CODE_DELIVERY=log for development)"),
+            )
+        };
     let one_time_code_service = Arc::new(OneTimeCodeService::new(
         code_generator,
         auth_code_store,
         code_sender,
     ));
+    // One-time tokens between "code is right" and "password is chosen".
+    let password_setup_tokens = Arc::new(
+        AuthCodeStoreRedis::with_prefix(&config.redis_url, Arc::new(Argon2PasswordHasher), "password_setup")
+            .await
+            .expect("failed to connect to Redis password setup store"),
+    );
 
     let web_session_repository: Arc<dyn WebSessionRepository> =
         Arc::new(WebSessionRepositoryPg::new(pool.clone()));
@@ -98,6 +130,13 @@ async fn main() {
     );
     let session_token_generator: Arc<dyn SessionTokenGenerator> =
         Arc::new(SecureSessionTokenGenerator);
+    let email_login = Arc::new(EmailLoginService::new(
+        user_repo.clone(),
+        credentials_store.clone(),
+        one_time_code_service.clone(),
+        password_setup_tokens,
+        session_token_generator.clone(),
+    ));
 
     let schedule_weeks = Arc::new(ScheduleWeekRepositoryPg::new(pool.clone()));
     let student_groups = Arc::new(StudentGroupRepositoryPg::new(pool.clone()));
@@ -283,6 +322,7 @@ async fn main() {
         push,
         admin_service,
         timetable_service,
+        email_login,
     );
 
     let addr = format!("{}:{}", config.server_host, config.server_port);

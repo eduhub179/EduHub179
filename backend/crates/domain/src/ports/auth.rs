@@ -66,6 +66,11 @@ pub trait CredentialsStore: Send + Sync {
     ///
     /// Returns `Err(DomainError::UserNotFound)` if the user does not exist.
     async fn set_password(&self, user_id: Uuid, raw_password: &str) -> Result<(), DomainError>;
+
+    /// True if the user has a password (first login is over).
+    ///
+    /// Returns `Err(DomainError::UserNotFound)` if the user does not exist.
+    async fn has_password(&self, user_id: Uuid) -> Result<bool, DomainError>;
 }
 
 // ============================================================================
@@ -84,6 +89,20 @@ pub trait AuthCodeStore: Send + Sync {
     /// Verifies a code and consumes it on success (one-time use).
     /// Returns `Ok(false)` if the code is wrong, expired, or absent.
     async fn verify_and_consume(&self, user_id: Uuid, code: &str) -> Result<bool, DomainError>;
+
+    /// Reserves the right to send a new code for `cooldown_seconds`.
+    ///
+    /// Returns `Ok(false)` if a code was sent less than `cooldown_seconds` ago (no email
+    /// flood). The default allows every send — for stores without a cooldown.
+    async fn try_acquire_send_slot(&self, _user_id: Uuid, _cooldown_seconds: u64) -> Result<bool, DomainError> {
+        Ok(true)
+    }
+
+    /// Gives the send slot back, e.g. when the email could not be sent, so the person
+    /// may retry at once. The default does nothing.
+    async fn release_send_slot(&self, _user_id: Uuid) -> Result<(), DomainError> {
+        Ok(())
+    }
 }
 
 /// Delivers a login/recovery code to the user's email.

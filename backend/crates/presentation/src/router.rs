@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use application::use_cases::{
     admin::{AdminService, TimetableService},
-    auth::{login::LoginUseCase, OneTimeCodeService},
+    auth::{login::LoginUseCase, EmailLoginService, OneTimeCodeService},
     homework::{
         attach_file_to_lesson::AttachFileToLessonUseCase,
         create_homework::CreateHomeworkUseCase,
@@ -289,6 +289,8 @@ pub struct AppState {
     pub push: Option<PushNotifications>,
     pub admin_service: Option<Arc<AdminService>>,
     pub timetable_service: Option<Arc<TimetableService>>,
+    /// Sign-in by school email (password / first-login code).
+    pub email_login: Option<Arc<EmailLoginService>>,
 }
 
 /// Homework file use cases; all of them need object storage.
@@ -518,8 +520,11 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
         .route("/api/auth/session/init", post(auth::init_session_handler))
         .route("/api/auth/logout", post(auth::logout_handler))
         .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
-        .route("/api/auth/code/send", post(auth::send_auth_code_handler))
-        .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
+        .route("/api/auth/email/start", post(auth::email_start_handler))
+        .route("/api/auth/email/code/resend", post(auth::email_resend_code_handler))
+        .route("/api/auth/email/code/verify", post(auth::email_verify_code_handler))
+        .route("/api/auth/email/password", post(auth::email_set_password_handler))
+        .route("/api/auth/email/login", post(auth::email_login_handler))
         .route("/api/schedule/week", get(schedule::schedule_week_handler))
         .route("/api/schedule/day", get(schedule::day_schedule_handler))
         .route(
@@ -558,6 +563,7 @@ pub fn create_app_with_auth(login_use_case: Arc<LoginUseCase>) -> Router {
             push: None,
             admin_service: None,
             timetable_service: None,
+            email_login: None,
         })
 }
 
@@ -603,6 +609,7 @@ pub fn create_app_with_schedule(schedule_service: Arc<ScheduleService>) -> Route
             push: None,
             admin_service: None,
             timetable_service: None,
+            email_login: None,
         })
 }
 
@@ -627,6 +634,7 @@ pub fn create_app_with_auth_and_schedule(
     push: Option<PushNotifications>,
     admin_service: Arc<AdminService>,
     timetable_service: Arc<TimetableService>,
+    email_login: Arc<EmailLoginService>,
 ) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -635,8 +643,11 @@ pub fn create_app_with_auth_and_schedule(
         .route("/api/auth/session/init", post(auth::init_session_handler))
         .route("/api/auth/logout", post(auth::logout_handler))
         .route("/api/auth/profile/class", patch(auth::update_profile_class_handler))
-        .route("/api/auth/code/send", post(auth::send_auth_code_handler))
-        .route("/api/auth/code/verify", post(auth::verify_auth_code_handler))
+        .route("/api/auth/email/start", post(auth::email_start_handler))
+        .route("/api/auth/email/code/resend", post(auth::email_resend_code_handler))
+        .route("/api/auth/email/code/verify", post(auth::email_verify_code_handler))
+        .route("/api/auth/email/password", post(auth::email_set_password_handler))
+        .route("/api/auth/email/login", post(auth::email_login_handler))
         .route("/api/schedule/week", get(schedule::schedule_week_handler))
         .route("/api/schedule/day", get(schedule::day_schedule_handler))
         .route(
@@ -708,6 +719,7 @@ pub fn create_app_with_auth_and_schedule(
             push,
             admin_service: Some(admin_service),
             timetable_service: Some(timetable_service),
+            email_login: Some(email_login),
         })
 }
 
@@ -910,6 +922,10 @@ mod tests {
         ) -> Result<(), DomainError> {
             Ok(())
         }
+
+        async fn has_password(&self, _user_id: Uuid) -> Result<bool, DomainError> {
+            Ok(true)
+        }
     }
 
     struct MockTokenIssuer {
@@ -958,6 +974,8 @@ mod tests {
 
     #[tokio::test]
     async fn login_route_works() {
+        // The response carries the user's email, built from the deployment's domain.
+        domain::settings::init(domain::settings::Settings::mock());
         let user = create_test_user();
         let app = create_app_with_auth(Arc::new(LoginUseCase::new(
             Arc::new(MockUserRepository {
@@ -1037,6 +1055,7 @@ mod tests {
             push: None,
             admin_service: None,
             timetable_service: None,
+            email_login: None,
         }
     }
 

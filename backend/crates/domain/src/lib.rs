@@ -32,6 +32,7 @@ pub mod value_objects {
     pub mod lesson_instance_status;
     pub mod lesson_target;
     pub mod login;
+    pub mod password;
     pub mod notification_platform;
     pub mod role;
     pub mod session_token_hash;

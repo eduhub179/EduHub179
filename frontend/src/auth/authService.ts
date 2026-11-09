@@ -1,8 +1,9 @@
 import {
-    initSession,
-    login as loginWithApi,
+    loginWithEmail,
     logoutSession,
+    setFirstPassword,
     updateProfileClass,
+    type PublicUserDto,
 } from '../api/authApi';
 
 export interface User {
@@ -14,21 +15,26 @@ export interface User {
     schoolClass: string | null;
 }
 
-export interface RegistrationData {
-    name: string;
-    email: string;
-    password: string;
-}
-
 export interface Credentials {
     email: string;
     password: string;
+    /** Keep the session for 30 days instead of 12 hours. */
+    rememberMe?: boolean;
+}
+
+/** The first login: the token from the emailed code and the chosen password. */
+export interface FirstPassword {
+    email: string;
+    setupToken: string;
+    password: string;
+    rememberMe?: boolean;
 }
 
 export interface AuthService {
     getCurrentUser(): User | null;
-    register(data: RegistrationData): User;
     login(credentials: Credentials): Promise<User>;
+    /** Saves the first password (after the emailed code) and logs in. */
+    completeFirstLogin(data: FirstPassword): Promise<User>;
     updateSchoolClass(schoolClass: string): Promise<User>;
     logout(): Promise<void>;
     /** Drops the locally stored user without calling the backend (the session is already gone). */
@@ -52,36 +58,35 @@ class LocalStorageAuthService implements AuthService {
         }
     }
 
-    register(data: RegistrationData): User {
-        const user: User = {
-            id: null,
-            name: data.name,
-            email: data.email,
-            role: null,
-            classId: null,
-            schoolClass: null,
-        };
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-        return user;
+    async login(credentials: Credentials): Promise<User> {
+        const session = await loginWithEmail({
+            email: credentials.email.trim(),
+            password: credentials.password,
+            remember_me: credentials.rememberMe ?? true,
+        });
+        return this.remember(session.user);
     }
 
-    async login(credentials: Credentials): Promise<User> {
-        const session = await loginWithApi({
-            login: credentials.email.trim(),
-            password: credentials.password,
+    async completeFirstLogin(data: FirstPassword): Promise<User> {
+        const session = await setFirstPassword({
+            email: data.email.trim(),
+            setup_token: data.setupToken,
+            password: data.password,
+            remember_me: data.rememberMe ?? true,
         });
-        await initSession({ user_id: session.user.id, auth_token: session.token });
-        const user: User = {
-            id: session.user.id,
-            name: [session.user.first_name, session.user.middle_name, session.user.last_name]
-                .filter(Boolean)
-                .join(' '),
-            email: credentials.email.trim(),
-            role: (session.user.role as User['role']) ?? null,
-            classId: session.user.class_id ?? null,
-            schoolClass: session.user.class_id ?? null,
-        };
+        return this.remember(session.user);
+    }
 
+    /** Stores the logged-in user (the session itself is the HttpOnly cookie). */
+    private remember(dto: PublicUserDto): User {
+        const user: User = {
+            id: dto.id,
+            name: [dto.first_name, dto.middle_name, dto.last_name].filter(Boolean).join(' '),
+            email: dto.email,
+            role: (dto.role as User['role']) ?? null,
+            classId: dto.class_id ?? null,
+            schoolClass: dto.class_id ?? null,
+        };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
     }

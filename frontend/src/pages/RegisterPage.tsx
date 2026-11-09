@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
-import type { RegistrationData } from '../auth/authService';
+import type { FirstPassword } from '../auth/authService';
 import Header from '../components/Header';
 import AuthPanel from '../components/Auth/AuthPanel';
 import RegisterForm from '../components/Register/RegisterForm';
@@ -10,13 +10,13 @@ import '../css/RegisterPage.css';
 import '../css/AuthPage.css';
 
 const RegisterPage: React.FC = () => {
-    const { register } = useAuth();
+    const { completeFirstLogin } = useAuth();
     const navigate = useNavigate();
     const [error, setError] = useState('');
 
-    const handleRegister = (data: RegistrationData) => {
+    const handleRegister = async (data: FirstPassword) => {
         setError('');
-        register(data);
+        await completeFirstLogin(data);
         navigate('/main');
     };
 
@@ -25,9 +25,10 @@ const RegisterPage: React.FC = () => {
             <Header />
             <main className="auth-page">
                 <AuthPanel mode="register" titleId="register-title">
-                    <h1 id="register-title">Создать аккаунт</h1>
+                    <h1 id="register-title">Первый вход</h1>
                     <p className="register-card__description">
-                        Зарегистрируйтесь, чтобы продолжить работу с EduHub.
+                        Аккаунт уже создан школой. Подтвердите школьную почту кодом
+                        и задайте пароль — дальше входите с ним.
                     </p>
                     {error && <p className="register-card__error" role="alert">{error}</p>}
                     <RegisterForm onError={setError} onRegister={handleRegister} />

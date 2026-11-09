@@ -174,6 +174,10 @@ mod tests {
         ) -> Result<(), DomainError> {
             unimplemented!()
         }
+
+        async fn has_password(&self, _user_id: Uuid) -> Result<bool, DomainError> {
+            Ok(true)
+        }
     }
 
     /// Mock `TokenIssuer` for unit tests.
