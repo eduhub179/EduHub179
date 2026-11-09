@@ -41,6 +41,49 @@ def fuzzy_day(word, today):
     return None
 
 
+def typos(a, b):
+    """Сколько опечаток между словами: замена, лишняя или пропущенная буква, две соседние буквы местами
+    (расстояние Дамерау — Левенштейна). «раписание» ~ «расписание» = 1, «когад» ~ «когда» = 1."""
+    prev2, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+    return prev[-1]
+
+
+def allowed_typos(word):
+    """Короткие слова (до 4 букв) не правим: «кода», «года» — настоящие слова. До 7 букв — одна опечатка, длиннее — две."""
+    return 0 if len(word) <= 4 else 1 if len(word) <= 7 else 2
+
+
+# слова, по которым правила узнают вопрос; опечатки в них правит fix_typos
+KEYWORDS = ("расписание", "расписания", "расписанию", "расписании", "домашка", "домашку", "домашки", "домашке",
+            "домашнее", "домашняя", "домашний", "задали", "задала", "задано", "задание", "задания", "кабинет",
+            "кабинете", "кабинета", "следующий", "следующая", "следующее", "следующего", "когда", "сколько", "какие",
+            "какой", "какая", "какое", "уроки", "урока", "уроков", "покажи", "сегодня", "завтра", "послезавтра")
+
+REAL_WORDS = {"завтрак", "завтраке", "завтраку", "столько", "сколь"}  # настоящие слова рядом с ключевыми
+
+
+def fix_typos(text):
+    """Исправить опечатки в словах вопроса: «раписание на зватра» -> «расписание на завтра», «кабинте химии» ->
+    «кабинет химии». Слово меняем, только если первая буква та же и до ключевого слова 1–2 опечатки. Слова, которые
+    правила и так узнают («задачи», «номер», «решить»), не трогаем: «задачи» не должно стать «задали»."""
+    def fix(m):
+        w = m.group(0)
+        low = w.lower()
+        n = allowed_typos(low)
+        if not n or low in KEYWORDS or low in REAL_WORDS or HOMEWORK_TEXT.search(low) or HW_WORDS.search(low) or NEXT_WORDS.search(low):
+            return w
+        best = min(KEYWORDS, key=lambda k: (typos(low, k), abs(len(k) - len(low))))
+        return best if best[0] == low[0] and typos(low, best) <= n else w
+    return re.sub(r"[а-яёА-ЯЁ]+", fix, text or "")
+
+
 def parse_day(text, today):
     """«сегодня», «завтра», «послезавтра», «в среду», «на пт», «20.10» -> date или None.
     День недели — ближайший такой, начиная с сегодня."""
@@ -82,7 +125,7 @@ HOMEWORK_TEXT = re.compile(r"§|№|\bномер|\bзадач|\bстр\b|\bст�
 
 def rule_intent(text):
     """Намерение по простым признакам или None, если не уверены."""
-    t = (text or "").strip()
+    t = fix_typos((text or "").strip())
     if HELLO.match(t):
         return "other"
     if SCHEDULE_WORDS.search(t):
@@ -120,7 +163,7 @@ subject — предмет из сообщения, как написан, ил�
 def llm_intent(text):
     """Короткий запрос к модели: {"intent", "day", "subject"}. Исключение — модель не ответила."""
     body = {"model": MODEL, "stream": False, "format": SCHEMA, "options": {"temperature": 0, "num_ctx": 2048},
-            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text[:500]}]}
+            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": fix_typos(text)[:500]}]}
     req = urllib.request.Request(URL, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=120) as r:
         out = json.loads(json.loads(r.read())["message"]["content"])

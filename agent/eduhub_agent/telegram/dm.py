@@ -168,12 +168,16 @@ def subjects_in(text, names):
 
 
 def subjects_typo(text, names):
-    """Опечатки в предмете: «алгерба», «химмия», «физке». Сравниваем слово с началом названия той же длины."""
+    """Опечатки в предмете: «алгерба», «химмия», «физке». Сравниваем слово с началом названия той же длины.
+    Опечатка с окончанием («по руссому», «по литре», «истоии»): первые 5 букв отличаются одной опечаткой от начала
+    названия (сокращения из расписания раскрываем: «Рус.яз» -> «русский»)."""
     hit = []
     for w in re.findall(r"[а-яё]{5,}", text.lower()):
         for n in names:
             first = n.lower().split()[0]
-            if n not in hit and questions.close(w[:len(first) + 1], first, 0.75):
+            full = timetable.norm(timetable.ALIASES.get(timetable.norm(n), n).split()[0])
+            if n not in hit and (questions.close(w[:len(first) + 1], first, 0.75) or len(full) >= 5
+                                 and w[0] == full[0] and questions.typos(w[:5], full[:5]) <= 1):
                 hit.append(n)
         for alias, full in timetable.ALIASES.items():  # «физрв» ~ «физра» = физкультура
             if len(alias) >= 5 and questions.close(w[:len(alias) + 1], alias, 0.8):
@@ -574,6 +578,7 @@ def _question(msg, chat_id, text, cid):
     """Вопрос, а не новое ДЗ: ответить и вернуть True. Новое ДЗ — False (дальше обычный черновик)."""
     q = questions.classify(text, llm=None if questions.rule_intent(text) else _llm_with_typing(chat_id))
     names = class_subjects(cid, NOW().date())
+    fixed = questions.fix_typos(text)  # «кабинте хмии» -> «кабинет хмии»: чтобы узнать, где спросили предмет
     if q["intent"] == "add":
         if subjects_in(text, names) or subjects_typo(text, names) or questions.HOMEWORK_TEXT.search(text) or not WORTH or WORTH(text):
             return False  # похоже на ДЗ: черновик, как раньше
@@ -588,7 +593,7 @@ def _question(msg, chat_id, text, cid):
     if not found and q.get("subject"):
         found = [n for n in names if timetable.same_subject(n, q["subject"])]
     day = questions.parse_day(text, NOW().date()) or (q.get("day") and questions.parse_day(q["day"], NOW().date()))
-    odd = not found and q["intent"] in ("homework", "next") and unknown_subject(text)
+    odd = not found and q["intent"] in ("homework", "next") and unknown_subject(fixed)
     if odd:  # спросили про предмет, который не узнали: не отвечаем про «любой урок»
         tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
            text=f"Не понял предмет «{odd}». Предметы класса: " + ", ".join(sorted(names)) + ".")

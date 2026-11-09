@@ -15,7 +15,7 @@ use domain::errors::DomainError;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 
-use super::view;
+use super::{fuzzy, view};
 
 /// What period a command asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +40,12 @@ impl Period {
             Period::Week
         } else if a.contains("сег") || a.contains("tod") {
             Period::Today
+        } else if fuzzy::has_word(&a, &["завтра", "tomorrow"]) {
+            Period::Tomorrow // опечатки: «зватра», «завтар»
+        } else if fuzzy::has_word(&a, &["неделя", "неделю", "week"]) {
+            Period::Week // «нелеля», «ндеелю»
+        } else if fuzzy::has_word(&a, &["сегодня", "today"]) {
+            Period::Today // «сеогдня»
         } else {
             Period::Default
         }
@@ -208,5 +214,8 @@ mod tests {
         assert_eq!(Period::parse("что-то"), Period::Default);
         assert_eq!(Period::parse("сегодня"), Period::Today);
         assert_eq!(Period::parse("week"), Period::Week);
+        assert_eq!(Period::parse("зватра"), Period::Tomorrow);
+        assert_eq!(Period::parse("на нелелю"), Period::Week);
+        assert_eq!(Period::parse("сеогдня"), Period::Today);
     }
 }
