@@ -285,15 +285,75 @@ fn short(text: &str, max: usize) -> String {
     }
 }
 
+/// Is `target` a class name like "2027б" (not a group)?
+fn is_class_name(target: &str) -> bool {
+    let digits = target.chars().take_while(|c| c.is_ascii_digit()).count();
+    digits == 4 && target.chars().count() == 5
+}
+
+/// Who a lesson of a split slot is for: the group name, or the teacher when the
+/// lesson is for the whole class (then the group is not known, the teacher tells it).
+fn who_for(b: &Block, today: NaiveDate) -> Option<String> {
+    let first = b.first();
+    if !is_class_name(&first.target_name) {
+        return Some(class_label(&first.target_name, today));
+    }
+    let teacher = first.substitute_teacher.as_ref().or(first.teachers.first())?;
+    Some(short_name(teacher))
+}
+
+/// "Алгебра ×2 · 11Б · каб. 316" (without number and time) or the cancelled variant.
+fn block_title(b: &Block, today: NaiveDate, with_target: bool, split: bool) -> String {
+    let first = b.first();
+    let subject = esc(&first.subject.name);
+    let pair = if b.lessons.len() > 1 { format!(" ×{}", b.lessons.len()) } else { String::new() };
+    if b.is_cancelled() {
+        return format!("<s>{subject}</s>{pair} — отменён ❌");
+    }
+    let mut line = format!("<b>{subject}</b>{pair}");
+    if with_target {
+        line.push_str(&format!(" · {}", esc(&class_label(&first.target_name, today))));
+    } else if split {
+        if let Some(who) = who_for(b, today) {
+            line.push_str(&format!(" · {}", esc(&who)));
+        }
+    }
+    if let Some(cab) = b.cabinets() {
+        line.push_str(&format!(" · {cab}"));
+    }
+    line
+}
+
+/// Notes and (for a student) short homework of a block, indented by `indent`.
+fn block_details(b: &Block, with_target: bool, indent: &str) -> String {
+    let mut out = String::new();
+    if b.is_cancelled() {
+        return out;
+    }
+    for note in b.notes() {
+        out.push_str(&format!("{indent}{}\n", esc(&note)));
+    }
+    if !with_target {
+        if let Some(hw) = b.homework() {
+            out.push_str(&format!("{indent}📚 {}\n", esc(&short(&hw, 60))));
+        }
+    }
+    out
+}
+
 /// One day of lessons. `with_target` adds the class/group (teacher's view) and
 /// leaves homework out; for a student homework is shown short (full text: /homework).
+/// Lessons of different groups at the same time go under one number, one per line.
 ///
 /// ```text
 /// 📅 Завтра, вторник, 10 ноября
 ///
 /// 1    09:00  Разговоры о важном · каб. 308
-/// 3–4  11:00  Алгебра ×2 · каб. 316
+/// 2–3  09:55  Алгебра ×2 · каб. 316
 ///      📚 №123, 125
+/// 4    11:55  по группам:
+///      • Информатика · Иванов А. · каб. 312
+///      • Технология · Петров Б. · каб. 105
 /// ```
 pub fn format_day(day: &ScheduleDay, today: NaiveDate, with_target: bool) -> String {
     let mut out = format!("📅 <b>{}</b>\n", day_title(day.date, today));
@@ -303,32 +363,27 @@ pub fn format_day(day: &ScheduleDay, today: NaiveDate, with_target: bool) -> Str
         return out;
     }
     out.push('\n');
-    for b in &blocks {
-        let first = b.first();
-        let lead = format!("<code>{:<4} {}</code>", b.numbers(), hhmm(first.start_time));
-        let subject = esc(&first.subject.name);
-        let pair = if b.lessons.len() > 1 { format!(" ×{}", b.lessons.len()) } else { String::new() };
-        if b.is_cancelled() {
-            out.push_str(&format!("{lead}  <s>{subject}</s>{pair} — отменён ❌\n"));
-            continue;
+    let mut i = 0;
+    while i < blocks.len() {
+        let start = blocks[i].first().start_time;
+        let mut j = i + 1;
+        while j < blocks.len() && blocks[j].first().start_time == start {
+            j += 1;
         }
-        let mut line = format!("{lead}  <b>{subject}</b>{pair}");
-        if with_target {
-            line.push_str(&format!(" · {}", esc(&class_label(&first.target_name, today))));
-        }
-        if let Some(cab) = b.cabinets() {
-            line.push_str(&format!(" · {cab}"));
-        }
-        out.push_str(&line);
-        out.push('\n');
-        for note in b.notes() {
-            out.push_str(&format!("      {}\n", esc(&note)));
-        }
-        if !with_target {
-            if let Some(hw) = b.homework() {
-                out.push_str(&format!("      📚 {}\n", esc(&short(&hw, 60))));
+        let slot = &blocks[i..j];
+        let numbers = slot.iter().map(|b| b.numbers()).max_by_key(|n| n.len()).unwrap_or_default();
+        let lead = format!("<code>{:<4} {}</code>", numbers, hhmm(start));
+        if let [b] = slot {
+            out.push_str(&format!("{lead}  {}\n", block_title(b, today, with_target, false)));
+            out.push_str(&block_details(b, with_target, "      "));
+        } else {
+            out.push_str(&format!("{lead}  по группам:\n"));
+            for b in slot {
+                out.push_str(&format!("      • {}\n", block_title(b, today, with_target, true)));
+                out.push_str(&block_details(b, with_target, "         "));
             }
         }
+        i = j;
     }
     out
 }
@@ -495,11 +550,14 @@ mod tests {
             ],
         };
         let b = blocks(&day);
-        assert_eq!(b.len(), 3);
+        assert_eq!(b.len(), 3); // Литература, Алгебра ×2, Английский ×2
         assert_eq!(b[1].numbers(), "2–3");
         assert_eq!(b[1].homework().as_deref(), Some("№123, 125"));
         let text = format_day(&day, d(2026, 11, 9), false);
-        assert!(text.contains("<code>2–3  09:55</code>  <b>Алгебра</b> ×2 · каб. 316"), "{text}");
+        // Both pairs go under one number: "2–3 09:55 по группам".
+        assert!(text.contains("<code>2–3  09:55</code>  по группам:\n"), "{text}");
+        assert!(text.contains("      • <b>Алгебра</b> ×2 · каб. 316\n         📚 №123, 125\n"), "{text}");
+        assert!(text.contains("      • <b>Английский язык</b> ×2 · Англ. гр. 2 · каб. 210\n"), "{text}");
         assert_eq!(text.matches("№123").count(), 1, "{text}");
     }
 
@@ -515,5 +573,31 @@ mod tests {
         let text = format_homework(&[day], d(2026, 11, 9));
         assert_eq!(text.matches("§12").count(), 1, "{text}");
         assert!(text.contains("• <b>Физика</b> (4–5 урок): §12 &lt;читать&gt;"), "{text}");
+    }
+
+    #[test]
+    fn lessons_of_different_groups_at_one_time_are_listed_under_one_number() {
+        use domain::entities::user::User;
+        let teacher = |last: &str| User {
+            id: Uuid::new_v4(),
+            login: String::new(),
+            role: UserRole::Teacher,
+            last_name: last.into(),
+            first_name: "Анна".into(),
+            middle_name: None,
+            is_active: true,
+            class_id: None,
+        };
+        let mut inf = lesson((11, 55), "Информатика", "2027б", 312, Some("задача 5"));
+        inf.teachers = vec![teacher("Иванова")];
+        let mut tech = lesson((11, 55), "Технология", "2027б", 105, None);
+        tech.teachers = vec![teacher("Петрова")];
+        let eng = lesson((11, 55), "Английский язык", "Англ. гр. 2", 210, None);
+        let day = ScheduleDay { date: d(2026, 11, 10), lessons: vec![inf, tech, eng] };
+        let text = format_day(&day, d(2026, 11, 9), false);
+        assert_eq!(text.matches("11:55").count(), 1, "{text}");
+        assert!(text.contains("<code>4    11:55</code>  по группам:\n"), "{text}");
+        assert!(text.contains("      • <b>Информатика</b> · Иванова А. · каб. 312\n         📚 задача 5\n"), "{text}");
+        assert!(text.contains("      • <b>Английский язык</b> · Англ. гр. 2 · каб. 210\n"), "{text}");
     }
 }
