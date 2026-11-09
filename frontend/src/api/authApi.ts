@@ -39,12 +39,6 @@ export interface LogoutResponse {
   ok: boolean;
 }
 
-export interface UpdateProfileClassRequest {
-  class_id: string;
-}
-
-export type UpdateProfileClassResponse = PublicUserDto;
-
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
   return apiFetch<LoginResponse>('/api/auth/login', {
     method: 'POST',
@@ -60,19 +54,6 @@ export async function initSession(
 ): Promise<InitSessionResponse> {
   return apiFetch<InitSessionResponse>('/api/auth/session/init', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function updateProfileClass(
-  payload: UpdateProfileClassRequest,
-): Promise<UpdateProfileClassResponse> {
-  return apiFetch<UpdateProfileClassResponse>('/api/auth/profile/class', {
-    method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
     },

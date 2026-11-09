@@ -11,7 +11,6 @@ interface AuthContextValue {
     login: (credentials: Credentials) => Promise<void>;
     /** Saves the first password (after the emailed code) and logs in. */
     completeFirstLogin: (data: FirstPassword) => Promise<void>;
-    updateSchoolClass: (schoolClass: string) => Promise<void>;
     logout: () => Promise<void>;
 }
 
@@ -54,8 +53,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(await authService.completeFirstLogin(data));
         void syncPushOnStartup().catch(() => undefined);
     };
-    const updateSchoolClass = async (schoolClass: string) =>
-        setUser(await authService.updateSchoolClass(schoolClass));
     const logout = async () => {
         // Unlink this browser from the user (the subscription itself stays for the next login):
         // the next person on a shared computer must not get this user's homework.
@@ -65,7 +62,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, completeFirstLogin, updateSchoolClass, logout }}>
+        <AuthContext.Provider value={{ user, login, completeFirstLogin, logout }}>
             {children}
         </AuthContext.Provider>
     );

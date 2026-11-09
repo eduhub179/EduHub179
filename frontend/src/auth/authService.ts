@@ -2,7 +2,6 @@ import {
     loginWithEmail,
     logoutSession,
     setFirstPassword,
-    updateProfileClass,
     type PublicUserDto,
 } from '../api/authApi';
 
@@ -35,7 +34,6 @@ export interface AuthService {
     login(credentials: Credentials): Promise<User>;
     /** Saves the first password (after the emailed code) and logs in. */
     completeFirstLogin(data: FirstPassword): Promise<User>;
-    updateSchoolClass(schoolClass: string): Promise<User>;
     logout(): Promise<void>;
     /** Drops the locally stored user without calling the backend (the session is already gone). */
     forgetCurrentUser(): void;
@@ -89,24 +87,6 @@ class LocalStorageAuthService implements AuthService {
         };
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
         return user;
-    }
-
-    async updateSchoolClass(schoolClass: string): Promise<User> {
-        const currentUser = this.getCurrentUser();
-        if (!currentUser) {
-            throw new Error('Войдите в аккаунт, чтобы изменить профиль.');
-        }
-
-        const updated = await updateProfileClass({ class_id: schoolClass });
-
-        const updatedUser: User = {
-            ...currentUser,
-            role: (updated.role as User['role']) ?? currentUser.role,
-            classId: updated.class_id ?? null,
-            schoolClass: updated.class_id ?? null,
-        };
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-        return updatedUser;
     }
 
     async logout(): Promise<void> {

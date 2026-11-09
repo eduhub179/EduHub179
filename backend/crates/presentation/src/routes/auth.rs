@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use application::use_cases::auth::email_login::{EmailLoginService, LoginMethod};
 
-use crate::router::{require_authenticated_user, ApiError, AppState};
+use crate::router::{ApiError, AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -64,11 +64,6 @@ pub struct InitSessionResponse {
 #[derive(Debug, Serialize)]
 pub struct LogoutResponse {
     pub ok: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateProfileClassRequest {
-    pub class_id: String,
 }
 
 pub async fn login_handler(
@@ -201,60 +196,6 @@ pub async fn logout_handler(
     );
 
     Ok((response_headers, Json(LogoutResponse { ok: true })))
-}
-
-pub async fn update_profile_class_handler(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(payload): Json<UpdateProfileClassRequest>,
-) -> Result<Json<PublicUser>, ApiError> {
-    let auth_user = require_authenticated_user(&state, &headers).await?;
-    let user_repository = state.user_repository.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "User repository not initialized".to_string(),
-    })?;
-    let class_repository = state.class_repository.as_ref().ok_or_else(|| ApiError {
-        status: StatusCode::INTERNAL_SERVER_ERROR,
-        message: "Class repository not initialized".to_string(),
-    })?;
-
-    let class_id = Uuid::parse_str(&payload.class_id).map_err(|_| ApiError {
-        status: StatusCode::BAD_REQUEST,
-        message: "Invalid class id".to_string(),
-    })?;
-
-    let class = class_repository.get_by_id(class_id).await.map_err(|_| ApiError {
-        status: StatusCode::NOT_FOUND,
-        message: "Class not found".to_string(),
-    })?;
-    if !class.is_active {
-        return Err(ApiError {
-            status: StatusCode::NOT_FOUND,
-            message: "Class not found".to_string(),
-        });
-    }
-
-    let mut current_user = user_repository
-        .get_by_id(auth_user.id)
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-    current_user.class_id = Some(class_id);
-    let updated_user = user_repository
-        .save(current_user)
-        .await
-        .map_err(ApiError::from_auth_domain)?;
-
-    Ok(Json(PublicUser {
-        id: updated_user.id.to_string(),
-        email: email_of(&updated_user),
-        login: updated_user.login,
-        role: updated_user.role.to_string(),
-        first_name: updated_user.first_name,
-        last_name: updated_user.last_name,
-        middle_name: updated_user.middle_name,
-        is_active: updated_user.is_active,
-        class_id: updated_user.class_id.map(|id| id.to_string()),
-    }))
 }
 
 /// Creates a web session for `user` and the `Set-Cookie` header with its token.
