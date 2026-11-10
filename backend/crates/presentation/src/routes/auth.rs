@@ -394,7 +394,7 @@ fn email_auth_error(error: DomainError) -> ApiError {
         ),
         DomainError::PasswordNotSet => (
             StatusCode::CONFLICT,
-            "Первый вход: подтвердите почту кодом и задайте пароль",
+            "Пароль ещё не задан. Перейдите на страницу «Регистрация» и задайте пароль",
         ),
         DomainError::CodeDeliveryFailed => (
             StatusCode::SERVICE_UNAVAILABLE,
