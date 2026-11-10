@@ -675,6 +675,7 @@ pub fn create_app_with_auth_and_schedule(
         )
         .route("/api/classes", get(classes::classes_handler))
         .route("/api/telegram/users/:telegram_id", get(telegram::telegram_user_handler))
+        .route("/api/lessons/:lesson_instance_id/next", get(schedule::next_lessons_handler))
         .route(
             "/api/lessons/:lesson_instance_id/files",
             // Axum's default body limit is 2 MB; files may be up to MAX_FILE_SIZE
@@ -1091,6 +1092,7 @@ mod tests {
             .merge(notification_routes())
             .merge(admin_routes())
             .route("/api/lessons/:lesson_instance_id/files", post(ok))
+            .route("/api/lessons/:lesson_instance_id/next", get(ok))
             .route("/api/homework/:homework_id/files/:file_id", get(ok))
             .route("/api/homework/files/:file_id", delete(ok))
             .route("/api/classes/schedule/week", get(ok))

@@ -39,6 +39,15 @@ pub struct AttachFileToLessonCommand {
     pub file: UploadHomeworkFileCommand,
 }
 
+/// Result of `execute_shared`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SharedAttach {
+    /// The attach to the requested lesson.
+    pub main: AttachedLessonFile,
+    /// Lessons of `also` where the record could not be saved, with the reason.
+    pub failed: Vec<(Uuid, DomainError)>,
+}
+
 /// Result of a successful attach.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachedLessonFile {
@@ -91,6 +100,47 @@ impl AttachFileToLessonUseCase {
                 Err(error)
             }
         }
+    }
+
+    /// Like `execute`, plus the same stored file attached to `also` (the other lessons of a
+    /// double lesson): one object in storage, a record in each lesson's homework, so the
+    /// file is not stored twice.
+    ///
+    /// # Fail-safe поведение
+    /// The main lesson behaves exactly as in `execute` (its failure is the call's error).
+    /// A failure on one of `also` does not undo the rest: it is returned in `failed`.
+    pub async fn execute_shared(
+        &self,
+        cmd: AttachFileToLessonCommand,
+        also: &[Uuid],
+    ) -> Result<SharedAttach, DomainError> {
+        cmd.file.validate()?;
+
+        let stored = self
+            .storage
+            .upload(UploadFileRequest {
+                folder: domain::ports::file_storage::StorageFolder::Homeworks,
+                file_name: cmd.file.file_name.trim().to_string(),
+                mime_type: cmd.file.mime_type.trim().to_string(),
+                bytes: cmd.file.bytes,
+            })
+            .await?;
+
+        let (user, role) = (cmd.editor.user_id(), cmd.editor.role());
+        let main = match self.save_metadata(cmd.lesson_instance_id, user, role, &stored).await {
+            Ok(attached) => attached,
+            Err(error) => {
+                let _ = self.storage.delete(&stored.storage_key).await;
+                return Err(error);
+            }
+        };
+        let mut failed = Vec::new();
+        for lesson_instance_id in also.iter().copied().filter(|id| *id != cmd.lesson_instance_id) {
+            if let Err(error) = self.save_metadata(lesson_instance_id, user, role, &stored).await {
+                failed.push((lesson_instance_id, error));
+            }
+        }
+        Ok(SharedAttach { main, failed })
     }
 
     async fn save_metadata(
@@ -203,6 +253,10 @@ mod tests {
                 .unwrap()
                 .clone()
                 .ok_or(DomainError::HomeworkNotFound)
+        }
+
+        async fn get_files_by_storage_key(&self, _: &str) -> Result<Vec<HomeworkFile>, DomainError> {
+            Ok(Vec::new())
         }
 
         async fn get_files(&self, _: Uuid) -> Result<Vec<HomeworkFile>, DomainError> {

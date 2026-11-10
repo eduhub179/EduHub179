@@ -53,6 +53,50 @@ pub struct ScheduleService {
     substitutions: Option<Arc<dyn LessonSubstitutionRepository>>,
 }
 
+/// A lesson with its number in the day ("Урок 3").
+#[derive(Debug, Clone)]
+pub struct NumberedLesson {
+    pub lesson: ScheduleLesson,
+    /// 1-based; lessons at the same time (groups of one class) share a number.
+    pub number: usize,
+}
+
+/// Indices (in time order) of the double (or triple) lesson around `day[position]`: the
+/// lessons of the same course in consecutive time slots of a time-ordered `day`.
+///
+/// One pass over the day, a time slot (lessons with one start time) at a step: lessons of
+/// the course are collected while every slot has one; a slot without it ends the run.
+/// Slots, not list neighbours: half of a class may have English while the other half has
+/// another subject at the same time, so the day reads "English, Probability, English,
+/// Probability" and the two English lessons are still one pair.
+fn double_block(day: &[ScheduleLesson], position: usize) -> Vec<usize> {
+    let course = day[position].lesson.id;
+    // Lessons of the course in the current run of consecutive slots.
+    let mut run = Vec::new();
+    let mut index = 0;
+    while index < day.len() {
+        let start = day[index].start_time;
+        let mut in_slot = Vec::new();
+        while index < day.len() && day[index].start_time == start {
+            if day[index].lesson.id == course {
+                in_slot.push(index);
+            }
+            index += 1;
+        }
+        if in_slot.is_empty() {
+            // The run is over: it is the answer if it holds our lesson.
+            if run.contains(&position) {
+                return run;
+            }
+            run.clear();
+        } else {
+            run.extend(in_slot);
+        }
+    }
+    // The day ended inside the run, so it holds our lesson.
+    run
+}
+
 /// A complete schedule response for the mobile/web schedule screen.
 ///
 /// `days` always contains Monday through Sunday in chronological order.
@@ -567,6 +611,97 @@ impl ScheduleService {
         instance_id: Uuid,
     ) -> Result<Vec<ScheduleLesson>, DomainError> {
         let lesson = self.schedule_lesson(instance_id).await?;
+        let day = self.target_day(&lesson).await?;
+        let Some(position) = day.iter().position(|other| other.instance.id == instance_id) else {
+            return Ok(Vec::new());
+        };
+        let block = double_block(&day, position);
+        Ok(day
+            .into_iter()
+            .enumerate()
+            .filter(|(index, other)| block.contains(index) && other.instance.id != instance_id)
+            .map(|(_, other)| other)
+            .collect())
+    }
+
+    /// The next time the course of `instance_id` meets: its lessons (both halves of a
+    /// double lesson) in time order, each with its number in that day of the class/group.
+    ///
+    /// "Next" starts after the current lesson and the other half of its double, so a
+    /// pair is one meeting. Cancelled lessons and weeks that are not published (what
+    /// students do not see) are skipped; moved and one-off lessons count.
+    ///
+    /// # Fail-safe поведение
+    /// Empty if the course has no later published lesson yet (next week is published
+    /// on Fridays); `LessonInstanceNotFound` for an unknown `instance_id`.
+    pub async fn next_course_lessons(&self, instance_id: Uuid) -> Result<Vec<NumberedLesson>, DomainError> {
+        let current = self.schedule_lesson(instance_id).await?;
+        let date = current.instance.lesson_date;
+        let mut block_end = current.end_time;
+        for partner in self.double_lesson_partners(instance_id).await? {
+            block_end = block_end.max(partner.end_time);
+        }
+
+        // Earliest later instance of any template of the course (inactive ones hold
+        // one-off and moved lessons).
+        let mut published: HashMap<NaiveDate, bool> = HashMap::new();
+        let mut best: Option<(NaiveDate, NaiveTime, Uuid)> = None;
+        for template in self.templates.get_by_lesson(current.lesson.id).await? {
+            for instance in self.instances.get_by_template(template.id).await? {
+                if instance.id == instance_id || instance.status.is_cancelled() {
+                    continue;
+                }
+                let key = (instance.lesson_date, template.start_time);
+                let later = instance.lesson_date > date
+                    || (instance.lesson_date == date && template.start_time >= block_end);
+                if !later || best.is_some_and(|(day, start, _)| (day, start) <= key) {
+                    continue;
+                }
+                let week_published = match published.get(&instance.week_start_date) {
+                    Some(known) => *known,
+                    None => {
+                        let known = match self.schedule_weeks.get_by_id(instance.week_start_date).await {
+                            Ok(week) => week.is_published(),
+                            Err(DomainError::ScheduleWeekNotFound) => false,
+                            Err(error) => return Err(error),
+                        };
+                        published.insert(instance.week_start_date, known);
+                        known
+                    }
+                };
+                if week_published {
+                    best = Some((key.0, key.1, instance.id));
+                }
+            }
+        }
+        let Some((_, _, next_id)) = best else {
+            return Ok(Vec::new());
+        };
+
+        let next = self.schedule_lesson(next_id).await?;
+        let day = self.target_day(&next).await?;
+        let Some(position) = day.iter().position(|other| other.instance.id == next_id) else {
+            return Ok(vec![NumberedLesson { lesson: next, number: 1 }]);
+        };
+        let block = double_block(&day, position);
+        // Lessons at one time (groups of the class) share a number.
+        let mut starts: Vec<NaiveTime> = day.iter().map(|other| other.start_time).collect();
+        starts.dedup();
+        Ok(day
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| block.contains(index))
+            .map(|(_, lesson)| NumberedLesson {
+                number: starts.iter().position(|start| *start == lesson.start_time).map_or(1, |n| n + 1),
+                lesson,
+            })
+            .collect())
+    }
+
+    /// The day of `lesson`'s class (or group) in time order: lessons of that target only,
+    /// cancelled ones skipped except `lesson` itself.
+    async fn target_day(&self, lesson: &ScheduleLesson) -> Result<Vec<ScheduleLesson>, DomainError> {
+        let instance_id = lesson.instance.id;
         // Only the day of the same class (or group) matters, not the whole school.
         let lessons = match lesson.lesson.target {
             LessonTarget::Class(class_id) => self.lessons.get_by_class(class_id).await?,
@@ -587,22 +722,7 @@ impl ScheduleService {
             })
             .collect();
         day.sort_by_key(|other| other.start_time);
-        let Some(position) = day.iter().position(|other| other.instance.id == instance_id) else {
-            return Ok(Vec::new());
-        };
-        let same_course = |other: &ScheduleLesson| other.lesson.id == lesson.lesson.id;
-        let mut first = position;
-        while first > 0 && same_course(&day[first - 1]) {
-            first -= 1;
-        }
-        let mut last = position;
-        while last + 1 < day.len() && same_course(&day[last + 1]) {
-            last += 1;
-        }
-        Ok(day
-            .drain(first..=last)
-            .filter(|other| other.instance.id != instance_id)
-            .collect())
+        Ok(day)
     }
 
     /// "2027б" for a class lesson, the group name for a group lesson.
@@ -1113,6 +1233,10 @@ mod tests {
         ) -> Result<Homework, DomainError> {
             Err(DomainError::HomeworkNotFound)
         }
+        async fn get_files_by_storage_key(&self, _: &str) -> Result<Vec<HomeworkFile>, DomainError> {
+            Ok(Vec::new())
+        }
+
         async fn get_files(
             &self,
             _homework_id: uuid::Uuid,

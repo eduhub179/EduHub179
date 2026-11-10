@@ -207,6 +207,25 @@ impl HomeworkRepository for HomeworkRepositoryPg {
         rows.into_iter().map(HomeworkFileRow::into_domain).collect()
     }
 
+    /// All file records with this storage key (one object shared by a double lesson).
+    /// Performance: uses `idx_homework_files_storage_key`.
+    async fn get_files_by_storage_key(&self, storage_key: &str) -> Result<Vec<HomeworkFile>, DomainError> {
+        let rows = sqlx::query_as::<_, HomeworkFileRow>(
+            r#"
+            SELECT file_id, homework_id, storage_key, file_name, mime_type, size_bytes, sort_order
+            FROM homework_files
+            WHERE storage_key = $1
+            ORDER BY file_id
+            "#,
+        )
+        .bind(storage_key)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Self::map_db_error)?;
+
+        rows.into_iter().map(HomeworkFileRow::into_domain).collect()
+    }
+
     /// Saves or updates a homework.
     ///
     /// Uses PostgreSQL `INSERT ... ON CONFLICT` for atomic upsert.

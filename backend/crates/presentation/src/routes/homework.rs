@@ -40,6 +40,67 @@ pub struct CreateHomeworkResponse {
     pub created_at: String,
 }
 
+/// `?with_double=true`: also put the homework on the other lessons of a double lesson
+/// (the site does: a pair is one meeting; the agent does it itself).
+#[derive(Debug, Default, Deserialize)]
+pub struct WithDoubleQuery {
+    #[serde(default)]
+    pub with_double: bool,
+}
+
+/// Puts `text` on the other lessons of the double lesson of `lesson_instance_id`: updates
+/// their homework or creates it. Best effort: the main lesson is already saved, a failure
+/// here is only logged.
+async fn copy_text_to_double(
+    state: &AppState,
+    editor: HomeworkEditor,
+    lesson_instance_id: Uuid,
+    text: Option<String>,
+    status: HomeworkStatus,
+) {
+    let (Some(schedule), Some(create), Some(update)) = (
+        &state.schedule_service,
+        &state.create_homework_use_case,
+        &state.update_homework_use_case,
+    ) else {
+        return;
+    };
+    let partners = match schedule.double_lesson_partners(lesson_instance_id).await {
+        Ok(partners) => partners,
+        Err(error) => {
+            eprintln!("double lesson of {lesson_instance_id}: {error}");
+            return;
+        }
+    };
+    for partner in partners {
+        let partner_id = partner.instance.id;
+        let result = match partner.homework {
+            Some(details) => update
+                .execute(
+                    editor,
+                    application::use_cases::homework::update_homework_text::UpdateHomeworkTextCommand::new(
+                        details.homework.id,
+                        text.clone(),
+                    ),
+                )
+                .await
+                .map(|_| ()),
+            None => create
+                .execute(application::use_cases::homework::create_homework::CreateHomeworkCommand::new(
+                    partner_id,
+                    editor,
+                    text.clone(),
+                    status,
+                ))
+                .await
+                .map(|_| ()),
+        };
+        if let Err(error) = result {
+            eprintln!("double lesson: could not copy homework to lesson {partner_id}: {error}");
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct UpdateHomeworkRequest {
     pub text_content: Option<String>,
@@ -61,6 +122,7 @@ pub struct UpdateHomeworkResponse {
 pub async fn create_homework_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<WithDoubleQuery>,
     Json(payload): Json<CreateHomeworkRequest>,
 ) -> Result<Json<CreateHomeworkResponse>, ApiError> {
     let Caller { user, is_agent } = require_caller(&state, &headers).await?;
@@ -87,6 +149,9 @@ pub async fn create_homework_handler(
         .await
         .map_err(ApiError::from_homework_domain)?;
 
+    if query.with_double {
+        copy_text_to_double(&state, editor, lesson_instance_id, homework.text_content.clone(), homework.status).await;
+    }
     notify_homework_changed(&state, homework.id, HomeworkChange::Created, user.id);
 
     Ok(Json(CreateHomeworkResponse {
@@ -106,6 +171,7 @@ pub async fn update_homework_text_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(homework_id): Path<String>,
+    Query(query): Query<WithDoubleQuery>,
     Json(payload): Json<UpdateHomeworkRequest>,
 ) -> Result<Json<UpdateHomeworkResponse>, ApiError> {
     let Caller { user, is_agent } = require_caller(&state, &headers).await?;
@@ -128,6 +194,9 @@ pub async fn update_homework_text_handler(
         .await
         .map_err(ApiError::from_homework_domain)?;
 
+    if query.with_double {
+        copy_text_to_double(&state, editor, homework.lesson_instance_id, homework.text_content.clone(), homework.status).await;
+    }
     notify_homework_changed(&state, homework.id, HomeworkChange::TextUpdated, user.id);
 
     Ok(Json(UpdateHomeworkResponse {

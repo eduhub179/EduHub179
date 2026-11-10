@@ -25,11 +25,15 @@ export interface HomeworkResponse {
   created_at: string;
 }
 
+/**
+ * Create / update / attach with `?with_double=true`: a double lesson is one meeting, so the
+ * other half gets the same homework (as `deleteHomework` removes it from both).
+ */
 export async function createHomework(
   payload: CreateHomeworkRequest,
 ): Promise<HomeworkResponse> {
   requireTeacherOrAdminUser();
-  return apiFetch<HomeworkResponse>('/api/homework', {
+  return apiFetch<HomeworkResponse>('/api/homework?with_double=true', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -43,7 +47,7 @@ export async function updateHomeworkText(
   payload: UpdateHomeworkTextRequest,
 ): Promise<HomeworkResponse> {
   requireTeacherOrAdminUser();
-  return apiFetch<HomeworkResponse>(`/api/homework/${homeworkId}/text`, {
+  return apiFetch<HomeworkResponse>(`/api/homework/${homeworkId}/text?with_double=true`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -67,7 +71,7 @@ export async function attachLessonFile(
   requireTeacherOrAdminUser();
   const body = new FormData();
   body.append('file', file);
-  return apiFetch<AttachLessonFileResponse>(`/api/lessons/${lessonInstanceId}/files`, {
+  return apiFetch<AttachLessonFileResponse>(`/api/lessons/${lessonInstanceId}/files?with_double=true`, {
     method: 'POST',
     body,
   });
@@ -87,9 +91,10 @@ export interface DeleteHomeworkFileResponse {
   homework_deleted: boolean;
 }
 
+/** Deletes the file, and its copy on the other half of a double lesson (`with_double`). */
 export async function deleteHomeworkFile(fileId: string): Promise<DeleteHomeworkFileResponse> {
   requireTeacherOrAdminUser();
-  return apiFetch<DeleteHomeworkFileResponse>(`/api/homework/files/${fileId}`, {
+  return apiFetch<DeleteHomeworkFileResponse>(`/api/homework/files/${fileId}?with_double=true`, {
     method: 'DELETE',
   });
 }

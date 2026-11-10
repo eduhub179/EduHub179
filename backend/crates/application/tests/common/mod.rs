@@ -287,6 +287,10 @@ impl HomeworkRepository for MockRepositories {
     async fn get_by_lesson_instance(&self, _: Uuid) -> Result<Homework, DomainError> {
         Err(DomainError::HomeworkNotFound)
     }
+    async fn get_files_by_storage_key(&self, _: &str) -> Result<Vec<HomeworkFile>, DomainError> {
+        Ok(Vec::new())
+    }
+
     async fn get_files(&self, _: Uuid) -> Result<Vec<HomeworkFile>, DomainError> {
         Ok(Vec::new())
     }

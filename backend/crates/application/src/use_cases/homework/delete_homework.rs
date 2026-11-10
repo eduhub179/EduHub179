@@ -62,6 +62,16 @@ impl DeleteHomeworkUseCase {
 
         let mut orphaned_storage_keys = Vec::new();
         for file in files {
+            // Shared with the other half of a double lesson and still attached there:
+            // the object stays. If that cannot be checked, it stays too.
+            let still_used = self
+                .homeworks
+                .get_files_by_storage_key(&file.storage_key)
+                .await
+                .map_or(true, |records| !records.is_empty());
+            if still_used {
+                continue;
+            }
             let removed = match &self.storage {
                 Some(storage) => storage.delete(&file.storage_key).await.is_ok(),
                 None => false,
@@ -139,6 +149,10 @@ mod tests {
 
         async fn get_by_lesson_instance(&self, _: Uuid) -> Result<Homework, DomainError> {
             unimplemented!()
+        }
+
+        async fn get_files_by_storage_key(&self, _: &str) -> Result<Vec<HomeworkFile>, DomainError> {
+            Ok(Vec::new())
         }
 
         async fn get_files(&self, _: Uuid) -> Result<Vec<HomeworkFile>, DomainError> {

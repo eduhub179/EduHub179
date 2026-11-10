@@ -115,3 +115,19 @@ export async function fetchTeacherDaySchedule(
     `/api/teachers/schedule/day?date=${encodeURIComponent(date)}&teacher_id=${encodeURIComponent(teacherId)}`,
   );
 }
+
+export interface NextLessonsDto {
+  /** `YYYY-MM-DD` of the next meeting. */
+  date: string;
+  /** Its lessons in time order (two for a double lesson), with the number in that day. */
+  lessons: (ScheduleLessonDto & { number: number })[];
+}
+
+/**
+ * The next published meeting of the same course after this lesson (and after the other
+ * half of its double). Fails with 404 if there is none yet (next week not published).
+ */
+export async function fetchNextLessons(lessonInstanceId: string): Promise<NextLessonsDto> {
+  requireAuthenticatedUser();
+  return apiFetch<NextLessonsDto>(`/api/lessons/${encodeURIComponent(lessonInstanceId)}/next`);
+}

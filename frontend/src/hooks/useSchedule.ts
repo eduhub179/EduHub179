@@ -58,6 +58,41 @@ const withoutReplacedLessons = (lessons: ApiLesson[]): ApiLesson[] =>
             ),
     );
 
+/** A lesson from the API as the schedule screens show it. */
+export const toScheduleItem = (
+    lesson: ApiLesson,
+    date: string,
+    lessonNumber: number,
+    includeTargetName = false,
+): ScheduleItem => ({
+    id: lesson.id,
+    date,
+    startTime: lesson.start_time,
+    endTime: lesson.end_time,
+    lessonNumber,
+    title: lesson.subject_name,
+    teachers: lesson.teachers.map((teacher) => teacher.trim().split(/\s+/)[0]).filter(Boolean),
+    targetName: includeTargetName ? formatClassName(lesson.target_name) : undefined,
+    cabinet: lesson.cabinet,
+    cancelled: lesson.status === 'cancelled',
+    note: lesson.note ?? null,
+    substituted: Boolean(lesson.usual_teachers?.length),
+    extra: Boolean(lesson.is_extra),
+    homework: lesson.homework
+        ? {
+            id: lesson.homework.id,
+            description: lesson.homework.text,
+            files: lesson.homework.files.map((file) => ({
+                id: file.id,
+                name: file.file_name,
+                mimeType: file.mime_type,
+                sizeBytes: file.size_bytes,
+                url: homeworkFileUrl(lesson.homework!.id, file.id),
+            })),
+        }
+        : undefined,
+});
+
 const mapScheduleWeek = (week: WeeklyScheduleDto, includeTargetName = false): DaySchedule[] =>
     week.days.map((day) => {
         const date = new Date(`${day.date}T00:00:00`);
@@ -67,34 +102,8 @@ const mapScheduleWeek = (week: WeeklyScheduleDto, includeTargetName = false): Da
         return {
             name: weekday.charAt(0).toLocaleUpperCase('ru-RU') + weekday.slice(1),
             shortName: shortWeekday.charAt(0).toLocaleUpperCase('ru-RU') + shortWeekday.slice(1),
-            items: withoutReplacedLessons(day.lessons).map((lesson, index): ScheduleItem => ({
-                id: lesson.id,
-                date: day.date,
-                startTime: lesson.start_time,
-                endTime: lesson.end_time,
-                lessonNumber: index + 1,
-                title: lesson.subject_name,
-                teachers: lesson.teachers.map((teacher) => teacher.trim().split(/\s+/)[0]).filter(Boolean),
-                targetName: includeTargetName ? formatClassName(lesson.target_name) : undefined,
-                cabinet: lesson.cabinet,
-                cancelled: lesson.status === 'cancelled',
-                note: lesson.note ?? null,
-                substituted: Boolean(lesson.usual_teachers?.length),
-                extra: Boolean(lesson.is_extra),
-                homework: lesson.homework
-                    ? {
-                        id: lesson.homework.id,
-                        description: lesson.homework.text,
-                        files: lesson.homework.files.map((file) => ({
-                            id: file.id,
-                            name: file.file_name,
-                            mimeType: file.mime_type,
-                            sizeBytes: file.size_bytes,
-                            url: homeworkFileUrl(lesson.homework!.id, file.id),
-                        })),
-                    }
-                    : undefined,
-            })),
+            items: withoutReplacedLessons(day.lessons).map((lesson, index) =>
+                toScheduleItem(lesson, day.date, index + 1, includeTargetName)),
         };
     });
 

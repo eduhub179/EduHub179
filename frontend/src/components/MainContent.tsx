@@ -26,6 +26,11 @@ interface MainContentProps {
 /** Same limit as the backend (`MAX_FILE_SIZE`): reject early instead of uploading 100+ MB for nothing. */
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 
+const lessonDateFormat = new Intl.DateTimeFormat('ru-RU', {weekday: 'short', day: 'numeric', month: 'long'});
+
+/** "чт, 12 ноября". */
+const formatLessonDate = (date: string): string => lessonDateFormat.format(new Date(`${date}T00:00:00`));
+
 const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} Б`;
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
@@ -58,6 +63,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
+
     const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
     const {user} = useAuth();
     const canAttachFiles = hasTeacherOrAdminRole(user);
@@ -208,7 +214,8 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                         {changeLabel(selectedLesson) && <span className="schedule__changed-badge">{changeLabel(selectedLesson)}</span>}
                     </h1>
                     <p className="homework-view__description">
-                        Время: {selectedLesson.startTime} – {selectedLesson.endTime}
+                        {selectedLesson.date && `${formatLessonDate(selectedLesson.date)} · `}
+                        {selectedLesson.startTime} – {selectedLesson.endTime}
                     </p>
                     {selectedLesson.note && (
                         <p className="homework-view__note">{selectedLesson.note}</p>

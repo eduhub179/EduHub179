@@ -7,7 +7,7 @@
 
 use axum::{
     body::Body,
-    extract::{multipart::MultipartError, Multipart, Path, State},
+    extract::{multipart::MultipartError, Multipart, Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::Response,
     Json,
@@ -113,6 +113,7 @@ pub(crate) fn multipart_error(error: MultipartError) -> ApiError {
 pub async fn attach_file_to_lesson_handler(
     State(state): State<AppState>,
     Path(lesson_instance_id): Path<String>,
+    Query(query): Query<crate::routes::homework::WithDoubleQuery>,
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<AttachFileResponse>, ApiError> {
@@ -139,15 +140,34 @@ pub async fn attach_file_to_lesson_handler(
         message: format!("Multipart field '{FILE_FIELD}' is required"),
     })?;
 
-    let attached = use_cases
+    // A double lesson is one meeting: the same stored file is attached to both halves
+    // (one object, a record in each homework), so it is not stored twice.
+    let partners = match (query.with_double, &state.schedule_service) {
+        (true, Some(schedule)) => match schedule.double_lesson_partners(lesson_instance_id).await {
+            Ok(partners) => partners.into_iter().map(|partner| partner.instance.id).collect(),
+            Err(error) => {
+                eprintln!("double lesson of {lesson_instance_id}: {error}");
+                Vec::new()
+            }
+        },
+        _ => Vec::new(),
+    };
+    let shared = use_cases
         .attach_to_lesson
-        .execute(AttachFileToLessonCommand {
-            lesson_instance_id,
-            editor,
-            file,
-        })
+        .execute_shared(
+            AttachFileToLessonCommand {
+                lesson_instance_id,
+                editor,
+                file,
+            },
+            &partners,
+        )
         .await
         .map_err(ApiError::from_homework_domain)?;
+    for (partner_id, error) in shared.failed {
+        eprintln!("double lesson: could not attach the file to lesson {partner_id}: {error}");
+    }
+    let attached = shared.main;
 
     let change = if attached.homework_created {
         HomeworkChange::Created
@@ -224,6 +244,7 @@ pub(crate) fn file_response(bytes: Vec<u8>, file_name: &str, mime_type: &str) ->
 pub async fn delete_homework_file_handler(
     State(state): State<AppState>,
     Path(file_id): Path<String>,
+    Query(query): Query<crate::routes::homework::WithDoubleQuery>,
     headers: HeaderMap,
 ) -> Result<Json<DeleteFileResponse>, ApiError> {
     let (user, editor) = require_file_editor(&state, &headers).await?;
@@ -232,7 +253,12 @@ pub async fn delete_homework_file_handler(
 
     let deleted = use_cases
         .delete
-        .execute(DeleteHomeworkFileCommand { file_id, editor })
+        .execute(DeleteHomeworkFileCommand {
+            file_id,
+            editor,
+            // The other half of a double lesson holds a record of the same object.
+            with_shared_copies: query.with_double,
+        })
         .await
         .map_err(ApiError::from_homework_domain)?;
     if let Some(key) = deleted.orphaned_storage_key {

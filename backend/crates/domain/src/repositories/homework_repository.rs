@@ -37,6 +37,11 @@ pub trait HomeworkRepository: Send + Sync {
     /// Returns empty vec for missing homework (list-method precedent, like `get_member_ids`).
     async fn get_files(&self, homework_id: Uuid) -> Result<Vec<HomeworkFile>, DomainError>;
 
+    /// All file records pointing to one storage object. A file attached to both lessons
+    /// of a double lesson is one object with a record in each homework; the object may
+    /// be deleted only when no record is left.
+    async fn get_files_by_storage_key(&self, storage_key: &str) -> Result<Vec<HomeworkFile>, DomainError>;
+
     /// Saves or updates a homework (atomic upsert on `homework_id`).
     ///
     /// Uses PostgreSQL `INSERT ... ON CONFLICT (homework_id) DO UPDATE`.

@@ -138,6 +138,10 @@ mod tests {
             unimplemented!()
         }
 
+        async fn get_files_by_storage_key(&self, _: &str) -> Result<Vec<HomeworkFile>, DomainError> {
+            Ok(Vec::new())
+        }
+
         async fn get_files(&self, _homework_id: Uuid) -> Result<Vec<HomeworkFile>, DomainError> {
             unimplemented!()
         }

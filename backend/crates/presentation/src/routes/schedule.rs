@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use application::use_cases::schedule::schedule::{
-    HomeworkDetails, ScheduleDay, ScheduleLesson, WeeklySchedule,
+    HomeworkDetails, NumberedLesson, ScheduleDay, ScheduleLesson, WeeklySchedule,
 };
 
 use crate::router::{require_authenticated_user, ApiError, AppState};
@@ -335,4 +335,66 @@ pub async fn teacher_schedule_day_handler(
         .map_err(teacher_schedule_error)?;
 
     Ok(Json(day_response(day)))
+}
+
+#[derive(Debug, Serialize)]
+pub struct NextLessonResponse {
+    /// Number of the lesson in that day of the class/group ("Урок 3").
+    pub number: usize,
+    #[serde(flatten)]
+    pub lesson: ScheduleLessonResponse,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NextLessonsResponse {
+    /// `YYYY-MM-DD` of the next meeting.
+    pub date: String,
+    /// Its lessons in time order: two for a double lesson.
+    pub lessons: Vec<NextLessonResponse>,
+}
+
+/// `GET /api/lessons/:lesson_instance_id/next` — the next published meeting of the same
+/// course after this lesson (and after the other half of its double); 404 if there is none
+/// yet, e.g. next week is not published.
+pub async fn next_lessons_handler(
+    State(state): State<AppState>,
+    Path(lesson_instance_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<NextLessonsResponse>, ApiError> {
+    require_authenticated_user(&state, &headers).await?;
+    let schedule_service = state.schedule_service.as_ref().ok_or_else(|| ApiError {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Schedule service not initialized".to_string(),
+    })?;
+    let instance_id = Uuid::parse_str(&lesson_instance_id).map_err(|_| ApiError {
+        status: StatusCode::NOT_FOUND,
+        message: "Lesson not found".to_string(),
+    })?;
+    let lessons = schedule_service
+        .next_course_lessons(instance_id)
+        .await
+        .map_err(|error| match error {
+            DomainError::LessonInstanceNotFound => ApiError {
+                status: StatusCode::NOT_FOUND,
+                message: "Lesson not found".to_string(),
+            },
+            other => ApiError::from_schedule_domain(other),
+        })?;
+    let Some(first) = lessons.first() else {
+        return Err(ApiError {
+            status: StatusCode::NOT_FOUND,
+            message: "Следующий урок ещё не в опубликованном расписании".to_string(),
+        });
+    };
+    let date = first.lesson.instance.lesson_date.to_string();
+    Ok(Json(NextLessonsResponse {
+        date,
+        lessons: lessons
+            .into_iter()
+            .map(|NumberedLesson { lesson, number }| NextLessonResponse {
+                number,
+                lesson: lesson_response(lesson),
+            })
+            .collect(),
+    }))
 }

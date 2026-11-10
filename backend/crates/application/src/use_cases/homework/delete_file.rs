@@ -31,6 +31,9 @@ pub struct DeleteHomeworkFileCommand {
     pub file_id: Uuid,
     /// Proves the caller may change homework (see `HomeworkEditor`).
     pub editor: HomeworkEditor,
+    /// Also remove the other records of the same stored object: the file attached to
+    /// both lessons of a double lesson is one object with a record in each homework.
+    pub with_shared_copies: bool,
 }
 
 /// Result of a successful delete.
@@ -46,6 +49,8 @@ pub struct DeletedHomeworkFile {
     /// Lesson of the homework, read before it may be deleted: lets the caller notify the
     /// lesson's students even when the homework is gone. `None` if it could not be read.
     pub lesson_instance_id: Option<Uuid>,
+    /// How many other records of the same object were removed (`with_shared_copies`).
+    pub shared_copies_removed: usize,
 }
 
 /// Use case that removes a file from homework (both DB and storage).
@@ -74,10 +79,33 @@ impl DeleteHomeworkFileUseCase {
     ) -> Result<DeletedHomeworkFile, DomainError> {
         let file = self.homeworks.remove_file(cmd.file_id).await?;
 
-        let orphaned_storage_key = match self.storage.delete(&file.storage_key).await {
-            Ok(()) => None,
-            Err(_) => Some(file.storage_key.clone()),
+        // The same object in other homework (the other half of a double lesson).
+        let mut copies_homeworks = Vec::new();
+        if cmd.with_shared_copies {
+            for copy in self.homeworks.get_files_by_storage_key(&file.storage_key).await.unwrap_or_default() {
+                // Removed meanwhile by someone else: nothing left to do for it.
+                if self.homeworks.remove_file(copy.id).await.is_ok() {
+                    copies_homeworks.push(copy.homework_id);
+                }
+            }
+        }
+
+        // The object goes only when no record points to it any more. If that cannot be
+        // checked, it stays: an orphaned object is harmless, a broken file is not.
+        let still_used = self
+            .homeworks
+            .get_files_by_storage_key(&file.storage_key)
+            .await
+            .map_or(true, |records| !records.is_empty());
+        let orphaned_storage_key = if still_used {
+            None
+        } else {
+            match self.storage.delete(&file.storage_key).await {
+                Ok(()) => None,
+                Err(_) => Some(file.storage_key.clone()),
+            }
         };
+
         let homework = self.homeworks.get_by_id(file.homework_id).await.ok();
         let lesson_instance_id = homework.as_ref().map(|homework| homework.lesson_instance_id);
         let homework_deleted = match homework {
@@ -86,12 +114,21 @@ impl DeleteHomeworkFileUseCase {
             }
             _ => false,
         };
+        // A copy's homework left without text and files is deleted the same way.
+        for homework_id in &copies_homeworks {
+            if let Ok(homework) = self.homeworks.get_by_id(*homework_id).await {
+                if homework.text_content.is_none() {
+                    self.delete_homework_if_no_files(homework.id).await;
+                }
+            }
+        }
 
         Ok(DeletedHomeworkFile {
             file,
             orphaned_storage_key,
             homework_deleted,
             lesson_instance_id,
+            shared_copies_removed: copies_homeworks.len(),
         })
     }
 
@@ -150,6 +187,10 @@ mod tests {
 
         async fn get_by_lesson_instance(&self, _: Uuid) -> Result<Homework, DomainError> {
             unimplemented!()
+        }
+
+        async fn get_files_by_storage_key(&self, _: &str) -> Result<Vec<HomeworkFile>, DomainError> {
+            Ok(Vec::new())
         }
 
         async fn get_files(&self, homework_id: Uuid) -> Result<Vec<HomeworkFile>, DomainError> {
@@ -255,6 +296,7 @@ mod tests {
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
                 editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
+                with_shared_copies: false,
             })
             .await
             .unwrap();
@@ -277,6 +319,7 @@ mod tests {
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
                 editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
+                with_shared_copies: false,
             })
             .await
             .unwrap();
@@ -300,6 +343,7 @@ mod tests {
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
                 editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
+                with_shared_copies: false,
             })
             .await
             .unwrap();
@@ -320,6 +364,7 @@ mod tests {
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
                 editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
+                with_shared_copies: false,
             })
             .await;
 
@@ -338,6 +383,7 @@ mod tests {
             .execute(DeleteHomeworkFileCommand {
                 file_id: Uuid::new_v4(),
                 editor: HomeworkEditor::for_tests(Uuid::new_v4(), UserRole::Teacher),
+                with_shared_copies: false,
             })
             .await
             .unwrap();

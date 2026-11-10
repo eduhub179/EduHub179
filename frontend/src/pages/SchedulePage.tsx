@@ -14,9 +14,6 @@ import type {ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/FullSchedule.css';
 import '../css/DayLessonList.css';
 
-/** On phones the week grid does not fit: start with one day there. */
-const prefersDayView = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 700px)').matches;
-
 const FullSchedule: React.FC = () => {
     const {user} = useAuth();
     const [selectedLesson, setSelectedLesson] = useState<ScheduleItem | null>(null);
@@ -26,7 +23,7 @@ const FullSchedule: React.FC = () => {
     const [classListError, setClassListError] = useState<string | null>(null);
     // The shown day (day view) / any day of the shown week (week view).
     const [date, setDate] = useState(() => getLocalDate(new Date()));
-    const [view, setView] = useState<'week' | 'day'>(() => (prefersDayView() ? 'day' : 'week'));
+    const [view, setView] = useState<'week' | 'day'>('week');
 
     useEffect(() => {
         let isCurrent = true;
