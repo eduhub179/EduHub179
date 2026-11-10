@@ -8,3 +8,4 @@ export * from './plusnikApi';
 export * from './materialsApi';
 export * from './notificationsApi';
 export * from './adminApi';
+export * from './errors';

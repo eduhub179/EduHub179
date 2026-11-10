@@ -19,6 +19,7 @@ import {
     type SchoolClassDto,
 } from '../../api';
 import '../../css/MathTopicForm.css';
+import {errorText} from '../../api/errors';
 
 interface TopicDetails {
     id: string;
@@ -69,7 +70,7 @@ const toLocalDateTime = (dateTime: string | null) => {
     return date.toISOString().slice(0, 16);
 };
 const errorMessage = (error: unknown) =>
-    error instanceof Error ? error.message : 'Неизвестная ошибка.';
+    errorText(error, 'Неизвестная ошибка.');
 
 const MathTopicForm: React.FC<MathTopicFormProps> = ({
     mode,
@@ -117,9 +118,7 @@ const MathTopicForm: React.FC<MathTopicFormProps> = ({
             })
             .catch((loadError: unknown) => {
                 if (isCurrent) {
-                    setError(loadError instanceof Error
-                        ? loadError.message
-                        : 'Не удалось загрузить курсы выбранного класса.');
+                    setError(errorText(loadError, 'Не удалось загрузить курсы выбранного класса.'));
                 }
             })
             .finally(() => {
@@ -255,7 +254,7 @@ const MathTopicForm: React.FC<MathTopicFormProps> = ({
                 );
             }
         } catch (submitError: unknown) {
-            setError(submitError instanceof Error ? submitError.message : 'Не удалось создать тему.');
+            setError(errorText(submitError, 'Не удалось создать тему.'));
         } finally {
             setIsSaving(false);
         }

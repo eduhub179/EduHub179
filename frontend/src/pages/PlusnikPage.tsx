@@ -11,6 +11,7 @@ import {
 import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
 import '../css/PlusnikPage.css';
+import {errorText} from '../api/errors';
 
 const formatDate = (value: string | null, dateOnly = false) => {
     if (!value) {
@@ -70,9 +71,7 @@ const PlusnikPage: React.FC = () => {
         void loadSheet()
             .catch((loadError: unknown) => {
                 if (isCurrent) {
-                    setError(loadError instanceof Error
-                        ? loadError.message
-                        : 'Не удалось загрузить плюсник.');
+                    setError(errorText(loadError, 'Не удалось загрузить плюсник.'));
                 }
             })
             .finally(() => {
@@ -111,7 +110,7 @@ const PlusnikPage: React.FC = () => {
                 });
             }
         } catch (toggleError: unknown) {
-            setActionError(toggleError instanceof Error ? toggleError.message : 'Не удалось сохранить плюс.');
+            setActionError(errorText(toggleError, 'Не удалось сохранить плюс.'));
         } finally {
             setPendingCell(null);
         }

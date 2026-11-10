@@ -13,6 +13,7 @@ import {
 } from '../../api';
 import type {User} from '../../auth/authService';
 import MathTopicForm from './MathTopicForm';
+import {errorText} from '../../api/errors';
 
 interface MathTopicsTableProps {
     schoolClass: SchoolClassDto;
@@ -109,9 +110,7 @@ const MathTopicsTable: React.FC<MathTopicsTableProps> = ({schoolClass, classes, 
             })
             .catch((loadError: unknown) => {
                 if (isCurrent) {
-                    setError(loadError instanceof Error
-                        ? loadError.message
-                        : 'Не удалось загрузить темы по математике.');
+                    setError(errorText(loadError, 'Не удалось загрузить темы по математике.'));
                 }
             })
             .finally(() => {

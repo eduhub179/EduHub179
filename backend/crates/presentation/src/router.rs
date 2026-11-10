@@ -486,17 +486,26 @@ async fn authenticate_session(state: &AppState, headers: &HeaderMap) -> Result<U
         status: StatusCode::UNAUTHORIZED,
         message: "Authentication required".to_string(),
     })?;
+    // An unknown, expired or revoked session is "log in again", never the login form's
+    // "wrong password"; a real failure (DB down) stays a 500.
+    let session_error = |error: DomainError| match error {
+        DomainError::InternalError => ApiError::from_auth_domain(error),
+        _ => ApiError {
+            status: StatusCode::UNAUTHORIZED,
+            message: "Authentication required".to_string(),
+        },
+    };
     let token_hash = session_token_hasher
         .hash_session_token(&raw_token)
-        .map_err(ApiError::from_auth_domain)?;
+        .map_err(session_error)?;
     let session = web_session_repository
         .get_active_by_token_hash(&token_hash)
         .await
-        .map_err(ApiError::from_auth_domain)?;
+        .map_err(session_error)?;
     let user = user_repository
         .get_by_id(session.user_id)
         .await
-        .map_err(ApiError::from_auth_domain)?;
+        .map_err(session_error)?;
 
     if !user.is_active {
         return Err(ApiError::from_auth_domain(DomainError::UserIsInactive));

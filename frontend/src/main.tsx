@@ -13,6 +13,7 @@ import CourseMaterialsPage from "./pages/CourseMaterialsPage.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
 import TeacherDayPage from "./pages/TeacherDayPage.tsx";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
+import ErrorBoundary from "./components/ErrorBoundary.tsx";
 
 const root = ReactDOM.createRoot(
     document.getElementById('root') as HTMLElement
@@ -20,6 +21,7 @@ const root = ReactDOM.createRoot(
 
 root.render(
     <StrictMode>
+        <ErrorBoundary>
         <BrowserRouter>
             <AuthProvider>
                 <Routes>
@@ -40,5 +42,6 @@ root.render(
                 </Routes>
             </AuthProvider>
         </BrowserRouter>
+        </ErrorBoundary>
     </StrictMode>
 );

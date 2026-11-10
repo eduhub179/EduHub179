@@ -8,6 +8,8 @@ import {
     hasTeacherRole,
     hasStudentRole,
     homeworkFileUrl,
+    ApiError,
+    errorText,
 } from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import type {DaySchedule, ScheduleItem} from '../types/ScheduleTypes';
@@ -32,13 +34,10 @@ export const getLocalDate = (date: Date): string => {
 
 type ApiLesson = WeeklyScheduleDto['days'][number]['lessons'][number];
 
-/** The backend's answer for a week that is not created or not published yet. */
-const WEEK_NOT_FOUND = 'Schedule week not found';
-
 /** A missing week is an empty one, not an error: weeks ahead are published on Fridays. */
 const scheduleError = (error: unknown): string | null => {
-    if (error instanceof Error && error.message === WEEK_NOT_FOUND) return null;
-    return error instanceof Error ? error.message : 'Не удалось загрузить расписание.';
+    if (error instanceof ApiError && error.backendText === 'Schedule week not found') return null;
+    return errorText(error, 'Не удалось загрузить расписание.');
 };
 
 /**

@@ -3,6 +3,7 @@ import {Link} from 'react-router-dom';
 import {fetchClassCourses, formatClassName, type CourseDto, type SchoolClassDto} from '../../api';
 import type {User} from '../../auth/authService';
 import '../../css/CourseMaterialsPage.css';
+import {errorText} from '../../api/errors';
 
 interface CourseMaterialsLinksProps {
     schoolClass: SchoolClassDto;
@@ -29,7 +30,7 @@ const CourseMaterialsLinks: React.FC<CourseMaterialsLinksProps> = ({schoolClass,
             })
             .catch((loadError: unknown) => {
                 if (isCurrent) {
-                    setError(loadError instanceof Error ? loadError.message : 'Не удалось загрузить курсы.');
+                    setError(errorText(loadError, 'Не удалось загрузить курсы.'));
                 }
             });
         return () => {

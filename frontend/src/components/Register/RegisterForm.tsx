@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { resendLoginCode, startEmailLogin, verifyLoginCode } from '../../api/authApi';
 import type { FirstPassword } from '../../auth/authService';
+import {errorText} from '../../api/errors';
 
 /**
  * First login ("registration"): accounts are created by the school, the person confirms
@@ -54,7 +55,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
             }
             setSetupToken(null);
         } catch (error) {
-            onError(error instanceof Error ? error.message : 'Не удалось отправить код.');
+            onError(errorText(error, 'Не удалось отправить код.'));
         } finally {
             setIsSendingCode(false);
         }
@@ -97,7 +98,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onRegister, onError }) => {
                 rememberMe: true,
             });
         } catch (error) {
-            onError(error instanceof Error ? error.message : 'Не удалось задать пароль.');
+            onError(errorText(error, 'Не удалось задать пароль.'));
         } finally {
             setIsSubmitting(false);
         }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Credentials } from '../../auth/authService';
+import {errorText} from '../../api/errors';
 
 /**
  * Sign-in with school email and password in one step.
@@ -27,7 +28,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
                 rememberMe: true,
             });
         } catch (failure) {
-            setError(failure instanceof Error && failure.message ? failure.message : 'Не удалось войти.');
+            setError(errorText(failure, 'Не удалось войти.'));
         } finally {
             setBusy(false);
         }

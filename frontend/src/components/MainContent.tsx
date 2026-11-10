@@ -15,6 +15,7 @@ import HomeworkTextEditor from './LessonCard/HomeworkTextEditor';
 import LessonAdminControls from './LessonCard/LessonAdminControls';
 import {changeLabel, type HomeworkFile, type ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/MainContent.css';
+import {errorText} from '../api/errors';
 
 interface MainContentProps {
     selectedLesson: ScheduleItem | null;
@@ -122,7 +123,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
             setSelectedFileIndex((index) => Math.min(index, Math.max(files.length - 1, 0)));
             window.dispatchEvent(new Event(SCHEDULE_CHANGED_EVENT));
         } catch (error) {
-            setUploadError(error instanceof Error ? error.message : 'Не удалось удалить файл.');
+            setUploadError(errorText(error, 'Не удалось удалить файл.'));
         } finally {
             setDeletingFileId(null);
         }
@@ -142,7 +143,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
             setSelectedFileIndex(0);
             window.dispatchEvent(new Event(SCHEDULE_CHANGED_EVENT));
         } catch (error) {
-            setUploadError(error instanceof Error ? error.message : 'Не удалось удалить ДЗ.');
+            setUploadError(errorText(error, 'Не удалось удалить ДЗ.'));
         } finally {
             setIsDeleting(false);
         }
@@ -184,7 +185,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
             }
             setSelectedFileIndex((lesson.homework?.files.length ?? 1) - 1);
         } catch (error) {
-            setUploadError(error instanceof Error ? error.message : 'Не удалось загрузить файл.');
+            setUploadError(errorText(error, 'Не удалось загрузить файл.'));
         } finally {
             setIsUploading(false);
             // Schedule lists reload to show the homework badge.

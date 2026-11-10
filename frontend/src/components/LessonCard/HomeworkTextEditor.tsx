@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {createHomework, updateHomeworkText} from '../../api';
 import {SCHEDULE_CHANGED_EVENT} from '../../hooks/useSchedule';
 import type {ScheduleItem} from '../../types/ScheduleTypes.ts';
+import {errorText} from '../../api/errors';
 
 interface HomeworkTextEditorProps {
     lesson: ScheduleItem;
@@ -41,7 +42,7 @@ const HomeworkTextEditor: React.FC<HomeworkTextEditorProps> = ({lesson, onLesson
             setText(null);
             window.dispatchEvent(new Event(SCHEDULE_CHANGED_EVENT));
         } catch (saveError) {
-            setError(saveError instanceof Error ? saveError.message : 'Не удалось сохранить ДЗ.');
+            setError(errorText(saveError, 'Не удалось сохранить ДЗ.'));
         } finally {
             setBusy(false);
         }

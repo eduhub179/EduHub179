@@ -13,6 +13,7 @@ import {getLocalDate} from '../hooks/useSchedule';
 import type {ScheduleItem} from '../types/ScheduleTypes.ts';
 import '../css/FullSchedule.css';
 import '../css/DayLessonList.css';
+import {errorText} from '../api/errors';
 
 const FullSchedule: React.FC = () => {
     const {user} = useAuth();
@@ -35,7 +36,7 @@ const FullSchedule: React.FC = () => {
             })
             .catch((error: unknown) => {
                 if (isCurrent) {
-                    setClassListError(error instanceof Error ? error.message : 'Не удалось загрузить список классов.');
+                    setClassListError(errorText(error, 'Не удалось загрузить список классов.'));
                 }
             });
 

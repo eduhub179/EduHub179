@@ -9,6 +9,7 @@ import {
     type PreparedPush,
     type PushState,
 } from '../notifications/push';
+import {errorText} from '../api/errors';
 
 const STEP_TEXT: Record<EnableStep, string> = {
     permission: 'Разрешите уведомления в запросе браузера (если окна не видно — нажмите на значок колокольчика или замка в адресной строке)…',
@@ -50,7 +51,7 @@ const NotificationsSettings: React.FC = () => {
             .then((ready) => isCurrent && setPrepared(ready))
             .catch((prepareError: unknown) => {
                 if (isCurrent) {
-                    setError(prepareError instanceof Error ? prepareError.message : 'Уведомления недоступны.');
+                    setError(errorText(prepareError, 'Уведомления недоступны.'));
                 }
             });
         return () => {
@@ -68,7 +69,7 @@ const NotificationsSettings: React.FC = () => {
         try {
             setState(state === 'enabled' ? await disablePush() : await enablePush(prepared!, setStep));
         } catch (toggleError) {
-            setError(toggleError instanceof Error ? toggleError.message : 'Не удалось изменить настройку уведомлений.');
+            setError(errorText(toggleError, 'Не удалось изменить настройку уведомлений.'));
         } finally {
             setBusy(false);
             setStep(null);

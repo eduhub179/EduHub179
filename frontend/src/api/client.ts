@@ -1,3 +1,5 @@
+import { ApiError, NETWORK_ERROR, UNEXPECTED_ERROR, userMessage } from './errors';
+
 declare global {
   interface ImportMetaEnv {
     readonly VITE_API_BASE_URL?: string;
@@ -32,38 +34,46 @@ export async function apiFetch<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_BASE_URL}${input}`, {
-    ...init,
-    credentials: init?.credentials ?? 'include',
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${input}`, {
+      ...init,
+      credentials: init?.credentials ?? 'include',
+      headers,
+    });
+  } catch {
+    // The browser's own text ("Failed to fetch", "Load failed") is not for people.
+    throw new ApiError(NETWORK_ERROR, 0);
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
       window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     }
-    let errorMessage = `Request failed (${response.status})`;
-    // Our handlers answer {"error": "..."}; axum's own rejections (malformed JSON,
-    // missing fields, too large body) answer plain text — keep that text too.
+    // Only a person-friendly text leaves this function (see `errors.ts`): never the raw
+    // backend, axum or nginx answer.
     const body = await response.text().catch(() => '');
+    let backendText: string | null = null;
     try {
       const payload = JSON.parse(body);
       if (payload && typeof payload.error === 'string') {
-        errorMessage = payload.error;
+        backendText = payload.error;
       }
     } catch {
-      if (body.trim()) {
-        errorMessage = body.trim().slice(0, 300);
-      }
+      // Not JSON (axum rejection, nginx HTML page): the status decides the text.
     }
-
-    throw new Error(errorMessage);
+    throw new ApiError(userMessage(response.status, backendText), response.status, backendText);
   }
 
-  const text = await response.text();
+  const text = await response.text().catch(() => '');
   if (!text) {
     return undefined as T;
   }
 
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // A proxy answered with a page instead of the API.
+    throw new ApiError(UNEXPECTED_ERROR, response.status);
+  }
 }

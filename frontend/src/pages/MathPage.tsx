@@ -10,6 +10,7 @@ import MathTopicsTable from '../components/Math/MathTopicsTable';
 import CourseMaterialsLinks from '../components/Materials/CourseMaterialsLinks';
 import Header from '../components/Header';
 import '../css/MathPage.css';
+import {errorText} from '../api/errors';
 
 const MathPage: React.FC = () => {
     const {user} = useAuth();
@@ -53,7 +54,7 @@ const MathPage: React.FC = () => {
             })
             .catch((error: unknown) => {
                 if (isCurrent) {
-                    setClassLoadError(error instanceof Error ? error.message : 'Не удалось загрузить список классов.');
+                    setClassLoadError(errorText(error, 'Не удалось загрузить список классов.'));
                 }
             });
 

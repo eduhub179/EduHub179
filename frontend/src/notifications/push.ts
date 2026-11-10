@@ -101,7 +101,7 @@ function waitUntilActive(registration: ServiceWorkerRegistration): Promise<Servi
   return new Promise((resolve, reject) => {
     worker.addEventListener('statechange', () => {
       if (worker.state === 'activated') resolve(registration);
-      if (worker.state === 'redundant') reject(new Error('Service worker не установился (redundant).'));
+      if (worker.state === 'redundant') reject(new Error('Не удалось включить уведомления. Обновите страницу и попробуйте снова.'));
     });
   });
 }
@@ -122,11 +122,7 @@ function afterGrantTimeout(subscribing: Promise<PushSubscription>): Promise<Push
       grantedAt ??= Date.now();
       if (Date.now() - grantedAt > SUBSCRIBE_AFTER_GRANT_MS) {
         window.clearInterval(watchdog);
-        reject(new Error(
-          'Разрешение получено, но браузер не создал подписку за 15 секунд. ' +
-            'Откройте консоль браузера (в Safari: «Разработка» → «Показать веб-инспектор» → «Консоль») ' +
-            'и посмотрите ошибки, связанные с push или service worker.',
-        ));
+        reject(new Error('Браузер не смог включить уведомления. Обновите страницу и попробуйте снова.'));
       }
     }, 500);
     subscribing.then(
@@ -159,7 +155,7 @@ export async function preparePush(): Promise<PreparedPush> {
     withTimeout(
       navigator.serviceWorker.register(SERVICE_WORKER_URL).then(waitUntilActive),
       15_000,
-      'Service worker не запустился за 15 секунд. Обновите страницу и попробуйте снова.',
+      'Не удалось включить уведомления. Обновите страницу и попробуйте снова.',
     ),
     fetchVapidPublicKey(),
   ]);
@@ -199,18 +195,15 @@ export async function enablePush(
     if (name === 'NotAllowedError') {
       throw new Error('Браузер не разрешил подписку. Нажмите кнопку ещё раз и выберите «Разрешить».');
     }
-    throw new Error(
-      'Браузер не смог подписаться на push-сервис' +
-        (error instanceof Error && error.message ? `: ${error.message}` : '.') +
-        ' В Brave включите «Use Google services for push messaging»; сборки Chromium без сервисов Google push не поддерживают.',
-    );
+    // The browser's own error (e.g. Brave without Google push services) stays in the console.
+    throw new Error('Этот браузер не поддерживает уведомления. Попробуйте Chrome, Safari или Firefox.');
   }
 
   onStep('save');
   await withTimeout(
     registerPushSubscription(toDto(subscription)),
     15_000,
-    'Сервер не ответил за 15 секунд. Проверьте, что бэкенд запущен, и попробуйте снова.',
+    'Сервер не ответил. Попробуйте позже.',
   );
   return 'enabled';
 }

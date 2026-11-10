@@ -1,3 +1,5 @@
+import { ApiError, errorText as generalErrorText } from '../../api/errors';
+
 /** Russian texts for the backend's error messages. */
 const errorTexts: Record<string, string> = {
     'Insufficient permissions': 'Нет прав: нужен вход под администратором.',
@@ -22,9 +24,12 @@ const errorTexts: Record<string, string> = {
     'Lesson not found': 'Урок не найден — обновите страницу.',
 };
 
+/** Admin wording for a known backend error, otherwise the general text (see `api/errors.ts`). */
 export const errorText = (error: unknown, fallback = 'Что-то пошло не так.'): string => {
-    if (!(error instanceof Error)) return fallback;
-    return errorTexts[error.message] ?? error.message;
+    if (error instanceof ApiError && error.backendText && errorTexts[error.backendText]) {
+        return errorTexts[error.backendText];
+    }
+    return generalErrorText(error, fallback);
 };
 
 /** `YYYY-MM-DD` of a local date. */
