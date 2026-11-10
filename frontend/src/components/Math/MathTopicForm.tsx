@@ -87,7 +87,7 @@ const MathTopicForm: React.FC<MathTopicFormProps> = ({
     const [name, setName] = useState(topic?.name ?? '');
     const [issueDate, setIssueDate] = useState(topic?.issueDate ?? localDate());
     const [deadline, setDeadline] = useState(toLocalDateTime(topic?.deadline ?? null));
-    const [status, setStatus] = useState<PlusnikSheetStatus>(topic?.status ?? 'published');
+    const [status] = useState<PlusnikSheetStatus>(topic?.status ?? 'published');
     const [taskNumbers, setTaskNumbers] = useState(() =>
         taskNumbersFromTasks(topic?.tasks ?? [], mode === 'edit' ? topic?.taskCount ?? 1 : 1),
     );
@@ -190,6 +190,7 @@ const MathTopicForm: React.FC<MathTopicFormProps> = ({
                     tasks: updatedSheet.tasks.length ? updatedSheet.tasks : updatedTasks,
                     taskCount: updatedSheet.tasks.length || updatedTasks.length,
                 });
+                onClose?.();
             } catch (saveError: unknown) {
                 setError(errorMessage(saveError));
             } finally {
@@ -237,6 +238,7 @@ const MathTopicForm: React.FC<MathTopicFormProps> = ({
                 setTaskNumbers(['1']);
                 formElement.reset();
                 onCreated?.();
+                onClose?.();
             } catch (sheetError: unknown) {
                 if (materialId) {
                     try {
@@ -377,26 +379,6 @@ const MathTopicForm: React.FC<MathTopicFormProps> = ({
                 <p className="math-topics__error" role="alert">
                     Для выбранного класса нет доступных математических курсов.
                 </p>
-            )}
-            {mode === 'edit' && (
-                <div aria-label="Видимость темы для учеников" className="math-topic-modal__visibility">
-                    <button
-                        aria-pressed={status === 'published'}
-                        className={status === 'published' ? 'is-selected' : ''}
-                        onClick={() => setStatus('published')}
-                        type="button"
-                    >
-                        Показана
-                    </button>
-                    <button
-                        aria-pressed={status !== 'published'}
-                        className={status !== 'published' ? 'is-selected' : ''}
-                        onClick={() => setStatus('draft')}
-                        type="button"
-                    >
-                        Скрыта
-                    </button>
-                </div>
             )}
             <div className="math-topic-modal__actions">
                 <button className="math-topic-modal__cancel" disabled={isSaving} onClick={onClose} type="button">
