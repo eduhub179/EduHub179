@@ -13,13 +13,16 @@ agent/
 │   ├── paths.py               # где лежат chats/, tessdata, .env, timetable.json
 │   ├── config.py              # env(): переменные окружения и .env
 │   ├── telegram/              # всё, что говорит с Telegram
-│   ├── media/                 # вложения: PDF/DOCX, фото, распознавание
+│   ├── files/                 # всё про файлы: чтение, вложения, OCR, доски
 │   ├── llm/                   # модель, правила, датасет, обучение фильтра
-│   └── server/                # бэкенд EduHub и расписание
+│   ├── server/                # бэкенд EduHub и расписание
+│   ├── classify/              # классификатор материалов из трека P2 (промпт + модель)
+│   ├── ingest/                # разовый разбор папки: что за файлы (бэкфилл)
+│   └── crawler/               # синхронизация источника: что изменилось (Drive/папка)
 ├── tests/                     # test_*.py и test_*.tsv
 ├── data/                      # timetable.example.json
-├── docs/                      # фото-разбор.md, models_results.md
-├── chats/                     # переписки и выгрузки: личные данные (в git не попадают)
+├── docs/                      # structure.md (кто кого зовёт), files.md (карта files/), фото-разбор.md, models_results.md
+├── chats/                     # переписки и выгрузки: личные данные, в git не попадают
 ├── state/                     # кеши и очереди, которые сервис пишет сам (можно удалить)
 ├── requirements.txt
 └── .env.example
@@ -42,13 +45,23 @@ agent/
 | `telegram/fetch_channel.py`, `telegram/kruzhochek.py` | скачивание публичной страницы канала, разбор анонсов «Кружочка» |
 | `server/backend_api.py` | подтверждённые ДЗ и контрольные -> `POST /api/homework` / `PATCH /api/homework/{id}/text`; проверка на поддельном сервере: `python3 tests/test_backend_api.py` |
 | `server/timetable.py` | расписание для агента: к какому уроку относится ДЗ и к какому сдавать. Источник — `timetable.json` или бэкенд (`TIMETABLE_URL`) |
-| `media/files.py`, `media/board.py` | вложения: текст из PDF/DOCX/PPTX, распознавание фото доски (`PHOTO_MODE=board`) |
-| `media/ocr_triage.py`, `media/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
+| `files/read.py` | **один читатель для всех источников**: PDF (с OCR для сканов), DOCX, PPTX, XLSX, TXT, фото |
+| `files/decide.py` | один решатель **только для файлов**: `accepted` / `queued` / `review` / `skip` — общий для папки, Drive и Telegram; `queued` = очередь OCR, не сообщений |
+| `files/labels.py` | метки: подсказки (подпись, чат, путь) → правила по имени → модель только на остаток |
+| `files/taxonomy.py`, `files/hints.py`, `files/name_rules.py` | предметы и синонимы, подсказки, тип по имени файла (плюсник ≠ листок, задачник = учебник) |
+| `files/queue.py` | очередь классификации: файл принимаем сразу, метки считаем в фоне |
+| `files/attachments.py` | Telegram-специфика: скачивание вложения и текст из него (фото читаются всегда) |
+| `files/ocr_triage.py`, `files/ocr_providers.py` | текст с фото: Tesseract с порогом уверенности, очередь для будущего движка; проверка: `python3 tests/test_ocr_triage.py` |
 | `llm/llm_extract.py`, `llm/baseline_rules.py` | мероприятия из постов: модель + правила |
 | `llm/train_classifier.py`, `llm/build_dataset.py` | фильтр болтовни (нужны экспорты чатов, в репозиторий не входят) |
 | `llm/make_labels.py`, `llm/show_labels.py` | ручная разметка постов канала (`labels.json`); сами посты в репозиторий не входят, там имена учеников |
 | `tests/test_agent.py` + `tests/test_*.tsv` | проверка на придуманных сообщениях: `python3 tests/test_agent.py tests/test_final.tsv` |
 | `tests/test_timetable.py` | проверка привязки ДЗ к урокам, без модели |
+| `classify/` | предмет и тип материала: промпт P2 + JSON-схема, **полный список предметов школы** из `files/taxonomy.py` и все типы из `TYPE_HINTS`; модель из Ollama. Подменяется в тестах параметром `classifier` |
+| `ingest/` | разовый проход по папке: `python3 -m eduhub_agent.ingest scan "<папка>" --out out/math` |
+| `crawler/` | синхронизация: из папки `agent/` — `python3 -m eduhub_agent.crawler sync "<папка>" --state state/drive.json`; `--fixture FILE` — офлайн-повтор записанных ответов API (сами ответы лежат в `tests/fixtures/drive/`) |
+| `docs/files.md` | карта пакета `files/`: кто читает, кто метит, кто решает и чего каждый модуль не делает |
+| `docs/structure.md` | карта зависимостей всего агента: точки входа, кто кого импортирует, реальные цепочки вызовов |
 | `docs/models_results.md` | сравнение локальных моделей |
 | `docs/фото-разбор.md` | что сделано с фото 16.10 и как к этому вернуться |
 
@@ -65,8 +78,8 @@ BOT_TOKEN=*** .venv/bin/python chat_agent.py live --channel  # основной 
 .venv/bin/python watch_channel.py loop                      # только каналы, если чаты не нужны
 ```
 
-Утилиты без обёртки запускаются как модули из корня `agent/`, например
-`python3 -m eduhub_agent.server.backend_api retry`, `python3 -m eduhub_agent.media.board_check 60`,
+Утилиты без обёртки запускаются как модули из корня `agent/` (там лежит пакет `eduhub_agent`), например
+`python3 -m eduhub_agent.server.backend_api retry`, `python3 -m eduhub_agent.files.board_check 60`,
 `python3 -m eduhub_agent.llm.make_labels`.
 
 ## Команды бота-модератора
@@ -78,6 +91,42 @@ BOT_TOKEN=*** .venv/bin/python chat_agent.py live --channel  # основной 
 - `/manual` — показать, что сейчас включено
 
 Без ручной модерации находки сразу уходят на сервер, а в бот приходит уведомление.
+
+## Как проверить классификатор файлов
+
+Ни Telegram, ни бэкенд, ни модель для этого не нужны (модель — только если попросить).
+
+**1. Один файл через весь конвейер.** Самое быстрое: видно чтение, метки, маршрут и урок:
+
+```
+python3 -m eduhub_agent.files.check ~/Downloads/ДЗ-15.pdf --caption "физика к пятнице" --class 11Б
+python3 -m eduhub_agent.files.check photo.jpg --no-model        # только подсказки и имена, 0 секунд
+python3 -m eduhub_agent.files.check file.pdf --lesson           # + урок по расписанию (нужен API_URL)
+```
+
+**2. Файл в ЛС боту — без Telegram.** `python3 tests/test_dm.py` поднимает поддельные Telegram,
+бэкенд и модель: 75 проверок, включая файл с подписью, фото без подписи и альбом. Сценарий
+добавляется одной строкой (`write(...)` + `press(...)`), см. конец файла.
+
+**3. Очередь и действие.** Файл из ЛС попадает в `state/file_queue.jsonl`; разбирает его воркер:
+
+```
+python3 -m eduhub_agent.files.work              # разобрать ожидающие файлы
+python3 -m eduhub_agent.files.work --apply      # разобрать и отдать accepted в бэкенд
+python3 -m eduhub_agent.files.act               # только показать, что уйдёт (dry-run)
+```
+
+Смотреть результат: `state/file_labels.jsonl` (метки и маршрут), `state/review.jsonl` (что
+человеку глазами), `state/file_actions.jsonl` (что реально загружено).
+
+**4. Живой Telegram.** В `.env`: `BOT_TOKEN`, `API_URL`, `AGENT_KEY`, `LOGIN_BOT`, `CLASSIFY_MODEL`;
+человек должен быть привязан к бэкенду (`telegram_bindings`) — иначе бот попросит войти в основном.
+Запуск: `python3 chat_agent.py live --no-moderator` (без второго бота-модератора), дальше прислать
+файл в личку. Учителю с уверенными метками бот запишет сразу (`DM_AUTO_SUBMIT=0` выключает),
+ученику покажет черновик с кнопкой.
+
+**5. Всё сразу** (как в гейте): `python3 pipeline/run_pipeline.py --mode generic --target agent`
+из корня workspace — гоняет `agent/pipeline.json`: компиляция + 11 сюит.
 
 ## Что не коммитится
 

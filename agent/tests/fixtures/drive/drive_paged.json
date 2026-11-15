@@ -1,0 +1,18 @@
+{
+  "changes:T1": {
+    "changes": [
+      {"changeType": "file", "fileId": "F4",
+       "file": {"id": "F4", "name": "ДЗ-17.pdf", "mimeType": "application/pdf", "size": "700",
+                "modifiedTime": "2026-10-20T08:00:00Z", "md5Checksum": "ddd", "parents": ["P9"]}}
+    ],
+    "nextPageToken": "PAGE2"
+  },
+  "changes:PAGE2": {
+    "changes": [
+      {"changeType": "file", "fileId": "F5",
+       "file": {"id": "F5", "name": "ДЗ-18.pdf", "mimeType": "application/pdf", "size": "800",
+                "modifiedTime": "2026-10-20T09:00:00Z", "md5Checksum": "eee", "parents": ["P9"]}}
+    ],
+    "newStartPageToken": "T2"
+  }
+}

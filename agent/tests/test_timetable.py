@@ -42,7 +42,10 @@ CASES = [
 def main():
     tmp = Path(tempfile.mkdtemp()) / "subs.json"
     tmp.write_text(json.dumps(SUBS, ensure_ascii=False), encoding="utf-8")
-    T.SOURCE = T.FileSource(T.FILE, tmp)
+    # timetable.json не коммитится (настоящее расписание). Без него проверяем на примере:
+    # тест про привязку к урокам, а не про данные Макса.
+    src = Path(T.FILE) if Path(T.FILE).exists() else Path(__file__).parent.parent / "data" / "timetable.example.json"
+    T.SOURCE = T.FileSource(src, tmp)
     ok = 0
     for chat, typ, sent, text, d, given, due, num, kind in CASES:
         it = {"chat": chat, "type": typ, "sent_at": sent + ":00", "summary": text, "quote": text}

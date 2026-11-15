@@ -1,0 +1,14 @@
+{
+  "changes:T0": {
+    "changes": [
+      {"changeType": "file", "fileId": "F3",
+       "file": {"id": "F3", "name": "ДЗ-16.pdf", "mimeType": "application/pdf", "size": "900",
+                "modifiedTime": "2026-10-19T08:00:00Z", "md5Checksum": "ccc", "parents": ["P9"]}},
+      {"changeType": "file", "fileId": "F1",
+       "file": {"id": "F1", "name": "ДЗ-15.pdf", "mimeType": "application/pdf", "size": "12345",
+                "modifiedTime": "2026-10-19T09:00:00Z", "md5Checksum": "aaa2", "parents": ["P9"]}},
+      {"changeType": "file", "fileId": "F2", "removed": true}
+    ],
+    "newStartPageToken": "T1"
+  }
+}

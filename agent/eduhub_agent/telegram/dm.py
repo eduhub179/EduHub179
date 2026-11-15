@@ -18,6 +18,9 @@
    ждёт следующее сообщение с заданием (10 минут) и прикладывает файл к нему. Альбом (несколько фото одним
    сообщением) приходит по одному фото: остальные фото альбома добавляются к черновику первого. После «Записать»
    файлы уходят в бэкенд к тому же уроку, что и текст (backend_api.attach_files). Лежат в chats/files/ЛС/<id чата>/.
+   Файл сразу попадает в очередь разметки (files/queue.py), а при сборке черновика получает подпись и класс.
+   Учителю с уверенными метками (предмет и тип сошлись без модели: подпись/имя файла/класс) бот пишет сразу,
+   без кнопки «Записать» — DM_AUTO_SUBMIT=0 это выключает. Ученик и спорные метки — всегда через черновик.
 7. Вопросы своими словами («что задали по химии?», «расписание на среду», «где алгебра?»): questions.py понимает,
    о чём спросили (правила, потом модель), а ответ собирается из расписания бэкенда, как у кнопок.
 Черновики лежат в chats/dm_drafts.json (там тексты учеников, папка chats/ не коммитится).
@@ -34,7 +37,9 @@ import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from eduhub_agent.media import files as attachments
+from eduhub_agent.files import attachments
+from eduhub_agent.files import labels as labels_mod
+from eduhub_agent.files import queue as file_queue
 from eduhub_agent.server import backend_api
 from eduhub_agent.telegram import chat_moderation, questions
 from eduhub_agent.server import timetable
@@ -43,6 +48,7 @@ from eduhub_agent.config import env
 DRAFTS = "chats/dm_drafts.json"
 FILES_DIR = "chats/files/ЛС"  # вложения из лички: chats/ не коммитится
 PENDING = 600  # сколько секунд файл без подписи ждёт сообщения с заданием
+AUTO_SUBMIT = env("DM_AUTO_SUBMIT", "1") != "0"  # учителю с уверенными метками пишем без кнопки
 HORIZON = 14  # на сколько дней вперёд ищем уроки предмета
 MAX_ITEMS = 3  # больше находок из одного сообщения не показываем
 WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
@@ -168,16 +174,12 @@ def subjects_in(text, names):
 
 
 def subjects_typo(text, names):
-    """Опечатки в предмете: «алгерба», «химмия», «физке». Сравниваем слово с началом названия той же длины.
-    Опечатка с окончанием («по руссому», «по литре», «истоии»): первые 5 букв отличаются одной опечаткой от начала
-    названия (сокращения из расписания раскрываем: «Рус.яз» -> «русский»)."""
+    """Опечатки в предмете: «алгерба», «химмия», «физке». Сравниваем слово с началом названия той же длины."""
     hit = []
     for w in re.findall(r"[а-яё]{5,}", text.lower()):
         for n in names:
             first = n.lower().split()[0]
-            full = timetable.norm(timetable.ALIASES.get(timetable.norm(n), n).split()[0])
-            if n not in hit and (questions.close(w[:len(first) + 1], first, 0.75) or len(full) >= 5
-                                 and w[0] == full[0] and questions.typos(w[:5], full[:5]) <= 1):
+            if n not in hit and questions.close(w[:len(first) + 1], first, 0.75):
                 hit.append(n)
         for alias, full in timetable.ALIASES.items():  # «физрв» ~ «физра» = физкультура
             if len(alias) >= 5 and questions.close(w[:len(alias) + 1], alias, 0.8):
@@ -501,6 +503,10 @@ def _on_file(msg, chat_id):
     if not paths:
         tg("sendMessage", chat_id=chat_id, text="Не смог скачать файл (Telegram отдаёт ботам файлы до 20 МБ).")
         return
+    # Пока человек печатает задание, файл уже читается и размечается: к моменту черновика
+    # метки готовы. Контекст (подпись, класс) допишется в ту же строку очереди в _draft.
+    for path_ in paths:
+        file_queue.enqueue(path_, Path(path_).name, source="telegram_dm", path=path_)
     group = msg.get("media_group_id")
     drafts = load()
     d = next((x for x in reversed(list(drafts.values())) if group and x.get("group") == group and x["tg"] == chat_id), None)
@@ -578,7 +584,6 @@ def _question(msg, chat_id, text, cid):
     """Вопрос, а не новое ДЗ: ответить и вернуть True. Новое ДЗ — False (дальше обычный черновик)."""
     q = questions.classify(text, llm=None if questions.rule_intent(text) else _llm_with_typing(chat_id))
     names = class_subjects(cid, NOW().date())
-    fixed = questions.fix_typos(text)  # «кабинте хмии» -> «кабинет хмии»: чтобы узнать, где спросили предмет
     if q["intent"] == "add":
         if subjects_in(text, names) or subjects_typo(text, names) or questions.HOMEWORK_TEXT.search(text) or not WORTH or WORTH(text):
             return False  # похоже на ДЗ: черновик, как раньше
@@ -593,7 +598,7 @@ def _question(msg, chat_id, text, cid):
     if not found and q.get("subject"):
         found = [n for n in names if timetable.same_subject(n, q["subject"])]
     day = questions.parse_day(text, NOW().date()) or (q.get("day") and questions.parse_day(q["day"], NOW().date()))
-    odd = not found and q["intent"] in ("homework", "next") and unknown_subject(fixed)
+    odd = not found and q["intent"] in ("homework", "next") and unknown_subject(text)
     if odd:  # спросили про предмет, который не узнали: не отвечаем про «любой урок»
         tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
            text=f"Не понял предмет «{odd}». Предметы класса: " + ", ".join(sorted(names)) + ".")
@@ -629,6 +634,30 @@ def typing(chat_id):
     return stop.set
 
 
+def _file_labels(paths, names, text, cls):
+    """Метки файлов черновика: подпись, имя, класс. Без модели и без чтения содержимого."""
+    out = []
+    for i, p in enumerate(paths or []):
+        name = names[i] if i < len(names) else Path(p).name
+        try:
+            out.append(labels_mod.label(p, name, "", caption=text, chat="ЛС", chat_class=cls, model=False))
+        except Exception as e:  # метки — не повод терять черновик
+            print("ЛС: метки файла не получились:", repr(e))
+    return out
+
+
+def _auto_ok(d):
+    """Записать без подтверждения? Только учителю, только с файлами и только при high.
+
+    Уверенность high у файла — это когда предмет и тип сошлись без модели (подпись/имя/класс).
+    Ученик всегда через черновик и модерацию; учитель со спорными метками — тоже через кнопку.
+    """
+    return bool(AUTO_SUBMIT and d["user"]["role"] == "teacher" and d.get("files")
+                and d.get("file_labels")
+                and all(x.get("confidence") == "high" for x in d["file_labels"])
+                and all(it.get("lesson") for it in d["items"]))
+
+
 def _draft(msg, chat_id, text, user, cls, cid):
     posted = datetime.fromtimestamp(msg["date"]).strftime("%Y-%m-%dT%H:%M:%S")
     names = class_subjects(cid, date.fromisoformat(posted[:10]))
@@ -644,8 +673,27 @@ def _draft(msg, chat_id, text, user, cls, cid):
         paths, fnames = fetch_files(msg)
         d["files"], d["names"] = d.get("files", []) + paths, d.get("names", []) + fnames
         d["group"] = msg.get("media_group_id")
+    # Классификация файла смотрит и на содержимое, и на контекст: подпись («физика к пятнице»)
+    # и класс из профиля. chat_subjects здесь не передаём: в ЛС это весь список предметов
+    # класса, а не тема чата — подсказкой он быть не может.
+    for path_ in d.get("files") or []:
+        file_queue.enqueue(path_, Path(path_).name, source="telegram_dm", path=path_,
+                           caption=text, chat="ЛС", chat_class=cls)
+    if d.get("files"):
+        # Метки без модели и без чтения файла: подпись + имя + класс. Дёшево — и сразу видно,
+        # хватает ли уверенности, чтобы записать без кнопки (запись без подтверждения — только
+        # учителю и только при high, см. _auto_ok).
+        d["file_labels"] = _file_labels(d["files"], d.get("names") or [], text, cls)
     for it in d["items"]:
         resolve(d, it)
+    if _auto_ok(d):
+        d["preview"] = tg("sendMessage", chat_id=chat_id,
+                          text="📎 Файл понял сам, записываю без подтверждения…")["message_id"]
+        drafts = load()
+        drafts[d["id"]] = d
+        save(drafts)
+        submit(d)
+        return
     body, kb = preview(d)
     d["preview"] = tg("sendMessage", chat_id=chat_id, text=body, reply_markup=kb)["message_id"]
     drafts = load()
