@@ -11,7 +11,6 @@ import {
     fetchSchoolClasses,
     fetchSubjects,
     formatClassName,
-    getSchoolClassLabel,
     removeSlot,
     setCourseTeachers,
     updateSlot,
@@ -28,6 +27,10 @@ import {
     type TimetableChangeDto,
 } from '../../api';
 import {errorText, formatDay, isoDate, staffOnly} from './common';
+import ScheduleClassSelector from '../Schedule/ScheduleClassSelector';
+import '../../css/FullSchedule.css';
+import FullScheduleTable from '../Schedule/ScheduleTable';
+import type {DaySchedule, ScheduleItem} from '../../types/ScheduleTypes';
 
 const days: {code: DayCode; title: string}[] = [
     {code: 'mon', title: 'Понедельник'},
@@ -75,9 +78,6 @@ const courseTitle = (course: TimetableCourseDto, classTarget: string): string =>
     course.target_name === classTarget
         ? course.subject.name
         : `${course.subject.name} (${formatClassName(course.target_name)})`;
-
-const teacherNames = (teachers: {name: string}[]): string =>
-    teachers.map((teacher) => teacher.name).join(', ') || 'учитель не назначен';
 
 /** What happened to already created weeks, in words. */
 const changeText = (change: TimetableChangeDto, applyFrom: string | null): string => {
@@ -267,13 +267,27 @@ const TimetableTab: React.FC = () => {
 
     const classTarget = classes.find((item) => item.id === classId)?.name ?? '';
     const courses = timetable?.courses ?? [];
-    const byDay = useMemo(() => {
-        const map = new Map<DayCode, SlotDto[]>(days.map((day) => [day.code, []]));
-        for (const slot of timetable?.slots ?? []) {
-            map.get(slot.day)?.push(slot);
-        }
-        return map;
-    }, [timetable]);
+    const editingSlot = timetable?.slots.find((slot) => slot.id === editing?.id);
+    const timetableDays = useMemo<DaySchedule[]>(() => days.map((day) => ({
+        name: day.title,
+        shortName: day.title.slice(0, 3),
+        items: (timetable?.slots ?? [])
+            .filter((slot) => slot.day === day.code)
+            .sort((first, second) => first.start_time.localeCompare(second.start_time))
+            .map((slot, index): ScheduleItem => ({
+                id: slot.id,
+                startTime: slot.start_time,
+                endTime: slot.end_time,
+                lessonNumber: index + 1,
+                title: slot.target_name === classTarget
+                    ? slot.subject_name
+                    : `${slot.subject_name} (${formatClassName(slot.target_name)})`,
+                teachers: slot.teachers.map((teacher) => teacher.name),
+                targetName: slot.target_name === classTarget ? undefined : formatClassName(slot.target_name),
+                cabinet: slot.cabinet_number === null ? null : String(slot.cabinet_number),
+                note: slot.parity === 'every' ? null : parityTitles[slot.parity],
+            })),
+    })), [timetable, classTarget]);
 
     const effectiveApplyFrom = applyToCreated ? applyFrom : null;
 
@@ -358,14 +372,12 @@ const TimetableTab: React.FC = () => {
     return (
         <section>
             <div className="admin__toolbar">
-                <label>
-                    Класс{' '}
-                    <select value={classId} onChange={(event) => setClassId(event.target.value)}>
-                        {classes.map((item) => (
-                            <option key={item.id} value={item.id}>{getSchoolClassLabel(item)}</option>
-                        ))}
-                    </select>
-                </label>
+                <ScheduleClassSelector
+                    classes={classes}
+                    selectedClassId={classId}
+                    onChange={setClassId}
+                    menuAlignment="left"
+                />
                 <label>
                     <input type="checkbox" checked={applyToCreated} onChange={(event) => setApplyToCreated(event.target.checked)} />{' '}
                     менять и уже созданные недели, начиная с
@@ -389,73 +401,61 @@ const TimetableTab: React.FC = () => {
 
             {timetable && (
                 <>
-                    <div className="admin__week">
-                        {days.map((day) => (
-                            <div key={day.code} className="admin__card admin__day">
-                                <h3>{day.title}</h3>
-                                {(byDay.get(day.code) ?? []).length === 0 && <p className="admin__muted">уроков нет</p>}
-                                {(byDay.get(day.code) ?? []).map((slot) =>
-                                    editing?.id === slot.id ? (
-                                        <form
-                                            key={slot.id}
-                                            className="admin__slot-editor"
-                                            onSubmit={(event) => {
-                                                event.preventDefault();
-                                                void run(() => updateSlot(slot.id, inputOf(editing.draft)));
-                                            }}
-                                        >
-                                            <SlotForm
-                                                draft={editing.draft}
-                                                courses={courses}
-                                                cabinets={cabinets}
-                                                classTarget={classTarget}
-                                                onChange={(draft) => setEditing({id: slot.id, draft})}
-                                            />
-                                            <div className="admin__actions">
-                                                <button type="submit" disabled={busy}>Сохранить</button>
-                                                <button type="button" className="admin__secondary" onClick={() => setEditing(null)}>
-                                                    Отмена
-                                                </button>
-                                            </div>
-                                        </form>
-                                    ) : (
-                                        <div key={slot.id} className="admin__slot">
-                                            <div className="admin__slot-time">{slot.start_time}–{slot.end_time}</div>
-                                            <div className="admin__grow">
-                                                <strong>
-                                                    {slot.target_name === classTarget
-                                                        ? slot.subject_name
-                                                        : `${slot.subject_name} (${formatClassName(slot.target_name)})`}
-                                                </strong>
-                                                {slot.parity !== 'every' && (
-                                                    <span className="admin__badge">{parityTitles[slot.parity]}</span>
-                                                )}
-                                                <div className="admin__muted">
-                                                    {teacherNames(slot.teachers)}
-                                                    {slot.cabinet_number !== null && <> · каб. {slot.cabinet_number}</>}
-                                                </div>
-                                            </div>
-                                            <div className="admin__slot-actions">
-                                                <button
-                                                    type="button"
-                                                    className="admin__secondary"
-                                                    onClick={() => {
-                                                        setNewSlot(null);
-                                                        setEditing({id: slot.id, draft: draftOf(slot)});
-                                                    }}
-                                                >
-                                                    Изменить
-                                                </button>
-                                                <button type="button" className="admin__secondary" disabled={busy} onClick={() => remove(slot)}>
-                                                    Убрать
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ),
-                                )}
+                    <FullScheduleTable
+                        selectedClass={classId}
+                        daysOverride={timetableDays}
+                        renderLessonActions={(lesson) => {
+                            const slot = timetable.slots.find((item) => item.id === lesson.id);
+                            if (!slot) return null;
+                            return (
+                                <>
+                                    <button
+                                        type="button"
+                                        className="admin__secondary"
+                                        onClick={() => {
+                                            setNewSlot(null);
+                                            setEditing({id: slot.id, draft: draftOf(slot)});
+                                        }}
+                                    >
+                                        Изменить
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="admin__secondary"
+                                        disabled={busy}
+                                        onClick={() => remove(slot)}
+                                    >
+                                        Отменить
+                                    </button>
+                                </>
+                            );
+                        }}
+                    />
+
+                    {editing && editingSlot && (
+                        <form
+                            className="admin__card admin__form"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void run(() => updateSlot(editing.id, inputOf(editing.draft)));
+                            }}
+                        >
+                            <h3>Изменить урок</h3>
+                            <SlotForm
+                                draft={editing.draft}
+                                courses={courses}
+                                cabinets={cabinets}
+                                classTarget={classTarget}
+                                onChange={(draft) => setEditing({id: editing.id, draft})}
+                            />
+                            <div className="admin__actions">
+                                <button type="submit" disabled={busy}>Сохранить</button>
+                                <button type="button" className="admin__secondary" onClick={() => setEditing(null)}>
+                                    Отмена
+                                </button>
                             </div>
-                        ))}
-                    </div>
+                        </form>
+                    )}
 
                     {newSlot ? (
                         <form

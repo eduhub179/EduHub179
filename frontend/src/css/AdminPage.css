@@ -1,8 +1,14 @@
-.admin {
+{
     max-width: 1100px;
     margin: 0 auto;
     padding: 32px 24px;
     color: var(--color-text);
+}
+
+.admin--wide {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
 }
 
 .admin__title {
@@ -217,9 +223,9 @@
     gap: 8px;
 }
 
-.admin input,
-.admin select,
-.admin textarea {
+input,
+select,
+textarea {
     padding: 6px 8px;
     border: 1px solid var(--color-border);
     border-radius: 6px;
@@ -227,11 +233,11 @@
     background: var(--color-bg);
 }
 
-.admin input[type='checkbox'] {
+input[type='checkbox'] {
     padding: 0;
 }
 
-.admin button {
+button {
     padding: 6px 14px;
     border: 1px solid var(--color-accent);
     border-radius: 6px;
@@ -241,23 +247,23 @@
     cursor: pointer;
 }
 
-.admin button:disabled {
+button:disabled {
     opacity: 0.6;
     cursor: default;
 }
 
-.admin button.admin__secondary {
+button.admin__secondary {
     background: var(--color-bg);
     color: var(--color-accent);
 }
 
-.admin button.admin__danger {
+button.admin__danger {
     border-color: #dc2626;
     background: #dc2626;
 }
 
 @media (max-width: 640px) {
-    .admin {
+    {
         padding: 16px 12px;
     }
 
@@ -324,7 +330,7 @@
     gap: 4px;
 }
 
-.admin .admin__slot-actions button {
+.admin__slot-actions button {
     padding: 2px 8px;
     font-size: 0.85rem;
 }
@@ -369,7 +375,7 @@
     font-size: 0.9rem;
 }
 
-.admin .admin__chip button {
+.admin__chip button {
     padding: 0 6px;
     border: none;
     background: transparent;
@@ -381,13 +387,114 @@
     flex-basis: 100%;
 }
 
+.admin__cabinet-select {
+    position: relative;
+    display: inline-block;
+    margin-top: 4px;
+}
+
+.admin__cabinet-select-trigger {
+    min-width: 190px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: left;
+}
+
+.admin__cabinet-menu {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 300px;
+    max-width: min(90vw, 560px);
+    max-height: 60vh;
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-bg);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.admin__cabinet-picker {
+    width: auto;
+}
+
+.admin__cabinet-picker th {
+    white-space: nowrap;
+}
+
+.admin__cabinet-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.admin__cabinet-picker button,
+.admin__cabinet-other button {
+    padding: 3px 8px;
+}
+
+.admin__cabinet-other {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.schedule-grid__lesson--admin {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid #d5dbe3;
+    border-radius: 5px;
+    background: #fff;
+    color: #202124;
+    font-size: 0.72rem;
+    line-height: 1.2;
+}
+
+.admin__schedule-lesson-main {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    border: 0;
+    padding: 1px 2px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: default;
+}
+
+.admin__schedule-lesson-main strong,
+.admin__schedule-lesson-main small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin__schedule-lesson-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-top: auto;
+}
+
+.admin__schedule-lesson-actions button {
+    padding: 1px 4px;
+    font-size: 0.65rem;
+}
+
 .admin__below {
     display: block;
     margin-top: 4px;
     margin-left: auto;
 }
 
-.admin button.admin__danger-outline {
+button.admin__danger-outline {
     border-color: #dc2626;
     background: var(--color-bg);
     color: #dc2626;

@@ -10,6 +10,7 @@ interface ScheduleClassSelectorProps {
     showTeacherSchedule?: boolean;
     isTeacherScheduleSelected?: boolean;
     onSelectTeacherSchedule?: () => void;
+    menuAlignment?: 'left' | 'right';
 }
 
 const ScheduleClassSelector: React.FC<ScheduleClassSelectorProps> = ({
@@ -19,6 +20,7 @@ const ScheduleClassSelector: React.FC<ScheduleClassSelectorProps> = ({
     showTeacherSchedule = false,
     isTeacherScheduleSelected = false,
     onSelectTeacherSchedule,
+    menuAlignment = 'right',
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const selectorRef = useRef<HTMLDivElement>(null);
@@ -91,7 +93,7 @@ const ScheduleClassSelector: React.FC<ScheduleClassSelectorProps> = ({
             </button>
             {isOpen && (
                 <div
-                    className="schedule-class-selector__menu"
+                    className={`schedule-class-selector__menu schedule-class-selector__menu--${menuAlignment}`}
                     id="schedule-class-selector-options"
                     role="dialog"
                     aria-label="Выбрать класс расписания"

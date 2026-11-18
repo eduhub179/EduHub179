@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type {FormEvent} from 'react';
 import {
     addOneOffLesson,
@@ -28,6 +28,127 @@ interface Place {
     cabinetId: string;
 }
 
+interface CabinetPickerProps {
+    cabinetId: string;
+    cabinets: CabinetDto[];
+    onChange: (cabinetId: string) => void;
+}
+
+const CabinetPicker: React.FC<CabinetPickerProps> = ({cabinetId, cabinets, onChange}) => {
+    const [open, setOpen] = useState(false);
+    const pickerRef = useRef<HTMLDivElement>(null);
+    const {floors, other} = useMemo(() => {
+        const byFloor = new Map<string, CabinetDto[]>();
+        const otherCabinets: CabinetDto[] = [];
+        for (const cabinet of cabinets) {
+            const number = String(cabinet.number);
+            if (!/^\d{3}$/.test(number)) {
+                otherCabinets.push(cabinet);
+                continue;
+            }
+            const floor = number[0];
+            byFloor.set(floor, [...(byFloor.get(floor) ?? []), cabinet]);
+        }
+        return {
+            floors: [...byFloor.entries()].sort(([a], [b]) => a.localeCompare(b)),
+            other: otherCabinets,
+        };
+    }, [cabinets]);
+
+    useEffect(() => {
+        if (!open) return;
+        const closeOnOutsidePointer = (event: PointerEvent) => {
+            if (event.target instanceof Node && !pickerRef.current?.contains(event.target)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('pointerdown', closeOnOutsidePointer);
+        return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+    }, [open]);
+
+    const selectedCabinet = cabinets.find((cabinet) => cabinet.id === cabinetId);
+    const selectedLabel = selectedCabinet
+        ? `${selectedCabinet.number}${selectedCabinet.description ? ` — ${selectedCabinet.description}` : ''}`
+        : 'также как обычно';
+    const selectCabinet = (id: string) => {
+        onChange(id);
+        setOpen(false);
+    };
+
+    return (
+        <div className="admin__cabinet-select" ref={pickerRef}>
+            <button
+                type="button"
+                className="admin__secondary admin__cabinet-select-trigger"
+                aria-haspopup="true"
+                aria-expanded={open}
+                onClick={() => setOpen((current) => !current)}
+            >
+                {selectedLabel} <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+            </button>
+            {open && (
+                <div className="admin__cabinet-menu">
+                    <table className="admin__table admin__cabinet-picker">
+                        <tbody>
+                            <tr>
+                                <th>Обычно</th>
+                                <td>
+                                    <button
+                                        type="button"
+                                        className={!cabinetId ? '' : 'admin__secondary'}
+                                        aria-pressed={!cabinetId}
+                                        onClick={() => selectCabinet('')}
+                                    >
+                                        также как обычно
+                                    </button>
+                                </td>
+                            </tr>
+                            {floors.map(([floor, floorCabinets]) => (
+                                <tr key={floor}>
+                                    <th>{floor} этаж</th>
+                                    <td>
+                                        <div className="admin__cabinet-options">
+                                            {floorCabinets.map((cabinet) => (
+                                                <button
+                                                    key={cabinet.id}
+                                                    type="button"
+                                                    className={cabinetId === cabinet.id ? '' : 'admin__secondary'}
+                                                    aria-pressed={cabinetId === cabinet.id}
+                                                    onClick={() => selectCabinet(cabinet.id)}
+                                                >
+                                                    {cabinet.number}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {other.length > 0 && (
+                        <div className="admin__cabinet-other">
+                            <span className="admin__muted">Другие кабинеты</span>
+                            <div className="admin__cabinet-options">
+                                {other.map((cabinet) => (
+                                    <button
+                                        key={cabinet.id}
+                                        type="button"
+                                        className={cabinetId === cabinet.id ? '' : 'admin__secondary'}
+                                        aria-pressed={cabinetId === cabinet.id}
+                                        onClick={() => selectCabinet(cabinet.id)}
+                                    >
+                                        {cabinet.number}{cabinet.description ? ` — ${cabinet.description}` : ''}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 interface PlaceFieldsProps {
     place: Place;
     cabinets: CabinetDto[];
@@ -49,15 +170,14 @@ const PlaceFields: React.FC<PlaceFieldsProps> = ({place, cabinets, onChange}) =>
             до{' '}
             <input type="time" required value={place.end} onChange={(event) => onChange({...place, end: event.target.value})} />
         </label>
-        <label>
-            Кабинет{' '}
-            <select value={place.cabinetId} onChange={(event) => onChange({...place, cabinetId: event.target.value})}>
-                <option value="">как обычно</option>
-                {cabinets.map((cabinet) => (
-                    <option key={cabinet.id} value={cabinet.id}>{cabinet.number}</option>
-                ))}
-            </select>
-        </label>
+        <div className="admin__wide">
+            <span>Кабинет</span>
+            <CabinetPicker
+                cabinetId={place.cabinetId}
+                cabinets={cabinets}
+                onChange={(cabinetId) => onChange({...place, cabinetId})}
+            />
+        </div>
     </>
 );
 
@@ -190,7 +310,6 @@ const changeOf = (lesson: AdminLessonDto, draft: Draft): LessonChangeInput => {
 const LessonsTab: React.FC = () => {
     const [date, setDate] = useState(() => isoDate(new Date()));
     const [lessons, setLessons] = useState<AdminLessonDto[] | null>(null);
-    const [target, setTarget] = useState('');
     const [teachers, setTeachers] = useState<AdminUserDto[]>([]);
     const [cabinets, setCabinets] = useState<CabinetDto[]>([]);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -230,19 +349,13 @@ const LessonsTab: React.FC = () => {
 
     useEffect(load, [load]);
 
-    const targets = useMemo(
-        () => [...new Set((lessons ?? []).map((lesson) => lesson.target_name))].sort((a, b) => a.localeCompare(b, 'ru')),
-        [lessons],
-    );
     const groups = useMemo(() => {
-        const shown = (lessons ?? []).filter((lesson) => !target || lesson.target_name === target);
         const byTarget = new Map<string, AdminLessonDto[]>();
-        for (const lesson of shown) {
+        for (const lesson of lessons ?? []) {
             byTarget.set(lesson.target_name, [...(byTarget.get(lesson.target_name) ?? []), lesson]);
         }
         return [...byTarget.entries()].sort(([a], [b]) => a.localeCompare(b, 'ru'));
-    }, [lessons, target]);
-
+    }, [lessons]);
     const save = async (lesson: AdminLessonDto, draft: Draft) => {
         const change = changeOf(lesson, draft);
         if (Object.keys(change).length === 0) {
@@ -312,20 +425,7 @@ const LessonsTab: React.FC = () => {
     return (
         <section>
             <div className="admin__toolbar">
-                <label>
-                    День{' '}
-                    <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-                </label>
-                <span className="admin__muted">{formatDay(date)}</span>
-                <label>
-                    Класс{' '}
-                    <select value={target} onChange={(event) => setTarget(event.target.value)}>
-                        <option value="">все</option>
-                        {targets.map((name) => (
-                            <option key={name} value={name}>{formatClassName(name)}</option>
-                        ))}
-                    </select>
-                </label>
+                <strong>{formatDay(date)}</strong>
             </div>
 
             {message && <p className="admin__success">{message}</p>}
@@ -334,7 +434,7 @@ const LessonsTab: React.FC = () => {
                 cabinets={cabinets}
                 onAdded={(lesson) => {
                     setMessage(`Добавлен урок «${lesson.subject_name}» (${formatClassName(lesson.target_name)}) ${formatDay(lesson.date)}, ${lesson.start_time}.`);
-                    load();
+                    setDate(lesson.date);
                 }}
             />
             {loadError && <p className="admin__error">{loadError}</p>}
@@ -391,17 +491,14 @@ const LessonsTab: React.FC = () => {
                                                         />{' '}
                                                         Урок отменён
                                                     </label>
-                                                    <label>
-                                                        Кабинет{' '}
-                                                        <select value={draft.cabinetId} onChange={(event) => setDraft({cabinetId: event.target.value})}>
-                                                            <option value="">как в шаблоне</option>
-                                                            {cabinets.map((cabinet) => (
-                                                                <option key={cabinet.id} value={cabinet.id}>
-                                                                    {cabinet.number}{cabinet.description ? ` — ${cabinet.description}` : ''}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </label>
+                                                    <div className="admin__wide">
+                                                        <span>Кабинет</span>
+                                                        <CabinetPicker
+                                                            cabinetId={draft.cabinetId}
+                                                            cabinets={cabinets}
+                                                            onChange={(cabinetId) => setDraft({cabinetId})}
+                                                        />
+                                                    </div>
                                                     <label>
                                                         Замена{' '}
                                                         <select value={draft.substituteId} onChange={(event) => setDraft({substituteId: event.target.value})}>

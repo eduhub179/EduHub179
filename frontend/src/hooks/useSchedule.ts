@@ -130,6 +130,7 @@ export const useSchedule = (
     selectedClassOverride?: string,
     source: 'class' | 'teacher' = 'class',
     weekDate?: string,
+    enabled = true,
 ): ScheduleState => {
     const {user} = useAuth();
     const schoolClass = (selectedClassOverride ?? user?.schoolClass ?? '').trim();
@@ -153,6 +154,14 @@ export const useSchedule = (
 
     useEffect(() => {
         let isCurrent = true;
+
+        if (!enabled) {
+            loadedKey.current = null;
+            setState({days: [], isLoading: false, error: null, hasClass: Boolean(schoolClass)});
+            return () => {
+                isCurrent = false;
+            };
+        }
 
         if (source === 'teacher' && hasTeacherRole(user)) {
             if (!user?.id) {
@@ -264,7 +273,7 @@ export const useSchedule = (
         return () => {
             isCurrent = false;
         };
-    }, [schoolClass, source, user, reloadTick, weekStart]);
+    }, [schoolClass, source, user, reloadTick, weekStart, enabled]);
 
     return state;
 };

@@ -1,5 +1,5 @@
 import React from 'react';
-import {Navigate, NavLink, Route, Routes} from 'react-router-dom';
+import {Navigate, NavLink, Route, Routes, useLocation} from 'react-router-dom';
 import {hasAdminRole} from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
@@ -21,6 +21,8 @@ const tabs = [
 /** Admin panel: only for users with role `admin`; the backend checks the role again. */
 const AdminPage: React.FC = () => {
     const {user} = useAuth();
+    const location = useLocation();
+    const isTimetablePage = location.pathname === '/admin/timetable';
 
     if (!user) {
         return <Navigate to="/login" replace />;
@@ -29,7 +31,7 @@ const AdminPage: React.FC = () => {
     return (
         <>
             <Header />
-            <main className="admin">
+            <main className={`admin${isTimetablePage ? ' admin--wide' : ''}`}>
                 <h1 className="admin__title">Админ-панель</h1>
                 {!hasAdminRole(user) ? (
                     <p className="admin__error">Этот раздел доступен только администраторам.</p>

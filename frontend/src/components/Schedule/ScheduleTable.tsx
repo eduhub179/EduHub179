@@ -1,14 +1,17 @@
 import React, {useState} from 'react';
 import {useSchedule} from '../../hooks/useSchedule';
-import {changeLabel, type ScheduleItem} from '../../types/ScheduleTypes.ts';
+import {changeLabel, type DaySchedule, type ScheduleItem} from '../../types/ScheduleTypes.ts';
 import '../../css/ScheduleTable.css';
 
 interface FullScheduleTableProps {
-    onLessonSelect: (lesson: ScheduleItem) => void;
+    onLessonSelect?: (lesson: ScheduleItem) => void;
     selectedClass: string;
     scheduleType?: 'class' | 'teacher';
     /** Any date of the week to show; default: the current week. */
     weekDate?: string;
+    /** Supplied lessons let admin reuse the grid for an editable timetable. */
+    daysOverride?: DaySchedule[];
+    renderLessonActions?: (lesson: ScheduleItem) => React.ReactNode;
 }
 
 const WEEKDAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -68,8 +71,14 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({
     selectedClass,
     scheduleType = 'class',
     weekDate,
+    daysOverride,
+    renderLessonActions,
 }) => {
-    const {days, isLoading, error, hasClass} = useSchedule(selectedClass, scheduleType, weekDate);
+    const schedule = useSchedule(selectedClass, scheduleType, weekDate, !daysOverride);
+    const days = daysOverride ?? schedule.days;
+    const isLoading = daysOverride ? false : schedule.isLoading;
+    const error = daysOverride ? null : schedule.error;
+    const hasClass = daysOverride ? Boolean(selectedClass) : schedule.hasClass;
     const [hoveredDay, setHoveredDay] = useState<string | null>(null);
     const scheduleDays = WEEKDAYS.map((name) => ({
         name,
@@ -161,45 +170,66 @@ const FullScheduleTable: React.FC<FullScheduleTableProps> = ({
                                                 const width = 100 / slotCount;
                                                 const left = width * slotIndex;
                                                 return (
-                                                    <button
-                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}${lesson.cancelled ? ' schedule-grid__lesson--cancelled' : ''}${changeLabel(lesson) ? ' schedule-grid__lesson--changed' : ''}`}
+                                                    <div
+                                                        className={`schedule-grid__lesson${isNonStandardTime ? ' schedule-grid__lesson--non-standard' : ''}${slotCount > 1 ? ' schedule-grid__lesson--split' : ''}${lesson.cancelled ? ' schedule-grid__lesson--cancelled' : ''}${changeLabel(lesson) ? ' schedule-grid__lesson--changed' : ''}${renderLessonActions ? ' schedule-grid__lesson--admin' : ''}`}
                                                         style={{
                                                             top,
                                                             left: `${left}%`,
                                                             width: `${width}%`,
                                                             height: Math.max(0, bottom - top),
                                                         }}
-                                                        type="button"
                                                         key={lesson.id}
-                                                        onClick={() => onLessonSelect(lesson)}
-                                                        aria-label={`Открыть урок ${lesson.lessonNumber}: ${lesson.title}`}
                                                     >
-                                                        <span className="schedule-grid__lesson-content">
-                                                            <strong className={lesson.cancelled ? 'schedule__title--cancelled' : undefined}>
-                                                                {lesson.title}
-                                                            </strong>
-                                                            {lesson.cancelled && <small className="schedule__cancelled-badge">урок отменён</small>}
-                                                            {changeLabel(lesson) && <small className="schedule__changed-badge">{changeLabel(lesson)}</small>}
-                                                            {(lesson.targetName || lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
-                                                                <small className="schedule-grid__lesson-meta">
-                                                                    {[
-                                                                        lesson.targetName,
-                                                                        lesson.cabinet?.trim(),
-                                                                        lesson.teachers?.some((teacher) => teacher.trim()) &&
-                                                                            lesson.teachers.filter((teacher) => teacher.trim()).join(', '),
-                                                                    ].filter(Boolean).join(' · ')}
-                                                                </small>
-                                                            )}
-                                                            {lesson.note && (
-                                                                <small className="schedule-grid__lesson-meta">{lesson.note}</small>
-                                                            )}
-                                                        </span>
-                                                        {lesson.homework && (
-                                                            <span className="schedule-grid__homework-badge" aria-label="Есть домашнее задание">
-                                                                ДЗ
-                                                            </span>
+                                                        {renderLessonActions ? (
+                                                            <>
+                                                                <button
+                                                                    className="admin__schedule-lesson-main"
+                                                                    type="button"
+                                                                    onClick={() => onLessonSelect?.(lesson)}
+                                                                    aria-label={`Урок ${lesson.lessonNumber}: ${lesson.title}`}
+                                                                >
+                                                                    <span className="schedule-grid__lesson-content">
+                                                                        <strong>{lesson.title}</strong>
+                                                                        {(lesson.targetName || lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
+                                                                            <small className="schedule-grid__lesson-meta">
+                                                                                {[lesson.targetName, lesson.cabinet?.trim(), lesson.teachers?.filter((teacher) => teacher.trim()).join(', ')]
+                                                                                    .filter(Boolean).join(' · ')}
+                                                                            </small>
+                                                                        )}
+                                                                        {lesson.note && <small className="schedule-grid__lesson-meta">{lesson.note}</small>}
+                                                                    </span>
+                                                                </button>
+                                                                <span className="admin__schedule-lesson-actions">
+                                                                    {renderLessonActions(lesson)}
+                                                                </span>
+                                                            </>
+                                                        ) : (
+                                                            <button
+                                                                className="schedule-grid__lesson-main"
+                                                                type="button"
+                                                                onClick={() => onLessonSelect?.(lesson)}
+                                                                aria-label={`Открыть урок ${lesson.lessonNumber}: ${lesson.title}`}
+                                                            >
+                                                                <span className="schedule-grid__lesson-content">
+                                                                    <strong className={lesson.cancelled ? 'schedule__title--cancelled' : undefined}>
+                                                                        {lesson.title}
+                                                                    </strong>
+                                                                    {lesson.cancelled && <small className="schedule__cancelled-badge">урок отменён</small>}
+                                                                    {changeLabel(lesson) && <small className="schedule__changed-badge">{changeLabel(lesson)}</small>}
+                                                                    {(lesson.targetName || lesson.cabinet?.trim() || lesson.teachers?.some((teacher) => teacher.trim())) && (
+                                                                        <small className="schedule-grid__lesson-meta">
+                                                                            {[lesson.targetName, lesson.cabinet?.trim(), lesson.teachers?.filter((teacher) => teacher.trim()).join(', ')]
+                                                                                .filter(Boolean).join(' · ')}
+                                                                        </small>
+                                                                    )}
+                                                                    {lesson.note && <small className="schedule-grid__lesson-meta">{lesson.note}</small>}
+                                                                </span>
+                                                                {lesson.homework && (
+                                                                    <span className="schedule-grid__homework-badge" aria-label="Есть домашнее задание">ДЗ</span>
+                                                                )}
+                                                            </button>
                                                         )}
-                                                    </button>
+                                                    </div>
                                                 );
                                             })}
                                         </div>

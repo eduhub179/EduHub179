@@ -89,12 +89,27 @@
     z-index: 10;
     top: calc(100% + 8px);
     right: 0;
-    width: min(440px, calc(100vw - 36px));
+    box-sizing: border-box;
+    width: min(440px, calc(100vw - 48px));
     padding: 10px;
     border: 1px solid rgb(0 0 0 / 8%);
     border-radius: 12px;
     background: #fff;
     box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.schedule-class-selector__menu--left {
+    right: auto;
+    left: 0;
+}
+
+.schedule-class-selector__menu .math-class-table-wrap {
+    width: 100%;
+    margin: 0;
+}
+
+.schedule-class-selector__menu .math-class-table {
+    min-width: 0;
 }
 
 .schedule-class-selector__teacher-option {
