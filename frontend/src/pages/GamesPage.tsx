@@ -2,7 +2,7 @@ import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Header from '../components/Header.tsx';
 import { useAuth } from '../auth/AuthProvider';
-import '../css/GamesPage.css';
+import '../css/pages/GamesPage.css';
 
 // The game is a standalone page in public/games/logscale/ (no build step, works offline for
 // solo modes). Online party mode talks to /api/party on the same origin.

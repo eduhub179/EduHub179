@@ -1,7 +1,7 @@
 import React, {useEffect} from 'react';
 import MainContent from '../MainContent';
 import type {ScheduleItem} from '../../types/ScheduleTypes';
-import '../../css/FullSchedule.css';
+import '../../css/pages/FullSchedule.css';
 
 interface LessonModalProps {
     lesson: ScheduleItem | null;

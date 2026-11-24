@@ -4,7 +4,7 @@ import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
 import NotificationsSettings from '../components/NotificationsSettings';
 import '../css/index.css';
-import '../css/RegisterPage.css';
+import '../css/pages/RegisterPage.css';
 
 const ProfilePage: React.FC = () => {
     const {user, logout} = useAuth();

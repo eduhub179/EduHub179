@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {useSchedule} from '../../hooks/useSchedule';
 import {changeLabel, type DaySchedule, type ScheduleItem} from '../../types/ScheduleTypes.ts';
-import '../../css/ScheduleTable.css';
+import '../../css/components/Schedule/ScheduleTable.css';
 
 interface FullScheduleTableProps {
     onLessonSelect?: (lesson: ScheduleItem) => void;

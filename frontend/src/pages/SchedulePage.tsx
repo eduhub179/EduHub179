@@ -11,8 +11,8 @@ import LessonModal from '../components/Schedule/LessonModal';
 import WeekNav from '../components/Schedule/WeekNav';
 import {getLocalDate} from '../hooks/useSchedule';
 import type {ScheduleItem} from '../types/ScheduleTypes.ts';
-import '../css/FullSchedule.css';
-import '../css/DayLessonList.css';
+import '../css/pages/FullSchedule.css';
+import '../css/components/Schedule/DayLessonList.css';
 import {errorText} from '../api/errors';
 
 const FullSchedule: React.FC = () => {

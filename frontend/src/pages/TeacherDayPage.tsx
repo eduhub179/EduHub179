@@ -8,8 +8,8 @@ import LessonModal from '../components/Schedule/LessonModal';
 import {addDays, getLocalDate, useSchedule} from '../hooks/useSchedule';
 import type {ScheduleItem} from '../types/ScheduleTypes';
 import '../css/index.css';
-import '../css/DayLessonList.css';
-import '../css/TeacherDayPage.css';
+import '../css/components/Schedule/DayLessonList.css';
+import '../css/pages/TeacherDayPage.css';
 
 const dayTitle = new Intl.DateTimeFormat('ru-RU', {weekday: 'long', day: 'numeric', month: 'long'});
 

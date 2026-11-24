@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { hasAdminRole, hasTeacherRole } from '../api/access';
 import { useAuth } from '../auth/AuthProvider';
-import '../css/Header.css';
+import '../css/components/Header.css';
 
 const Header: React.FC = () => {
     const { user, logout } = useAuth();

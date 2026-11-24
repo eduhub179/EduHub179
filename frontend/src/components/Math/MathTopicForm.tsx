@@ -18,7 +18,7 @@ import {
     type PlusnikTaskDto,
     type SchoolClassDto,
 } from '../../api';
-import '../../css/MathTopicForm.css';
+import '../../css/components/Math/MathTopicForm.css';
 import {errorText} from '../../api/errors';
 
 interface TopicDetails {

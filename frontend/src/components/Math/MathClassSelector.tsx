@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ClassTable, {type ClassOption} from '../ClassTable';
-import '../../css/MathClassSelector.css';
+import '../../css/components/Math/MathClassSelector.css';
 
 interface MathClassSelectorProps {
     schoolClass: string;

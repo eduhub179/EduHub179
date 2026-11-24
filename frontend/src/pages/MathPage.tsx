@@ -9,7 +9,7 @@ import type {ClassOption} from '../components/ClassTable';
 import MathTopicsTable from '../components/Math/MathTopicsTable';
 import CourseMaterialsLinks from '../components/Materials/CourseMaterialsLinks';
 import Header from '../components/Header';
-import '../css/MathPage.css';
+import '../css/pages/MathPage.css';
 import {errorText} from '../api/errors';
 
 const MathPage: React.FC = () => {

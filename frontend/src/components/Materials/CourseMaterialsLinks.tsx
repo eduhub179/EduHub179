@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
 import {fetchClassCourses, formatClassName, type CourseDto, type SchoolClassDto} from '../../api';
 import type {User} from '../../auth/authService';
-import '../../css/CourseMaterialsPage.css';
+import '../../css/pages/CourseMaterialsPage.css';
 import {errorText} from '../../api/errors';
 
 interface CourseMaterialsLinksProps {

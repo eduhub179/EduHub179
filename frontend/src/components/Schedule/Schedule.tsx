@@ -5,7 +5,7 @@ import {useSchedule} from '../../hooks/useSchedule';
 import {changeLabel, type ScheduleItem} from '../../types/ScheduleTypes.ts';
 import {hasTeacherRole} from '../../api/access';
 import {useAuth} from '../../auth/AuthProvider';
-import '../../css/Schedule.css';
+import '../../css/components/Schedule/Schedule.css';
 
 interface ScheduleProps {
     onLessonSelect: (lesson: ScheduleItem) => void;

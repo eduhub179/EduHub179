@@ -10,7 +10,7 @@ import {
 } from '../api';
 import {useAuth} from '../auth/AuthProvider';
 import Header from '../components/Header';
-import '../css/PlusnikPage.css';
+import '../css/pages/PlusnikPage.css';
 import {errorText} from '../api/errors';
 
 const formatDate = (value: string | null, dateOnly = false) => {

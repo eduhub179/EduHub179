@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {useLocation} from 'react-router-dom';
+
 import {
     attachLessonFile,
     deleteHomework,
@@ -14,7 +14,7 @@ import FileDropDialog from './FileDropDialog';
 import HomeworkTextEditor from './LessonCard/HomeworkTextEditor';
 import LessonAdminControls from './LessonCard/LessonAdminControls';
 import {changeLabel, type HomeworkFile, type ScheduleItem} from '../types/ScheduleTypes.ts';
-import '../css/MainContent.css';
+import '../css/components/MainContent.css';
 import {errorText} from '../api/errors';
 
 interface MainContentProps {
@@ -38,7 +38,7 @@ const formatFileSize = (bytes: number): string => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 };
 
-const FilePreview: React.FC<{file: HomeworkFile}> = ({file}) => {
+const FilePreview: React.FC<{ file: HomeworkFile }> = ({file}) => {
     if (file.mimeType === 'application/pdf') {
         return <iframe className="homework-view__file-frame" src={file.url} title={file.name}/>;
     }
@@ -54,10 +54,7 @@ const FilePreview: React.FC<{file: HomeworkFile}> = ({file}) => {
 };
 
 const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson, onLessonUpdated}) => {
-    const location = useLocation();
-    let path = location.pathname;
 
-    const [pdfExists, setPdfExists] = useState<boolean | null>(null);
     const [selectedFileIndex, setSelectedFileIndex] = useState(0);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
@@ -68,36 +65,6 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
     const [isFileDialogOpen, setIsFileDialogOpen] = useState(false);
     const {user} = useAuth();
     const canAttachFiles = hasTeacherOrAdminRole(user);
-
-    let fileName = path.split('/').pop();
-    if (path == "/main")
-        fileName = "";
-    const pdfUrl = path === '/' ? '' : `/local_docks/${fileName}`;
-
-    useEffect(() => {
-        if (fileName === '') {
-            return;
-        }
-
-        setPdfExists(null);
-
-        fetch(pdfUrl)
-            .then(response => {
-                const contentType = response.headers.get('content-type');
-
-                if (
-                    response.ok &&
-                    contentType?.includes('application/pdf')
-                ) {
-                    setPdfExists(true);
-                } else {
-                    setPdfExists(false);
-                }
-            })
-            .catch(() => {
-                setPdfExists(false);
-            });
-    }, [path, pdfUrl]);
 
     // Only when another lesson is opened: after an upload the new file stays selected.
     useEffect(() => {
@@ -212,7 +179,8 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                     <h1 className="homework-view__title">
                         {selectedLesson.title || 'Урок без названия'}
                         {selectedLesson.cancelled && <span className="schedule__cancelled-badge">урок отменён</span>}
-                        {changeLabel(selectedLesson) && <span className="schedule__changed-badge">{changeLabel(selectedLesson)}</span>}
+                        {changeLabel(selectedLesson) &&
+                            <span className="schedule__changed-badge">{changeLabel(selectedLesson)}</span>}
                     </h1>
                     <p className="homework-view__description">
                         {selectedLesson.date && `${formatLessonDate(selectedLesson.date)} · `}
@@ -227,7 +195,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
 
                     {canAttachFiles && (
                         <div className="homework-view__actions">
-                            <HomeworkTextEditor lesson={selectedLesson} onLessonUpdated={onLessonUpdated} />
+                            <HomeworkTextEditor lesson={selectedLesson} onLessonUpdated={onLessonUpdated}/>
                             <FileDropDialog
                                 open={isFileDialogOpen}
                                 title="Добавить файлы к ДЗ"
@@ -255,7 +223,8 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                                 </button>
                             )}
                             {homework && isConfirmingDelete && (
-                                <span className="homework-view__confirm" role="group" aria-label="Подтверждение удаления">
+                                <span className="homework-view__confirm" role="group"
+                                      aria-label="Подтверждение удаления">
                                     Удалить ДЗ вместе со всеми файлами (и у второго урока, если урок сдвоенный)?
                                     <button
                                         className="homework-view__delete"
@@ -282,7 +251,7 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
                     )}
 
                     {hasAdminRole(user) && (
-                        <LessonAdminControls lesson={selectedLesson} onLessonUpdated={onLessonUpdated} />
+                        <LessonAdminControls lesson={selectedLesson} onLessonUpdated={onLessonUpdated}/>
                     )}
 
                     {homework && homework.files.length > 0 && (
@@ -335,43 +304,12 @@ const MainContent: React.FC<MainContentProps> = ({selectedLesson, onCloseLesson,
         );
     }
 
-    if (fileName === '') {
-        return (
-            <main className="main-content">
-                <h1>Основная область</h1>
-                <p>
-                    Здесь может находиться любой контент: дашборд, задачи, заметки и т.д.
-                </p>
-            </main>
-        );
-    }
-
-    if (pdfExists === null) {
-        return (
-            <main className="main-content">
-                <p>Загрузка документа...</p>
-            </main>
-        );
-    }
-
-    if (!pdfExists) {
-        return (
-            <main className="main-content">
-                <h1>Ошибка</h1>
-                <p>
-                    Документ "{fileName}" не найден.
-                </p>
-            </main>
-        );
-    }
-
     return (
-        <main className="main-content main-content--pdf">
-            <iframe
-                src={pdfUrl}
-                title={fileName ?? 'PDF document'}
-                className="pdf-viewer"
-            />
+        <main className="main-content">
+            <h1>Основная область</h1>
+            <p>
+                Здесь может находиться любой контент: дашборд, задачи, заметки и т.д.
+            </p>
         </main>
     );
 };

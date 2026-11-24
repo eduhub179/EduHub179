@@ -28,7 +28,7 @@ import {
 } from '../../api';
 import {errorText, formatDay, isoDate, staffOnly} from './common';
 import ScheduleClassSelector from '../Schedule/ScheduleClassSelector';
-import '../../css/FullSchedule.css';
+import '../../css/pages/FullSchedule.css';
 import FullScheduleTable from '../Schedule/ScheduleTable';
 import type {DaySchedule, ScheduleItem} from '../../types/ScheduleTypes';
 

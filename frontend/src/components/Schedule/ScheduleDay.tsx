@@ -1,6 +1,6 @@
 import React from 'react';
 import type {DaySchedule} from '../../types/ScheduleTypes.ts';
-import '../../css/ScheduleTable.css';
+import '../../css/components/Schedule/ScheduleTable.css';
 
 interface ScheduleDayProps {
     day: DaySchedule;

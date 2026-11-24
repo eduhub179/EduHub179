@@ -6,8 +6,8 @@ import Header from '../components/Header';
 import AuthPanel from '../components/Auth/AuthPanel';
 import RegisterForm from '../components/Register/RegisterForm';
 import '../css/index.css';
-import '../css/RegisterPage.css';
-import '../css/AuthPage.css';
+import '../css/pages/RegisterPage.css';
+import '../css/pages/AuthPage.css';
 
 const RegisterPage: React.FC = () => {
     const { completeFirstLogin } = useAuth();

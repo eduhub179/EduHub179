@@ -1,6 +1,6 @@
 import React from 'react';
 import {changeLabel, type ScheduleItem} from '../../types/ScheduleTypes';
-import '../../css/DayLessonList.css';
+import '../../css/components/Schedule/DayLessonList.css';
 
 interface DayLessonListProps {
     lessons: ScheduleItem[];

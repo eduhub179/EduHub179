@@ -22,7 +22,7 @@ import {
 import {useAuth} from '../auth/AuthProvider';
 import FileDropDialog from '../components/FileDropDialog';
 import Header from '../components/Header';
-import '../css/CourseMaterialsPage.css';
+import '../css/pages/CourseMaterialsPage.css';
 import {errorText} from '../api/errors';
 
 /** Sidebar entry: all materials, those without a topic, or a topic id. */

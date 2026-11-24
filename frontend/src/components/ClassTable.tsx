@@ -1,5 +1,5 @@
 import React from 'react';
-import '../css/ClassTable.css';
+import '../css/components/ClassTable.css';
 
 export interface ClassOption {
     grade: number;

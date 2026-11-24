@@ -8,7 +8,7 @@ import LessonsTab from '../components/Admin/LessonsTab';
 import TimetableTab from '../components/Admin/TimetableTab';
 import UsersTab from '../components/Admin/UsersTab';
 import WeeksTab from '../components/Admin/WeeksTab';
-import '../css/AdminPage.css';
+import '../css/pages/AdminPage.css';
 
 const tabs = [
     {path: 'lessons', title: 'Замены и отмены'},
