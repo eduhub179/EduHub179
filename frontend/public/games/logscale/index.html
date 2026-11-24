@@ -1,0 +1,858 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Порядок величин</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one centered instrument panel — question on top, the log ruler in the middle, the readout below */
+:root{
+  --bg:#e9edf1; --panel:#f8fafb; --ink:#17202a; --muted:#5d6b78; --rule:#c4ccd4;
+  --accent:#d9861c; --accent-soft:rgba(217,134,28,.22);
+  --hit:#2f8a57; --miss:#c4413b; --truth:#2d5fb3;
+  --f-display:"Unbounded","Onest",system-ui,sans-serif;
+  --f-body:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12171d; --panel:#1b222a; --ink:#e6ebf0; --muted:#93a1ae; --rule:#34404c;
+  --accent:#f0a23d; --accent-soft:rgba(240,162,61,.22);
+  --hit:#4cc07f; --miss:#ef6a62; --truth:#6f9cf0; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171d; --panel:#1b222a; --ink:#e6ebf0; --muted:#93a1ae; --rule:#34404c;
+  --accent:#f0a23d; --accent-soft:rgba(240,162,61,.22);
+  --hit:#4cc07f; --miss:#ef6a62; --truth:#6f9cf0; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;
+  padding-block:24px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(22px,4vw,30px);margin:0;letter-spacing:-.01em}
+h1 small{display:block;font-family:var(--f-body);font-weight:400;font-size:14px;color:var(--muted);letter-spacing:0;margin-top:4px}
+.stats{display:flex;gap:18px;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.stat{display:flex;flex-direction:column;align-items:flex-end}
+.stat span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-family:var(--f-body)}
+.stat b{font-size:22px;font-weight:600}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:22px clamp(16px,3vw,28px);display:flex;flex-direction:column;gap:18px}
+.q-meta{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.q{font-family:var(--f-display);font-weight:500;font-size:clamp(18px,3vw,24px);line-height:1.3;margin:0;text-wrap:balance}
+.unit{color:var(--muted);font-size:14px}
+.unit b{color:var(--ink);font-weight:600}
+
+.ruler-box{overflow:hidden;padding-top:4px}
+.ruler{position:relative;height:96px;touch-action:none;user-select:none;cursor:crosshair;margin:0 14px}
+.track{position:absolute;left:0;right:0;top:34px;height:30px;border-top:2px solid var(--ink)}
+.tick{position:absolute;top:34px;width:1px;background:var(--ink)}
+.tick.major{height:16px;width:2px;margin-left:-1px}
+.tick.minor{height:7px;opacity:.55}
+.tlabel{position:absolute;top:54px;transform:translateX(-50%);font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.sel{position:absolute;top:6px;height:28px;background:var(--accent-soft);border:2px solid var(--accent);border-bottom:0;border-radius:6px 6px 0 0}
+.handle{position:absolute;top:0;width:22px;height:40px;margin-left:-11px;cursor:ew-resize;display:flex;justify-content:center;outline:none}
+.handle::before{content:"";width:6px;height:100%;border-radius:3px;background:var(--accent)}
+.handle:focus-visible::before{box-shadow:0 0 0 3px var(--accent-soft),0 0 0 5px var(--accent)}
+.truth{position:absolute;top:-2px;height:72px;width:3px;margin-left:-1.5px;background:var(--truth);border-radius:2px}
+.truth::after{content:"";position:absolute;top:-6px;left:-5px;width:13px;height:13px;border-radius:50%;background:var(--truth)}
+.hint{font-size:13px;color:var(--muted);margin:0}
+
+.readout{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.field input{font-family:var(--f-mono);font-size:17px;padding:9px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--ink);width:100%;min-width:0}
+.field input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.field .pretty{font-size:12px;color:var(--muted);font-family:var(--f-mono);min-height:18px}
+.potential{font-family:var(--f-mono);font-size:13px;color:var(--muted);text-align:right;padding-bottom:22px;white-space:nowrap}
+.potential b{color:var(--accent);font-size:18px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button{font-family:var(--f-body);font-weight:600;font-size:15px;border-radius:10px;padding:11px 20px;cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:var(--panel)}
+button.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.result{border-radius:10px;padding:14px 16px;border:1px solid var(--rule);display:flex;flex-direction:column;gap:6px}
+.result.hit{border-color:var(--hit)} .result.miss{border-color:var(--miss)}
+.result .big{font-family:var(--f-display);font-size:20px;font-weight:700}
+.result.hit .big{color:var(--hit)} .result.miss .big{color:var(--miss)}
+.result .ans{font-family:var(--f-mono);font-size:15px}
+.result .ans b{color:var(--truth)}
+.result .note{font-size:14px;color:var(--muted)}
+.rules{font-size:14px;color:var(--muted);margin:0;max-width:68ch}
+.rules b{color:var(--ink);font-weight:600}
+.final{text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center}
+.final .score{font-family:var(--f-display);font-size:56px;font-weight:700;line-height:1}
+.history{width:100%;border-collapse:collapse;font-size:14px;text-align:left}
+.history td,.history th{padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+.history th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+.history .p{font-family:var(--f-mono);text-align:right;white-space:nowrap}
+.pos{color:var(--hit)} .neg{color:var(--miss)}
+.tbl{overflow-x:auto;width:100%}
+@media (max-width:560px){
+  .readout{grid-template-columns:1fr 1fr}
+  .potential{grid-column:1/-1;text-align:left;padding-bottom:0}
+  .tlabel{font-size:10px}
+}
+@media (prefers-reduced-motion:no-preference){.sel,.truth{transition:opacity .2s}}
+</style>
+
+<style>
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.mode{all:unset;box-sizing:border-box;cursor:pointer;border:1px solid var(--rule);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:6px;background:var(--bg);color:var(--ink)}
+.mode:hover{border-color:var(--accent)}
+.mode:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mode h3{margin:0;font-family:var(--f-display);font-size:17px;font-weight:500}
+.mode p{margin:0;font-size:14px;color:var(--muted)}
+.mode .tag{font-family:var(--f-mono);font-size:12px;color:var(--accent)}
+.players{display:flex;flex-direction:column;gap:8px}
+.prow{display:flex;gap:8px}
+.prow input{flex:1;min-width:0;font-family:var(--f-body);font-size:16px;padding:9px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--ink)}
+.prow button{padding:9px 14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row label{font-size:14px;color:var(--muted)}
+select{font-family:var(--f-body);font-size:15px;padding:8px;border-radius:8px;border:1px solid var(--rule);background:var(--bg);color:var(--ink)}
+.prev{position:absolute;top:6px;height:28px;border:2px dashed var(--muted);border-bottom:0;border-radius:6px 6px 0 0;opacity:.7}
+.turn{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:10px;background:var(--accent-soft)}
+.turn b{font-family:var(--f-display);font-weight:500}
+.turn span{font-size:14px;color:var(--muted)}
+.mini{font-family:var(--f-mono);font-size:13px;color:var(--muted)}
+.copyok{font-size:13px;color:var(--hit)}
+#oLobby{display:flex;flex-direction:column;gap:14px}
+.lobby-code{font-family:var(--f-display);font-weight:700;font-size:44px;letter-spacing:.12em;line-height:1}
+.olist{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.olist li{display:flex;gap:10px;align-items:center;padding:8px 12px;border:1px solid var(--rule);border-radius:8px;background:var(--bg)}
+.olist .dot{width:9px;height:9px;border-radius:50%;background:var(--hit);flex:none}
+.olist .off .dot{background:var(--rule)}
+.olist .who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.olist .role{font-size:12px;color:var(--muted)}
+.oform{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.oform .box{border:1px solid var(--rule);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;background:var(--bg)}
+.oform h3{margin:0;font-family:var(--f-display);font-size:16px;font-weight:500}
+.oinput{font-family:var(--f-body);font-size:16px;padding:9px 10px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink);min-width:0}
+.oinput.code{font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.15em}
+.oerr{color:var(--miss);font-size:14px;min-height:0;margin:0}
+.oerr:empty{display:none}
+.wait{font-size:14px;color:var(--muted)}
+@media (max-width:560px){.oform{grid-template-columns:1fr}}
+textarea.share{width:100%;font-family:var(--f-mono);font-size:13px;padding:8px;border-radius:8px;border:1px solid var(--rule);background:var(--bg);color:var(--ink);resize:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Порядок величин<small>Угадайте, где на логарифмической шкале лежит ответ</small></h1>
+    <div class="stats" id="stats" hidden>
+      <div class="stat"><span id="modeLbl">Режим</span><b id="round">1/10</b></div>
+      <div class="stat" id="scoreStat"><span>Очки</span><b id="score">0</b></div>
+      <div class="stat" id="bestStat"><span>Рекорд</span><b id="best">—</b></div>
+    </div>
+  </header>
+
+  <section class="panel" id="menu">
+    <div class="modes">
+      <button class="mode" id="mClassic"><span class="tag">10 вопросов</span><h3>Обычная игра</h3><p>Случайные вопросы из банка, рекорд сохраняется.</p></button>
+      <button class="mode" id="mDaily"><span class="tag" id="dailyTag">5 вопросов · сегодня</span><h3>Вопросы дня</h3><p>Одни и те же вопросы и шкалы у всех на сегодняшнюю дату. Результатом можно поделиться.</p></button>
+      <button class="mode" id="mParty"><span class="tag">2–8 игроков</span><h3>Пати</h3><p>Все по очереди отвечают на один вопрос. Каждый следующий выбирает отрезок внутри отрезка предыдущего.</p></button>
+      <button class="mode" id="mOnline"><span class="tag">2–8 устройств</span><h3>Онлайн-пати</h3><p>То же пати, но каждый со своего телефона или компьютера: вход в комнату по коду.</p></button>
+    </div>
+    <p class="rules"><b>Правила.</b> Попали в отрезок: до 100 очков, и чем уже отрезок, тем больше. Каждый порядок ширины (×10) делит награду пополам: отрезок «от 1 до 10» даёт 50, «от 1 до 100» даёт 25. Промахнулись: <b>−30</b>, какой бы ширины ни был отрезок.</p>
+  </section>
+
+  <section class="panel" id="setup" hidden>
+    <div class="q-meta">Пати · игроки</div>
+    <div class="players" id="plist"></div>
+    <div class="row">
+      <button class="ghost" id="addP">Добавить игрока</button>
+      <label for="pRounds">Вопросов:</label>
+      <select id="pRounds"><option>3</option><option selected>5</option><option>7</option><option>10</option></select>
+    </div>
+    <p class="rules">Первый игрок выбирает любой отрезок. Каждый следующий выбирает отрезок, вложенный в отрезок предыдущего (можно оставить тот же). Чем уже, тем больше очков, но тем выше риск промахнуться. Первым на каждом вопросе ходит следующий по кругу игрок.</p>
+    <div class="actions"><button id="pStart">Начать</button><button class="ghost" id="pBack">Назад</button></div>
+  </section>
+
+  <section class="panel" id="online" hidden>
+    <div class="q-meta">Онлайн-пати</div>
+    <div id="oJoin">
+      <div class="field" style="max-width:320px;margin-bottom:14px"><label for="oName">Ваше имя</label><input class="oinput" id="oName" maxlength="20" autocomplete="nickname"></div>
+      <div class="oform">
+        <div class="box">
+          <h3>Создать комнату</h3>
+          <div class="row"><label for="oRounds">Вопросов:</label><select id="oRounds"><option>3</option><option selected>5</option><option>7</option><option>10</option></select></div>
+          <div class="actions"><button id="oCreate">Создать</button></div>
+        </div>
+        <div class="box">
+          <h3>Войти по коду</h3>
+          <input class="oinput code" id="oCode" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" aria-label="Код комнаты">
+          <div class="actions"><button id="oEnter">Войти</button></div>
+        </div>
+      </div>
+    </div>
+    <div id="oLobby" hidden>
+      <div class="row" style="align-items:flex-end;justify-content:space-between">
+        <div><div class="q-meta">Код комнаты</div><div class="lobby-code" id="oShowCode">—</div></div>
+        <div class="row"><button class="ghost" id="oCopyLink">Скопировать ссылку</button><span class="copyok" id="oLinkOk"></span></div>
+      </div>
+      <ul class="olist" id="oPlayers"></ul>
+      <div class="row" id="oHostRow"><label for="oRounds2">Вопросов:</label><select id="oRounds2"><option>3</option><option>5</option><option>7</option><option>10</option></select></div>
+      <p class="wait" id="oWait"></p>
+    </div>
+    <p class="oerr" id="oErr"></p>
+    <p class="rules">Первый игрок выбирает любой отрезок, каждый следующий выбирает отрезок внутри отрезка предыдущего. Ходят по очереди, на каждом вопросе первым ходит следующий по кругу. Ответ откроется, когда походят все.</p>
+    <div class="actions"><button id="oStart" hidden>Начать игру</button><button class="ghost" id="oBack">Назад</button></div>
+  </section>
+
+  <section class="panel" id="game" hidden>
+    <div>
+      <div class="q-meta" id="qmeta">Вопрос</div>
+      <p class="q" id="question"></p>
+      <div class="unit">Единица измерения: <b id="unit"></b></div>
+    </div>
+    <div class="turn" id="turn" hidden></div>
+    <div class="ruler-box">
+      <div class="ruler" id="ruler" aria-label="Логарифмическая шкала">
+        <div class="track"></div>
+        <div id="ticks"></div>
+        <div class="prev" id="ghost" hidden></div>
+        <div class="sel" id="sel"></div>
+        <div id="pmarks"></div>
+        <div class="truth" id="truth" hidden></div>
+        <div class="handle" id="hA" tabindex="0" role="slider" aria-label="Нижняя граница"></div>
+        <div class="handle" id="hB" tabindex="0" role="slider" aria-label="Верхняя граница"></div>
+      </div>
+    </div>
+    <p class="hint" id="hint">Проведите по шкале, чтобы выделить отрезок, или тяните за оранжевые ручки. Стрелки на клавиатуре двигают выбранную ручку. Можно ввести числа вручную и нажать Enter, например «2,5 млн» или «6×10^23».</p>
+    <div class="readout">
+      <div class="field"><label for="inA">От</label><input id="inA" inputmode="decimal" autocomplete="off"><div class="pretty" id="prA"></div></div>
+      <div class="field"><label for="inB">До</label><input id="inB" inputmode="decimal" autocomplete="off"><div class="pretty" id="prB"></div></div>
+      <div class="potential">ширина <span id="width">—</span><br>при попадании <b id="pot">+0</b></div>
+    </div>
+    <div id="resultBox"></div>
+    <div class="actions">
+      <button id="submit">Ответить</button>
+      <button id="next" hidden>Следующий вопрос</button>
+      <button class="ghost" id="skip" hidden>Пропустить ход</button>
+      <button class="ghost" id="quit">В меню</button>
+    </div>
+  </section>
+
+  <section class="panel final" id="final" hidden>
+    <div class="q-meta" id="finalMeta">Итог игры</div>
+    <div class="score" id="finalScore">0</div>
+    <div id="finalNote" class="unit"></div>
+    <div id="shareBox" hidden style="width:100%;display:flex;flex-direction:column;gap:8px;align-items:center">
+      <textarea class="share" id="shareText" rows="2" readonly></textarea>
+      <div class="row"><button class="ghost" id="copy">Скопировать результат</button><span class="copyok" id="copyok"></span></div>
+    </div>
+    <div class="tbl"><table class="history"><thead id="histHead"></thead><tbody id="hist"></tbody></table></div>
+    <div class="actions"><button id="again">Сыграть ещё</button><button class="ghost" id="toMenu">В меню</button></div>
+  </section>
+</div>
+
+<script>
+const BANK = [
+  {q:"Какова общая длина государственной границы России (суша и море)?", u:"км", a:60932, r:[2,6], n:"Около 60 900 км, из них примерно 38 800 км приходится на морскую границу."},
+  {q:"Какова высота Эвереста над уровнем моря?", u:"м", a:8849, r:[2,5], n:"8848,86 м по совместному измерению Китая и Непала 2020 года."},
+  {q:"Каково среднее расстояние от Земли до Луны?", u:"км", a:384400, r:[3,7], n:"Свет проходит его чуть больше чем за секунду."},
+  {q:"Сколько людей живёт на Земле (2024 год)?", u:"человек", a:8.1e9, r:[7,11], n:"Оценка ООН на 2024 год: около 8,1 млрд."},
+  {q:"Сколько людей живёт в Москве?", u:"человек", a:13.1e6, r:[5,8], n:"По данным Росстата на 2024 год, около 13,1 млн."},
+  {q:"Какова глубина Марианской впадины (Бездна Челленджера)?", u:"м", a:10935, r:[2,5], n:"Около 10 900–11 000 м, оценки разных экспедиций немного расходятся."},
+  {q:"Какова скорость света в вакууме?", u:"км/с", a:299792, r:[3,7], n:"Ровно 299 792 458 м/с, это значение закреплено в определении метра."},
+  {q:"Какова площадь России?", u:"км²", a:17098246, r:[5,9], n:"Около 17,1 млн км², это примерно 11% суши Земли."},
+  {q:"Какова длина Волги?", u:"км", a:3530, r:[2,5], n:"Самая длинная река Европы."},
+  {q:"Каков возраст Вселенной?", u:"лет", a:13.8e9, r:[6,12], n:"Около 13,8 млрд лет по данным спутника «Планк»."},
+  {q:"Сколько костей в скелете взрослого человека?", u:"штук", a:206, r:[1,4], n:"У новорождённого их около 300, многие потом срастаются."},
+  {q:"Какова температура видимой поверхности Солнца?", u:"кельвинов", a:5772, r:[2,6], n:"Эффективная температура фотосферы — 5772 K, около 5500 °C."},
+  {q:"Какова максимальная глубина Байкала?", u:"м", a:1642, r:[1,4], n:"Самое глубокое озеро на Земле."},
+  {q:"Каково среднее расстояние от Земли до Солнца?", u:"км", a:149.6e6, r:[6,10], n:"Это одна астрономическая единица, около 149,6 млн км."},
+  {q:"Какова высота Эйфелевой башни вместе с антеннами?", u:"м", a:330, r:[1,4], n:"Около 330 м после установки новой антенны в 2022 году."},
+  {q:"Сколько государств входят в ООН?", u:"стран", a:193, r:[1,3], n:"Последним в 2011 году стал Южный Судан."},
+  {q:"Какова длина экватора Земли?", u:"км", a:40075, r:[3,6], n:"Около 40 075 км."},
+  {q:"Какова длина Транссибирской магистрали от Москвы до Владивостока?", u:"км", a:9289, r:[2,5], n:"Самая длинная железная дорога в мире."},
+  {q:"Какова скорость звука в воздухе при 20 °C?", u:"м/с", a:343, r:[1,4], n:"Около 1235 км/ч."},
+  {q:"Сколько нейронов в мозге человека?", u:"штук", a:86e9, r:[7,13], n:"Около 86 млрд по оценке 2009 года."},
+  {q:"Сколько секунд в обычном (невисокосном) году?", u:"секунд", a:31536000, r:[5,9], n:"365 × 24 × 3600 = 31 536 000."},
+  {q:"Каков экваториальный диаметр Юпитера?", u:"км", a:142984, r:[3,7], n:"Примерно в 11 раз больше диаметра Земли."},
+  {q:"Какова масса Земли?", u:"кг", a:5.972e24, r:[18,30], n:"Около 5,97 × 10²⁴ кг."},
+  {q:"Какова высота Останкинской телебашни?", u:"м", a:540, r:[1,4], n:"Самое высокое сооружение Европы до 2018 года."},
+  {q:"Каков объём воды в Байкале?", u:"км³", a:23615, r:[2,6], n:"Около 20% всей пресной поверхностной воды планеты."},
+  {q:"Сколько островов входит в состав Японии?", u:"островов", a:14125, r:[2,5], n:"Пересчёт 2023 года по новым картам дал 14 125 вместо прежних 6852."},
+  {q:"Каково расстояние до ближайшей к Солнцу звезды, Проксимы Центавра?", u:"световых лет", a:4.24, r:[-1,4], n:"Около 4,24 светового года, это примерно 40 трлн км."},
+  {q:"Какова общая длина всех участков Великой Китайской стены?", u:"км", a:21196, r:[2,5], n:"21 196 км по замеру Госуправления культурного наследия КНР 2012 года."},
+  {q:"С какой скоростью МКС летит по орбите?", u:"км/с", a:7.66, r:[-1,3], n:"Около 27 600 км/ч, виток вокруг Земли занимает около 92 минут."},
+  {q:"Сколько зубов у взрослого человека (с зубами мудрости)?", u:"зубов", a:32, r:[0,2], n:"У ребёнка молочных зубов 20."},
+  {q:"Какова длина Нила?", u:"км", a:6650, r:[2,5], n:"Около 6650 км; Нил и Амазонка спорят за звание самой длинной реки."},
+  {q:"Какова масса Международной космической станции?", u:"кг", a:420000, r:[3,8], n:"Около 420 тонн."},
+  {q:"Какова глубина Кольской сверхглубокой скважины?", u:"м", a:12262, r:[2,5], n:"12 262 м, рекорд 1989 года."},
+  {q:"Сколько людей живёт в Ватикане?", u:"человек", a:800, r:[1,5], n:"Около 800 человек, самое маленькое государство мира."},
+  {q:"За сколько секунд свет от Солнца доходит до Земли?", u:"секунд", a:499, r:[0,4], n:"Около 8 минут 19 секунд."},
+  {q:"Каков диаметр атома водорода?", u:"м", a:1.06e-10, r:[-15,-6], n:"Около 0,1 нанометра: удвоенный боровский радиус."},
+  {q:"Чему равно число Авогадро (частиц в одном моле)?", u:"штук", a:6.022e23, r:[15,30], n:"6,022 × 10²³."},
+  {q:"Какова площадь Москвы?", u:"км²", a:2561, r:[2,5], n:"Около 2561 км² вместе с Новой Москвой."},
+  {q:"Сколько людей живёт в Санкт-Петербурге?", u:"человек", a:5.6e6, r:[5,8], n:"Около 5,6 млн по данным Росстата на 2024 год."},
+  {q:"Какова длина молекул ДНК в одной клетке человека, если их вытянуть в нить?", u:"м", a:2, r:[-6,3], n:"Около 2 метров в ядре размером в несколько микрометров."},
+  {q:"Какова масса Солнца?", u:"кг", a:1.989e30, r:[24,36], n:"Около 2 × 10³⁰ кг, в 333 000 раз тяжелее Земли."},
+  {q:"Сколько клеток в теле взрослого человека?", u:"штук", a:3e13, r:[9,16], n:"Около 30 трлн по оценке 2016 года, бактерий в теле примерно столько же."},
+  {q:"Какова толщина человеческого волоса?", u:"мм", a:0.07, r:[-3,1], n:"Обычно от 0,02 до 0,18 мм, в среднем около 0,07 мм."},
+  {q:"Какова высота небоскрёба Бурдж-Халифа?", u:"м", a:828, r:[2,4], n:"Самое высокое здание в мире с 2010 года."},
+  {q:"Какова высота Эльбруса?", u:"м", a:5642, r:[2,5], n:"Высочайшая вершина России и Европы."},
+  {q:"Какова длина реки Лены?", u:"км", a:4400, r:[2,5], n:"Около 4400 км, одна из длиннейших рек мира."},
+  {q:"Какова площадь Франции (без заморских территорий)?", u:"км²", a:551695, r:[4,7], n:"Около 551 700 км², это примерно 1/31 площади России."},
+  {q:"Сколько людей живёт в Китае?", u:"человек", a:1.41e9, r:[7,11], n:"Около 1,41 млрд; в 2023 году Индия обогнала Китай по населению."},
+  {q:"Сколько людей живёт в Исландии?", u:"человек", a:390000, r:[3,7], n:"Около 390 тысяч, меньше, чем в Ижевске."},
+  {q:"Сколько часовых поясов в России?", u:"поясов", a:11, r:[0,2], n:"От UTC+2 в Калининграде до UTC+12 на Камчатке."},
+  {q:"Сколько клавиш у стандартного пианино?", u:"клавиш", a:88, r:[1,3], n:"52 белых и 36 чёрных."},
+  {q:"Сколько букв в русском алфавите?", u:"букв", a:33, r:[0,2], n:"33, включая «ё»."},
+  {q:"Сколько химических элементов в таблице Менделеева (открытых на сегодня)?", u:"элементов", a:118, r:[1,3], n:"Последним, в 2016 году, получил название оганесон, элемент 118."},
+  {q:"Какова высота водопада Анхель, самого высокого в мире?", u:"м", a:979, r:[1,4], n:"979 м, Венесуэла."},
+  {q:"Какова максимальная глубина Каспийского моря?", u:"м", a:1025, r:[1,4], n:"Около 1025 м в южной части."},
+  {q:"Какова площадь Каспийского моря?", u:"км²", a:371000, r:[4,7], n:"Около 371 000 км², крупнейшее озеро мира."},
+  {q:"Какова начальная скорость пули автомата АК-74?", u:"м/с", a:900, r:[1,4], n:"Около 900 м/с, в 2,6 раза быстрее звука."},
+  {q:"Сколько весит мозг взрослого человека?", u:"г", a:1400, r:[1,5], n:"В среднем 1300–1400 г, около 2% массы тела."},
+  {q:"Сколько крови в теле взрослого человека?", u:"литров", a:5, r:[-1,3], n:"Около 5 литров, примерно 7% массы тела."},
+  {q:"Сколько волос на голове у человека?", u:"волос", a:100000, r:[3,7], n:"В среднем около 100 тысяч, у блондинов больше."},
+  {q:"С какой скоростью Земля летит по орбите вокруг Солнца?", u:"км/с", a:29.8, r:[0,4], n:"Около 30 км/с, это 107 000 км/ч."},
+  {q:"Сколько лет назад вымерли нептичьи динозавры?", u:"лет", a:66e6, r:[5,9], n:"Около 66 млн лет назад, после падения астероида у Юкатана."},
+  {q:"Каков возраст Земли?", u:"лет", a:4.54e9, r:[7,11], n:"Около 4,54 млрд лет по датировке метеоритов."},
+  {q:"Какова температура в центре Солнца?", u:"кельвинов", a:1.57e7, r:[4,9], n:"Около 15,7 млн K."},
+  {q:"Сколько секунд в сутках?", u:"секунд", a:86400, r:[3,6], n:"24 × 60 × 60 = 86 400."},
+  {q:"Сколько людей живёт в Новосибирске?", u:"человек", a:1.63e6, r:[5,8], n:"Около 1,63 млн, третий город России."},
+  {q:"Какова длина МКАД?", u:"км", a:108.9, r:[1,4], n:"108,9 км."},
+  {q:"Какова высота статуи Свободы вместе с пьедесталом?", u:"м", a:93, r:[1,4], n:"Около 93 м, сама статуя около 46 м."},
+  {q:"Какова средняя глубина Мирового океана?", u:"м", a:3700, r:[2,5], n:"Около 3700 м."},
+  {q:"Какова площадь Тихого океана?", u:"км²", a:1.65e8, r:[6,10], n:"Около 165 млн км², больше всей суши Земли."},
+  {q:"Сколько человек ходили по Луне?", u:"человек", a:12, r:[0,3], n:"12 астронавтов программы «Аполлон», с 1969 по 1972 год."},
+  {q:"Сколько языков существует в мире?", u:"языков", a:7000, r:[2,5], n:"Около 7000 живых языков по данным Ethnologue."},
+  {q:"Сколько пар нуклеотидов в геноме человека?", u:"пар", a:3.1e9, r:[6,11], n:"Около 3,1 млрд пар в одинарном наборе хромосом."},
+  {q:"Сколько генов, кодирующих белки, у человека?", u:"генов", a:20000, r:[3,6], n:"Около 20 тысяч, примерно как у червя нематоды."},
+  {q:"Какова длина волны красного света?", u:"м", a:7e-7, r:[-10,-3], n:"Около 700 нм, то есть 7 × 10⁻⁷ м."},
+  {q:"Каков размер вируса гриппа?", u:"м", a:1e-7, r:[-11,-4], n:"Около 100 нм."},
+  {q:"Каков диаметр эритроцита?", u:"м", a:7.5e-6, r:[-9,-3], n:"Около 7,5 мкм."},
+  {q:"Каково расстояние от Солнца до центра нашей Галактики?", u:"световых лет", a:26000, r:[2,6], n:"Около 26 000 световых лет."},
+  {q:"Каково расстояние до галактики Андромеды?", u:"световых лет", a:2.5e6, r:[4,8], n:"Около 2,5 млн световых лет, самый далёкий объект, видимый глазом."},
+  {q:"Какова плотность золота?", u:"г/см³", a:19.3, r:[-1,3], n:"19,3 г/см³, почти в 20 раз плотнее воды."},
+  {q:"При какой температуре плавится железо?", u:"°C", a:1538, r:[2,5], n:"1538 °C."},
+  {q:"На какой высоте летает МКС?", u:"км", a:420, r:[1,4], n:"Около 420 км, высота медленно падает и её поднимают двигателями."},
+  {q:"Каково расстояние от Москвы до Санкт-Петербурга по прямой?", u:"км", a:635, r:[1,4], n:"Около 635 км; по трассе М-11 около 700 км."},
+  {q:"Каково расстояние от Москвы до Владивостока по прямой?", u:"км", a:6430, r:[2,5], n:"Около 6430 км; по Транссибу 9289 км."},
+  {q:"Сколько людей жило на Земле в 1900 году?", u:"человек", a:1.6e9, r:[7,11], n:"Около 1,6 млрд, в пять раз меньше, чем сейчас."},
+  {q:"Какова площадь футбольного поля стандарта ФИФА (105 × 68 м)?", u:"м²", a:7140, r:[2,5], n:"7140 м², около 0,7 гектара."},
+  {q:"Сколько зрителей вмещает стадион «Лужники»?", u:"мест", a:81000, r:[3,6], n:"Около 81 000 мест."},
+  {q:"Какова высота «Лахта-центра» в Санкт-Петербурге?", u:"м", a:462, r:[1,4], n:"462 м, самый высокий небоскрёб Европы."},
+  {q:"Сколько кадров в секунду в классическом кино?", u:"кадров/с", a:24, r:[0,3], n:"24 кадра в секунду, стандарт с конца 1920-х."},
+  {q:"Сколько литров воды в олимпийском бассейне (50 × 25 × 2 м)?", u:"литров", a:2.5e6, r:[4,8], n:"2,5 млн литров."},
+  {q:"Сколько весит взрослый самец африканского слона?", u:"кг", a:6000, r:[2,5], n:"Обычно около 6 тонн, самый тяжёлый наземный зверь."},
+  {q:"Какая максимальная скорость у «Сапсана» на линии Москва — Петербург?", u:"км/ч", a:250, r:[1,4], n:"До 250 км/ч на отдельных участках."},
+  {q:"Какова длина реки Амур?", u:"км", a:2824, r:[2,5], n:"2824 км от слияния Шилки и Аргуни."},
+];
+
+const MISS=-30, DAILY_N=5;
+const $=id=>document.getElementById(id);
+const show=(id,on)=>{$(id).hidden=!on};
+
+/* ---------- helpers ---------- */
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function hashStr(s){let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+function shuffle(a,r){for(let i=a.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+const SUP={"-":"⁻","0":"⁰","1":"¹","2":"²","3":"³","4":"⁴","5":"⁵","6":"⁶","7":"⁷","8":"⁸","9":"⁹"};
+const sup=n=>String(n).split("").map(c=>SUP[c]).join("");
+const sig=(x,d)=>Number(x.toPrecision(d));
+const num=(x,d=3)=>sig(x,d).toLocaleString("ru-RU",{maximumFractionDigits:12});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function pretty(x){
+  if(!isFinite(x)||x<=0) return "—";
+  const e=Math.floor(Math.log10(x));
+  if(e>=15||e<=-3) return num(x/Math.pow(10,e),3)+" × 10"+sup(e);
+  if(e>=12) return num(x/1e12)+" трлн";
+  if(e>=9) return num(x/1e9)+" млрд";
+  if(e>=6) return num(x/1e6)+" млн";
+  return num(x,4);
+}
+function prettyAns(x){
+  if(x>=1&&x<1e6&&Number.isInteger(x)) return x.toLocaleString("ru-RU");
+  const e=Math.floor(Math.log10(x));
+  if(e>=6&&e<15){const d=Number.isInteger(x/Math.pow(10,e-4))?5:4;const [q,w]=e>=12?[1e12," трлн"]:e>=9?[1e9," млрд"]:[1e6," млн"];return num(x/q,d)+w}
+  return pretty(x);
+}
+function tickLabel(e){
+  if(e>=0&&e<=4) return Math.pow(10,e).toLocaleString("ru-RU");
+  if(e===6) return "1 млн"; if(e===9) return "1 млрд"; if(e===12) return "1 трлн";
+  if(e===-1) return "0,1"; if(e===-2) return "0,01";
+  return "10"+sup(e);
+}
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const points=(a,b)=>Math.max(1,Math.round(100*Math.pow(2,-Math.log10(b/a))));
+function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k));localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+function todayKey(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function todayRu(){return new Date().toLocaleDateString("ru-RU",{day:"numeric",month:"long"})}
+
+/* ---------- state ---------- */
+// G: mode, deck (each item: question + scale lo), idx, players[{name,score}], picks (party, current question), history
+let G=null, cur=null, lo=0, hi=8, tA=.3, tB=.6, answered=false;
+let limA=null, limB=null; // nested-interval constraint as values (party)
+let turnPos=0;            // index in order for current question
+let waiting=false;        // online: not your turn, ruler is read-only
+const locked=()=>answered||waiting;
+
+const v=t=>Math.pow(10,lo+t*(hi-lo));
+const t=x=>(Math.log10(x)-lo)/(hi-lo);
+
+function makeDeck(n,r){
+  return shuffle(BANK.slice(),r).slice(0,n).map(q=>{
+    return {...q,lo:q.r[0],hi:q.r[1],start:r()};
+  });
+}
+
+/* ---------- ruler ---------- */
+function buildTicks(){
+  const box=$("ticks"); let h="";
+  const span=hi-lo, every=window.innerWidth<560?2:1;
+  for(let e=lo;e<=hi;e++){
+    const p=(e-lo)/span*100;
+    h+=`<div class="tick major" style="left:${p}%"></div>`;
+    if((e-lo)%every===0) h+=`<div class="tlabel" style="left:${p}%">${tickLabel(e)}</div>`;
+    if(e<hi) for(let m=2;m<=9;m++) h+=`<div class="tick minor" style="left:${(e+Math.log10(m)-lo)/span*100}%"></div>`;
+  }
+  box.innerHTML=h;
+}
+function limits(){return limA===null?[0,1]:[t(limA),t(limB)]}
+let exact={}; // values typed by hand, keyed by ruler position, so they are not rounded
+const at=p=>exact[p]!==undefined?exact[p]:sig(v(p),3);
+function vals(){
+  let a=at(Math.min(tA,tB)), b=at(Math.max(tA,tB));
+  if(limA!==null){a=clamp(a,limA,limB);b=clamp(b,limA,limB)}
+  if(b<=a) b=a; return [a,b];
+}
+function render(sync=true){
+  const l=Math.min(tA,tB)*100, r=Math.max(tA,tB)*100;
+  $("sel").style.left=l+"%"; $("sel").style.width=(r-l)+"%";
+  $("hA").style.left=tA*100+"%"; $("hB").style.left=tB*100+"%";
+  if(limA!==null){const [ga,gb]=limits();$("ghost").style.left=ga*100+"%";$("ghost").style.width=(gb-ga)*100+"%";}
+  show("ghost",limA!==null&&!answered);
+  const [a,b]=vals();
+  if(sync){$("inA").value=num(a,6);$("inB").value=num(b,6);}
+  $("prA").textContent=pretty(a); $("prB").textContent=pretty(b);
+  $("width").textContent="×"+num(b/a,2)+" ("+Math.log10(b/a).toLocaleString("ru-RU",{maximumFractionDigits:2})+" пор.)";
+  $("pot").textContent="+"+points(a,b);
+}
+function setT(which,p){
+  const [ga,gb]=limits(); p=clamp(p,ga,gb);
+  if(which==="A") tA=p; else tB=p;
+}
+function extendFor(x){
+  const e=Math.log10(x); let ch=false;
+  if(e<lo){lo=Math.floor(e)-1;ch=true} if(e>hi){hi=Math.ceil(e)+1;ch=true}
+  return ch;
+}
+function rescale(fn){const oa=v(tA),ob=v(tB);fn();tA=t(oa);tB=t(ob);buildTicks();}
+
+/* ---------- flow ---------- */
+function openScreen(id){["menu","setup","online","game","final"].forEach(s=>show(s,s===id));show("stats",id==="game")}
+function startGame(mode,opts={}){
+  let deck;
+  if(mode==="daily"){deck=makeDeck(DAILY_N,mulberry(hashStr("daily-"+todayKey())));}
+  else deck=makeDeck(mode==="party"?opts.rounds:10,Math.random);
+  const players=mode==="party"?opts.names.map(n=>({name:n,score:0})):[{name:"Вы",score:0}];
+  G={mode,deck,idx:0,players,history:[]};
+  $("modeLbl").textContent={classic:"Раунд",daily:"Вопрос дня",party:"Вопрос"}[mode];
+  show("bestStat",mode==="classic"); show("scoreStat",mode!=="party");
+  const b=store("logscale-best"); $("best").textContent=b==null?"—":b;
+  openScreen("game"); newQuestion();
+}
+function order(){const n=G.players.length,s=G.idx%n;return Array.from({length:n},(_,i)=>(s+i)%n)}
+function newQuestion(){
+  cur=G.deck[G.idx]; G.picks=[]; turnPos=0;
+  resetBoard(G.idx,G.deck.length);
+  showTurn(); render();
+}
+function resetBoard(idx,total){
+  answered=false; waiting=false; limA=limB=null; exact={};
+  lo=cur.lo; hi=cur.hi;
+  const w=Math.min(.35,1/(hi-lo)); tA=cur.start*(1-w); tB=tA+w;
+  $("question").textContent=cur.q; $("unit").textContent=cur.u;
+  $("qmeta").textContent="Вопрос "+(idx+1)+" из "+total;
+  $("round").textContent=(idx+1)+"/"+total; $("score").textContent=G.players[0]?G.players[0].score:0;
+  show("truth",false); $("resultBox").innerHTML=""; $("pmarks").innerHTML="";
+  show("submit",true); show("next",false); show("hint",true);
+  ["inA","inB"].forEach(i=>$(i).disabled=false);
+  show("sel",true); show("hA",true); show("hB",true); show("skip",false);
+  buildTicks();
+}
+function showTurn(){
+  if(G.mode!=="party"){show("turn",false);return}
+  const p=G.players[order()[turnPos]];
+  let txt=`<b>Ходит: ${esc(p.name)}</b>`;
+  if(limA!==null) txt+=`<span>Отрезок должен быть внутри ${pretty(limA)} – ${pretty(limB)} (пунктир).</span>`;
+  else txt+=`<span>Первый ход: любой отрезок.</span>`;
+  if(turnPos>0) txt+=`<span>Остальные, не подсказывайте.</span>`;
+  $("turn").innerHTML=txt; show("turn",true);
+  $("submit").textContent=turnPos<G.players.length-1?"Ответить и передать ход":"Ответить";
+}
+function submit(){
+  if(G&&G.mode==="online"){onlineSubmit();return}
+  if(answered) return;
+  const [a,b]=vals();
+  if(G.mode==="party"){
+    G.picks.push({pi:order()[turnPos],a,b});
+    if(turnPos<G.players.length-1){
+      turnPos++; limA=a; limB=b;
+      // next player starts from the previous interval
+      tA=t(a); tB=t(b); showTurn(); render(); $("hA").focus(); return;
+    }
+  } else G.picks.push({pi:0,a,b});
+  reveal();
+}
+function reveal(){
+  answered=true; const x=cur.a;
+  const picks=G.picks.map(p=>{const hit=x>=p.a&&x<=p.b, pts=hit?points(p.a,p.b):MISS; G.players[p.pi].score+=pts; return {...p,hit,pts}});
+  G.history.push({q:cur.q,u:cur.u,x,picks});
+  if(extendFor(x)) rescale(()=>{});
+  $("truth").style.left=t(x)*100+"%"; show("truth",true); show("ghost",false); show("turn",false); show("hint",false);
+  let body;
+  if(G.mode==="party"){
+    show("sel",false); show("hA",false); show("hB",false);
+    $("pmarks").innerHTML=picks.map((p,i)=>{const l=t(p.a)*100,w=(t(p.b)-t(p.a))*100,top=6+i*(26/picks.length);
+      return `<div class="prev" style="left:${l}%;width:${w}%;top:${top}px;border-style:solid;border-color:${p.hit?"var(--hit)":"var(--miss)"};opacity:.85"></div>`}).join("");
+    body=`<div class="big" style="color:var(--ink)">Ответ: <span style="color:var(--truth)">${prettyAns(x)}</span> ${esc(cur.u)}</div>
+      <div class="note">${esc(cur.n)}</div>
+      <div class="tbl"><table class="history"><tbody>${picks.map(p=>`<tr><td>${esc(G.players[p.pi].name)}</td><td>${pretty(p.a)} – ${pretty(p.b)}</td><td class="p ${p.hit?"pos":"neg"}">${p.hit?"+":""}${p.pts}</td><td class="p">${G.players[p.pi].score}</td></tr>`).join("")}</tbody></table></div>`;
+    $("resultBox").innerHTML=`<div class="result">${body}</div>`;
+  } else {
+    const p=picks[0];
+    $("resultBox").innerHTML=`<div class="result ${p.hit?"hit":"miss"}">
+      <div class="big">${p.hit?"Попали! +"+p.pts:"Мимо. "+p.pts}</div>
+      <div class="ans">Правильный ответ: <b>${prettyAns(x)}</b> ${esc(cur.u)}</div>
+      <div class="note">${esc(cur.n)}</div></div>`;
+    $("score").textContent=G.players[0].score;
+  }
+  ["inA","inB"].forEach(i=>$(i).disabled=true);
+  show("submit",false); show("next",true);
+  $("next").textContent=G.idx+1<G.deck.length?"Следующий вопрос":"Посмотреть итог";
+  $("next").focus();
+}
+function nextQ(){
+  if(G&&G.mode==="online"){onlineCall("next");return}
+  show("sel",true); show("hA",true); show("hB",true);
+  G.idx++; if(G.idx<G.deck.length) newQuestion(); else finish();
+}
+function finish(){
+  openScreen("final"); show("shareBox",false); $("copyok").textContent="";
+  const H=G.history;
+  if(G.mode==="party"){
+    const rank=G.players.slice().sort((a,b)=>b.score-a.score);
+    $("finalMeta").textContent="Пати · итог";
+    $("finalScore").textContent=esc(rank[0].name);
+    $("finalNote").textContent="Побеждает с результатом "+rank[0].score+" очк."+(rank[1]&&rank[1].score===rank[0].score?" Ничья с "+rank[1].name+".":"");
+    $("histHead").innerHTML="<tr><th>Место</th><th>Игрок</th><th>Попаданий</th><th class='p'>Очки</th></tr>";
+    $("hist").innerHTML=rank.map((p,i)=>{const pi=G.players.indexOf(p),hits=H.filter(h=>h.picks.find(k=>k.pi===pi&&k.hit)).length;
+      return `<tr><td>${i+1}</td><td>${esc(p.name)}</td><td>${hits} из ${H.length}</td><td class="p">${p.score}</td></tr>`}).join("");
+    return;
+  }
+  const score=G.players[0].score, hits=H.filter(h=>h.picks[0].hit).length;
+  $("finalScore").textContent=score;
+  $("histHead").innerHTML="<tr><th>Вопрос</th><th>Ваш отрезок</th><th>Ответ</th><th class='p'>Очки</th></tr>";
+  $("hist").innerHTML=H.map(h=>{const p=h.picks[0];return `<tr><td>${esc(h.q)}</td><td>${pretty(p.a)} – ${pretty(p.b)}</td><td>${prettyAns(h.x)} ${esc(h.u)}</td><td class="p ${p.hit?"pos":"neg"}">${p.hit?"+":""}${p.pts}</td></tr>`}).join("");
+  if(G.mode==="daily"){
+    $("finalMeta").textContent="Вопросы дня · "+todayRu();
+    const key="logscale-daily-"+todayKey(), prev=store(key);
+    if(!prev) store(key,{score,hits});
+    $("finalNote").textContent=`Попаданий: ${hits} из ${H.length}. `+(prev?`Засчитан первый результат дня: ${prev.score}.`:"Новые вопросы появятся завтра.");
+    const shown=prev?prev.score:score;
+    $("shareText").value=`Порядок величин, ${todayRu()}: ${shown} очков\n`+H.map(h=>h.picks[0].hit?"🟩":"🟥").join("");
+    show("shareBox",true);
+  } else {
+    $("finalMeta").textContent="Итог игры";
+    const best=store("logscale-best"), isBest=best==null||score>best;
+    if(isBest) store("logscale-best",score);
+    $("finalNote").textContent=`Попаданий: ${hits} из ${H.length}. `+(isBest?"Это новый рекорд.":"Рекорд: "+best+".");
+  }
+}
+
+/* ---------- menu & setup ---------- */
+function refreshDailyTag(){const d=store("logscale-daily-"+todayKey());$("dailyTag").textContent=d?`Сегодня сыграно: ${d.score} очк.`:`${DAILY_N} вопросов · ${todayRu()}`}
+let names=["Игрок 1","Игрок 2"];
+function drawPlayers(){
+  $("plist").innerHTML=names.map((n,i)=>`<div class="prow"><input id="pn${i}" value="${esc(n)}" maxlength="20" aria-label="Имя игрока ${i+1}"><button class="ghost" data-del="${i}" ${names.length<=2?"disabled":""} aria-label="Удалить">✕</button></div>`).join("");
+  names.forEach((_,i)=>$("pn"+i).addEventListener("input",e=>names[i]=e.target.value));
+  $("plist").querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{names.splice(+b.dataset.del,1);drawPlayers()}));
+  $("addP").disabled=names.length>=8;
+}
+$("mClassic").onclick=()=>startGame("classic");
+$("mDaily").onclick=()=>startGame("daily");
+$("mParty").onclick=()=>{openScreen("setup");drawPlayers()};
+$("addP").onclick=()=>{names.push("Игрок "+(names.length+1));drawPlayers();$("pn"+(names.length-1)).focus()};
+$("pBack").onclick=()=>openScreen("menu");
+$("pStart").onclick=()=>startGame("party",{names:names.map((n,i)=>n.trim()||"Игрок "+(i+1)),rounds:+$("pRounds").value});
+let toMenu=()=>{refreshDailyTag();openScreen("menu");show("sel",true);show("hA",true);show("hB",true)};
+$("quit").onclick=()=>G&&G.mode==="online"?onlineLeave():toMenu();
+$("toMenu").onclick=()=>G&&G.mode==="online"?onlineLeave():toMenu();
+$("again").onclick=()=>G.mode==="online"?onlineStart():G.mode==="party"?startGame("party",{names:G.players.map(p=>p.name),rounds:G.deck.length}):startGame(G.mode);
+$("copy").onclick=()=>{const txt=$("shareText").value;
+  const ok=()=>$("copyok").textContent="Скопировано";
+  try{navigator.clipboard.writeText(txt).then(ok,()=>{$("shareText").select();$("copyok").textContent="Выделено, нажмите Ctrl+C"})}catch(e){$("shareText").select()}};
+
+/* ---------- input ---------- */
+const ruler=$("ruler"); let drag=null;
+const posT=ev=>{const r=ruler.getBoundingClientRect();return clamp((ev.clientX-r.left)/r.width,0,1)};
+ruler.addEventListener("pointerdown",ev=>{
+  if(locked()) return; const p=posT(ev);
+  if(ev.target===$("hA")) drag="A"; else if(ev.target===$("hB")) drag="B";
+  else {setT("A",p);setT("B",p);drag="B"}
+  ruler.setPointerCapture(ev.pointerId); render(); ev.preventDefault();
+});
+ruler.addEventListener("pointermove",ev=>{if(!drag)return;setT(drag,posT(ev));render()});
+const end=()=>{drag=null};
+ruler.addEventListener("pointerup",end); ruler.addEventListener("pointercancel",end);
+["hA","hB"].forEach(id=>$(id).addEventListener("keydown",ev=>{
+  if(locked()) return;
+  const step=(ev.shiftKey?0.2:0.02)/(hi-lo);
+  let d=0; if(ev.key==="ArrowLeft"||ev.key==="ArrowDown") d=-step; if(ev.key==="ArrowRight"||ev.key==="ArrowUp") d=step;
+  if(!d) return; ev.preventDefault();
+  const w=id==="hA"?"A":"B"; setT(w,(w==="A"?tA:tB)+d); render();
+}));
+function parseNum(s){
+  s=s.replace(/(\d)\s*[x×х*]\s*10\s*\^\s*(-?\d+)/i,"$1e$2").replace(/^10\s*\^\s*(-?\d+)$/,"1e$1");
+  s=s.replace(/[\s ]/g,"").replace(",",".").toLowerCase();
+  const mul={"трлн":1e12,"млрд":1e9,"млн":1e6,"тыс":1e3}; let m=1;
+  for(const k in mul) if(s.endsWith(k)){m=mul[k];s=s.slice(0,-k.length);break}
+  const x=parseFloat(s)*m; return x>0&&isFinite(x)?x:null;
+}
+function commitInput(w){
+  const el=$(w==="A"?"inA":"inB"), x=parseNum(el.value);
+  if(x===null||locked()){render(true);return}
+  if(limA===null&&extendFor(x)) rescale(()=>{});
+  let [a,b]=vals();
+  if(w==="A") a=x; else b=x;
+  if(a>b) [a,b]=[b,a];
+  if(limA!==null){a=clamp(a,limA,limB);b=clamp(b,limA,limB)}
+  tA=t(a); tB=t(b); exact={}; exact[tA]=a; exact[tB]=b; render(true);
+}
+["inA","inB"].forEach(i=>{
+  $(i).addEventListener("change",()=>commitInput(i==="inA"?"A":"B"));
+  $(i).addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();ev.stopPropagation();commitInput(i==="inA"?"A":"B");$(i).select()}});
+});
+$("submit").onclick=submit; $("next").onclick=nextQ;
+window.addEventListener("resize",()=>{if(cur&&!$("game").hidden) buildTicks()});
+document.addEventListener("keydown",ev=>{if(ev.key!=="Enter"||$("game").hidden||ev.target.tagName==="BUTTON")return;
+  if(G&&G.mode==="online"){if(!answered&&!waiting)submit();else if(answered&&!$("next").hidden)nextQ();return}
+  answered?nextQ():submit()});
+/* ---------- online party ---------- */
+// Server: /api/party (backend/crates/presentation/src/routes/party.rs). The page polls the room
+// once a second; the server checks turns and nesting and does the scoring.
+const API="/api/party/rooms", POLL_MS=1000;
+let O=null;       // {code, token}
+let S=null;       // last room state from the server
+let pollTimer=null, oKey="";
+const qs=new URLSearchParams(location.search);
+function oErr(msg){$("oErr").textContent=msg||""}
+async function api(path,{method="GET",body}={}){
+  const headers={"Content-Type":"application/json"}; if(O&&O.token) headers["X-Party-Token"]=O.token;
+  let res;
+  try{res=await fetch(API+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"})}
+  catch(e){throw {status:0,message:"Нет связи с сервером"}}
+  let data=null; try{data=await res.json()}catch(e){}
+  if(!res.ok) throw {status:res.status,message:(data&&data.error)||(res.status===404&&!data?"Онлайн-режим работает только на сайте портала":"Ошибка "+res.status)};
+  return data;
+}
+function nameOf(id){const p=S&&S.players.find(p=>p.id===id);return p?p.name:"?"}
+function myName(){return ($("oName").value||"").trim()}
+function shareLink(){
+  let base=location.origin+location.pathname;
+  try{if(window.top!==window&&window.top.location.origin===location.origin) base=window.top.location.origin+window.top.location.pathname}catch(e){}
+  return base+"?room="+O.code;
+}
+function saveSession(){store("logscale-online",O)}
+function openOnline(){
+  openScreen("online"); oErr("");
+  if(!$("oName").value) $("oName").value=qs.get("name")||store("logscale-name")||"";
+  if(qs.get("room")&&!$("oCode").value) $("oCode").value=qs.get("room").toUpperCase().slice(0,4);
+  show("oJoin",!O); show("oLobby",!!O); show("oStart",false);
+  (myName()?$("oCode").value?$("oEnter"):$("oCreate"):$("oName")).focus();
+}
+function joined(r){
+  O={code:r.code,token:r.token}; saveSession(); store("logscale-name",myName());
+  G={mode:"online",deck:[],idx:0,players:[],history:[]}; oKey="";
+  apply(r.state); startPolling();
+}
+async function onlineCreate(){
+  if(!myName()){oErr("Введите имя");$("oName").focus();return}
+  try{joined(await api("",{method:"POST",body:{name:myName(),rounds:+$("oRounds").value,bank:BANK.length}}))}
+  catch(e){oErr(e.message)}
+}
+async function onlineEnter(){
+  const code=$("oCode").value.trim().toUpperCase();
+  if(!myName()){oErr("Введите имя");$("oName").focus();return}
+  if(code.length!==4){oErr("Код комнаты: 4 буквы");$("oCode").focus();return}
+  try{O=null;joined(await api("/"+code+"/join",{method:"POST",body:{name:myName()}}))}
+  catch(e){oErr(e.message)}
+}
+function onlineDeck(n){
+  return shuffle(BANK.map((_,i)=>i),Math.random).slice(0,n).map(i=>({i,start:Math.random(),x:BANK[i].a}));
+}
+async function onlineStart(){
+  oErr("");
+  try{apply(await api("/"+O.code+"/start",{method:"POST",body:{deck:onlineDeck(+$("oRounds2").value),bank:BANK.length}}))}
+  catch(e){oErr(e.message); if(!$("final").hidden){$("finalNote").textContent=e.message}}
+}
+async function onlineCall(what){
+  try{apply(await api("/"+O.code+"/"+what,{method:"POST"}))}
+  catch(e){flash(e.message)}
+}
+async function onlineSubmit(){
+  if(answered||waiting) return;
+  const [a,b]=vals(); waiting=true; $("submit").disabled=true;
+  try{apply(await api("/"+O.code+"/pick",{method:"POST",body:{a,b}}))}
+  catch(e){waiting=false; flash(e.message)}
+  finally{$("submit").disabled=false}
+}
+function flash(msg){
+  const box=$("game").hidden?$("oErr"):$("resultBox");
+  if(box===$("oErr")){oErr(msg);return}
+  box.innerHTML=`<div class="result miss"><div class="note">${esc(msg)}</div></div>`;
+}
+async function onlineLeave(){
+  stopPolling();
+  if(O){try{await api("/"+O.code+"/leave",{method:"POST"})}catch(e){}}
+  O=null; S=null; G=null; store("logscale-online",null);
+  try{const u=new URL(location.href);u.searchParams.delete("room");history.replaceState(null,"",u)}catch(e){}
+  toMenu();
+}
+function startPolling(){stopPolling();pollTimer=setInterval(poll,POLL_MS)}
+function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null}}
+let polling=false;
+async function poll(){
+  if(!O||polling) return; polling=true;
+  try{const s=await api("/"+O.code); if(s.me==null) lost("Вы больше не в этой комнате."); else apply(s)}
+  catch(e){if(e.status===404) lost("Комната закрылась.")}
+  finally{polling=false}
+}
+function lost(msg){
+  stopPolling(); O=null; S=null; G=null; store("logscale-online",null);
+  openOnline(); oErr(msg);
+}
+function apply(s){
+  if(!s||!O) return;
+  if(S&&s.version<S.version) return; // a late poll answer
+  S=s;
+  const amHost=s.me===s.host;
+  G.players=s.players;
+  if(s.bank!==BANK.length){openOnline();oErr("У вас и у ведущего разные версии игры. Обновите страницу.");return}
+  if(s.phase==="lobby") return drawLobby(s,amHost);
+  if(s.phase==="final") return drawFinal(s,amHost);
+  const key=s.idx+":"+s.phase+":"+s.picks.length;
+  const fresh=$("game").hidden||!oKey.startsWith(s.idx+":");
+  if(key===oKey){drawTurn(s,amHost);return} // only "online" dots changed
+  oKey=key;
+  if(fresh){
+    openScreen("game");
+    $("modeLbl").textContent="Вопрос"; show("bestStat",false); show("scoreStat",true);
+    const q=BANK[s.question.i];
+    cur={...q,lo:q.r[0],hi:q.r[1],start:s.question.start};
+    resetBoard(s.idx,s.rounds);
+  }
+  // keep every pick on the scale
+  let ch=false; s.picks.forEach(p=>{ch=extendFor(p.a)||ch;ch=extendFor(p.b)||ch}); if(ch) rescale(()=>{});
+  if(s.phase==="question") drawQuestion(s,amHost); else drawReveal(s,amHost);
+}
+function myScore(s){const me=s.players.find(p=>p.id===s.me);return me?me.score:0}
+function drawPicks(list,final){
+  $("pmarks").innerHTML=list.map((p,i)=>{const l=t(p.a)*100,w=(t(p.b)-t(p.a))*100,top=6+i*(26/Math.max(1,list.length));
+    const col=final?(p.hit?"var(--hit)":"var(--miss)"):"var(--muted)";
+    return `<div class="prev" style="left:${l}%;width:${w}%;top:${top}px;border-style:${final?"solid":"dashed"};border-color:${col};opacity:.85" title="${esc(nameOf(p.player))}"></div>`}).join("");
+}
+function drawQuestion(s,amHost){
+  const mine=s.turn===s.me, last=s.picks[s.picks.length-1];
+  $("score").textContent=myScore(s); $("resultBox").innerHTML="";
+  if(last){limA=last.a;limB=last.b}else{limA=limB=null}
+  if(mine){
+    waiting=false;
+    if(last){tA=t(last.a);tB=t(last.b);exact={};exact[tA]=last.a;exact[tB]=last.b}
+    $("pmarks").innerHTML="";
+  } else {
+    waiting=true; drawPicks(s.picks,false);
+  }
+  show("sel",mine); show("hA",mine); show("hB",mine); show("submit",mine); show("hint",mine); show("next",false);
+  ["inA","inB"].forEach(i=>$(i).disabled=!mine);
+  $("submit").textContent="Ответить";
+  drawTurn(s,amHost); render();
+  if(mine) $("hA").focus();
+}
+function drawTurn(s,amHost){
+  if(s.phase!=="question"){show("turn",false);show("skip",false);return}
+  const p=s.players.find(p=>p.id===s.turn), mine=s.turn===s.me;
+  let txt=mine?`<b>Ваш ход</b>`:`<b>Ходит: ${esc(p?p.name:"?")}</b>`+(p&&!p.online?`<span>не в сети</span>`:"");
+  if(limA!==null) txt+=`<span>Отрезок должен быть внутри ${pretty(limA)} – ${pretty(limB)} (пунктир).</span>`;
+  else txt+=mine?`<span>Вы ходите первым: любой отрезок.</span>`:"";
+  if(s.picks.length) txt+=`<span class="mini">${s.picks.map(k=>esc(nameOf(k.player))+": "+pretty(k.a)+" – "+pretty(k.b)).join(" · ")}</span>`;
+  const left=s.order.length-s.picks.length; if(!mine&&left>0) txt+=`<span class="mini">Осталось ходов: ${left}</span>`;
+  $("turn").innerHTML=txt; show("turn",true);
+  show("skip",amHost&&!mine&&p&&!p.online);
+}
+function drawReveal(s,amHost){
+  answered=true; waiting=false; const x=s.question.x;
+  const res=s.reveal||[];
+  if(extendFor(x)) rescale(()=>{});
+  $("truth").style.left=t(x)*100+"%"; show("truth",true); show("ghost",false); show("turn",false); show("hint",false); show("skip",false);
+  show("sel",false); show("hA",false); show("hB",false);
+  drawPicks(res,true);
+  const sc=id=>{const p=s.players.find(p=>p.id===id);return p?p.score:0};
+  $("resultBox").innerHTML=`<div class="result"><div class="big" style="color:var(--ink)">Ответ: <span style="color:var(--truth)">${prettyAns(x)}</span> ${esc(cur.u)}</div>
+    <div class="note">${esc(cur.n)}</div>
+    <div class="tbl"><table class="history"><tbody>${res.map(p=>`<tr><td>${esc(nameOf(p.player))}${p.player===s.me?" (вы)":""}</td><td>${pretty(p.a)} – ${pretty(p.b)}</td><td class="p ${p.hit?"pos":"neg"}">${p.hit?"+":""}${p.pts}</td><td class="p">${sc(p.player)}</td></tr>`).join("")||"<tr><td>Никто не успел ответить</td></tr>"}</tbody></table></div>
+    ${amHost?"":`<div class="wait">Ведущий откроет следующий вопрос.</div>`}</div>`;
+  $("score").textContent=myScore(s);
+  ["inA","inB"].forEach(i=>$(i).disabled=true);
+  show("submit",false); show("next",amHost);
+  $("next").textContent=s.idx+1<s.rounds?"Следующий вопрос":"Посмотреть итог";
+  if(amHost) $("next").focus();
+}
+function drawLobby(s,amHost){
+  oKey=""; if($("online").hidden) openScreen("online");
+  show("oJoin",false); show("oLobby",true); oErr("");
+  $("oShowCode").textContent=s.code;
+  $("oPlayers").innerHTML=s.players.filter(p=>!p.left).map(p=>`<li class="${p.online?"":"off"}"><span class="dot"></span><span class="who">${esc(p.name)}${p.id===s.me?" (вы)":""}</span><span class="role">${p.id===s.host?"ведущий":""}</span></li>`).join("");
+  const n=s.players.filter(p=>!p.left).length;
+  show("oHostRow",amHost); show("oStart",amHost); $("oStart").disabled=n<2;
+  if(amHost&&!$("oRounds2").dataset.touched) $("oRounds2").value=String(s.rounds);
+  $("oWait").textContent=amHost?(n<2?"Ждём хотя бы ещё одного игрока. Назовите код или отправьте ссылку.":"Можно начинать, или подождите остальных."):"Ждём, когда ведущий начнёт игру.";
+  $("oBack").textContent="Выйти из комнаты";
+}
+function drawFinal(s,amHost){
+  oKey="";
+  if($("final").hidden) openScreen("final");
+  show("shareBox",false);
+  const rank=s.players.filter(p=>!p.left).sort((a,b)=>b.score-a.score);
+  const H=s.history;
+  $("finalMeta").textContent="Онлайн-пати · итог";
+  $("finalScore").textContent=rank[0]?rank[0].name:"—";
+  $("finalNote").textContent=rank[0]?("Побеждает с результатом "+rank[0].score+" очк."+(rank[1]&&rank[1].score===rank[0].score?" Ничья с "+rank[1].name+".":"")):"";
+  $("histHead").innerHTML="<tr><th>Место</th><th>Игрок</th><th>Попаданий</th><th class='p'>Очки</th></tr>";
+  $("hist").innerHTML=rank.map((p,i)=>`<tr><td>${i+1}</td><td>${esc(p.name)}${p.id===s.me?" (вы)":""}</td><td>${p.hits} из ${H.length}</td><td class="p">${p.score}</td></tr>`).join("");
+  show("again",amHost); $("again").textContent="Сыграть ещё раз";
+  $("toMenu").textContent="Выйти из комнаты";
+}
+$("mOnline").onclick=openOnline;
+$("oCreate").onclick=onlineCreate; $("oEnter").onclick=onlineEnter;
+$("oStart").onclick=onlineStart;
+$("oRounds2").onchange=()=>{$("oRounds2").dataset.touched="1"};
+$("oBack").onclick=()=>{if(O){onlineLeave();$("oBack").textContent="Назад"}else toMenu()};
+$("skip").onclick=()=>onlineCall("skip");
+$("oCode").addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();onlineEnter()}});
+$("oName").addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();($("oCode").value?onlineEnter:onlineCreate)()}});
+$("oCopyLink").onclick=()=>{const link=shareLink();
+  try{navigator.clipboard.writeText(link).then(()=>$("oLinkOk").textContent="Скопировано",()=>{$("oLinkOk").textContent=link})}catch(e){$("oLinkOk").textContent=link}};
+// restore the local-only buttons when coming back from an online game
+const baseToMenu=toMenu;
+toMenu=()=>{show("again",true);$("again").textContent="Сыграть ещё";$("toMenu").textContent="В меню";show("skip",false);waiting=false;baseToMenu()};
+
+refreshDailyTag(); openScreen("menu");
+(async()=>{ // resume an online game after a reload, or open the room from a shared link
+  const saved=store("logscale-online"), room=(qs.get("room")||"").toUpperCase();
+  if(saved&&saved.code&&saved.token&&(!room||room===saved.code)){
+    O=saved; G={mode:"online",deck:[],idx:0,players:[],history:[]};
+    try{const s=await api("/"+O.code); if(s.me!=null){apply(s);startPolling();return}}catch(e){}
+    O=null; G=null; store("logscale-online",null);
+  }
+  if(room) openOnline();
+})();
+</script>
+</body>
+</html>

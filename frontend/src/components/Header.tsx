@@ -34,6 +34,10 @@ const Header: React.FC = () => {
                     Расписание
                 </Link>
 
+                <Link to="/games" className="header__link">
+                    Игры
+                </Link>
+
                 {user ? (
                     <>
                         {hasAdminRole(user) && (
