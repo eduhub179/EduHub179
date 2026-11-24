@@ -52,6 +52,7 @@ from eduhub_agent.paths import CHATS, data
 from eduhub_agent.media import board
 from eduhub_agent.telegram import chat_moderation
 from eduhub_agent.telegram import dm
+from eduhub_agent.telegram import questions
 from eduhub_agent.media import files as attachments
 from eduhub_agent.server import timetable
 from eduhub_agent.llm.baseline_rules import WEEKDAYS, extract as rules_extract
@@ -569,6 +570,8 @@ def refine(m, items, after=()):
             got["dates"] = [posted + timedelta(days=2)]
         wd = weekday_date(qd, posted)
         rule_dates = [wd] if wd else got["dates"]
+        if not rule_dates:  # «к 25-му», «на 25-е», «25 числа» — число месяца без месяца
+            rule_dates = [x for x in [questions.suffix_day(qd, posted)] if x]
         lt = long_term(quote, posted)
         if lt is None and it["type"] == "homework" and sum(x.get("type") == "homework" for x in items) == 1:
             lt = long_term(m["text"], posted)  # условие могло остаться вне цитаты

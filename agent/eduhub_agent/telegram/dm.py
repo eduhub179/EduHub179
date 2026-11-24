@@ -57,6 +57,8 @@ _users = {}  # telegram id -> (пользователь или None, когда 
 _days = {}  # (class_id, дата) -> (уроки, когда спросили)
 _menu_shown = set()  # кому уже показали кнопки внизу
 _pending = {}  # chat_id -> {"files", "names", "at", "group"}: файлы без подписи, ждут задания
+_last_q = {}  # chat_id -> (намерение, предмет или None, когда спросили): «а на 26?» продолжает прошлый вопрос
+FOLLOW_UP = 15 * 60  # сколько секунд «а на 26?» считается продолжением
 
 B_HW, B_TODAY, B_NEXT, B_ADD = "📚 ДЗ на завтра", "📅 Расписание на сегодня", "🚪 Где следующий урок", "➕ Добавить ДЗ"
 MENU = {"keyboard": [[{"text": B_HW}, {"text": B_TODAY}], [{"text": B_NEXT}, {"text": B_ADD}]],
@@ -187,7 +189,7 @@ def subjects_typo(text, names):
 
 UNKNOWN_SUBJECT = re.compile(r"(?:\bпо|\bкогда|\bгде|\bкакой кабинет у|\bкабинет)\s+([а-яё\-]{3,})", re.I)
 NOT_SUBJECT = {"завтра", "сегодня", "послезавтра", "нас", "урок", "урока", "уроки", "следующий", "следующего", "будет",
-               "первый", "второй", "ближайший", "мне", "идти", "кабинет", "какому", "какой", "дз"}
+               "первый", "второй", "ближайший", "мне", "идти", "кабинет", "какому", "какой", "дз", "всем", "всех", "предметам"}
 
 
 def unknown_subject(text):
@@ -250,7 +252,8 @@ def lesson_line(l):
 
 
 def when(day, today):
-    return "сегодня" if day == today else "завтра" if day == today + timedelta(days=1) else day_label(day.isoformat())
+    return "сегодня" if day == today else "завтра" if day == today + timedelta(days=1) else \
+        "вчера" if day == today - timedelta(days=1) else day_label(day.isoformat())
 
 
 def upcoming(cid, subject, now):
@@ -323,6 +326,88 @@ def answer_question(intent, cid, day=None, subject=None):
         return f"На {when(d, today)} домашки пока нет."
     lines = list(dict.fromkeys(f"{l['subject_name']}: {hw_text(l)}" for l in hw))  # сдвоенный урок — одно ДЗ, один раз
     return f"ДЗ на {when(d, today)}:\n\n" + "\n\n".join(lines)
+
+
+def lesson_with_hw(l):
+    return lesson_line(l) + (f" — ДЗ: {hw_text(l)}" if hw_text(l) else "")
+
+
+def answer_day(cid, day, subject=None):
+    """«Что у нас в пятницу?»: уроки дня, у каждого — его ДЗ."""
+    today = NOW().date()
+    les = [l for l in lessons_now(cid, day) if subject is None or timetable.same_subject(l["subject_name"], subject)]
+    head = when(day, today).capitalize() + (f", {day_label(day.isoformat())}" if abs((day - today).days) <= 1 else "")
+    if not les:
+        return f"{head}: " + (f"урока «{subject}» нет." if subject else "уроков нет.")
+    return f"{head}:\n" + "\n".join(lesson_with_hw(l) for l in les)
+
+
+def after_break_day(cid, today):
+    """Первый учебный день после каникул: уроки после перерыва хотя бы в BREAK дней подряд (выходные — 2 дня).
+    Если каникулы уже идут, перерыв считаем и назад от сегодня. None — в расписании такого дня нет (не выложили)."""
+    gap = 0
+    for k in range(0, -10, -1):
+        if lessons_on(cid, today + timedelta(days=k)):
+            break
+        gap += 1
+    for k in range(1, 61):
+        d = today + timedelta(days=k)
+        if lessons_on(cid, d):
+            if gap >= BREAK:
+                return d
+            gap = 0
+        else:
+            gap += 1
+    return None
+
+
+BREAK = 5
+
+
+def answer_week(intent, cid, week, subject=None):
+    """Расписание или ДЗ на неделю: week = (первый день, последний). Дни без уроков (или без ДЗ) пропускаем."""
+    first, last = week
+    span = f"{day_label(first.isoformat())} – {day_label(last.isoformat())}"
+    blocks = []
+    for k in range((last - first).days + 1):
+        d = first + timedelta(days=k)
+        les = [l for l in lessons_now(cid, d) if subject is None or timetable.same_subject(l["subject_name"], subject)]
+        if intent == "homework":
+            lines = list(dict.fromkeys(f"{l['subject_name']}: {hw_text(l)}" for l in les if hw_text(l)))
+        elif intent == "day":
+            lines = [lesson_with_hw(l) for l in les]
+        else:
+            lines = [lesson_line(l) for l in les]
+        if lines:
+            blocks.append(day_label(d.isoformat()).capitalize() + ":\n" + "\n".join(lines))
+    what = "ДЗ" if intent == "homework" else "Уроки и ДЗ" if intent == "day" else "Уроки"
+    about = f" по предмету «{subject}»" if subject else ""
+    if not blocks:
+        return (f"На {span} домашки{about} пока нет." if intent == "homework"
+                else f"На {span} уроков{about} нет.")
+    return f"{what}{about} на {span}:\n\n" + "\n\n".join(blocks)
+
+
+def answer_assigned(cid, day, subject=None):
+    """«Что задали вчера»: ДЗ, которое дали на уроках того дня, — оно записано к следующему уроку того же предмета."""
+    today = NOW().date()
+    les = [l for l in lessons_now(cid, day) if subject is None or timetable.same_subject(l["subject_name"], subject)]
+    if not les:
+        return f"{when(day, today).capitalize()} ({day_label(day.isoformat())}) уроков" + \
+            (f" «{subject}»" if subject else "") + " не было."
+    lines = []
+    for name in dict.fromkeys(l["subject_name"] for l in les):
+        nxt = subject_days(cid, name, day, count=1)
+        if not nxt:
+            continue
+        d, l = nxt[0]
+        fresh = next((x for x in lessons_now(cid, d) if x["id"] == l["id"]), l)
+        if hw_text(fresh):
+            lines.append(f"{name} (к {when(d, today)}): {hw_text(fresh)}")
+    head = f"Задали {when(day, today)}" + (f" ({day_label(day.isoformat())})" if day >= today - timedelta(days=1) else "")
+    if not lines:
+        return head + ": домашки в боте нет."
+    return head + ":\n\n" + "\n\n".join(lines)
 
 
 def answer_menu(button, cid):
@@ -592,16 +677,43 @@ def _question(msg, chat_id, text, cid):
         subjects_typo(text, names)
     if not found and q.get("subject"):
         found = [n for n in names if timetable.same_subject(n, q["subject"])]
-    day = questions.parse_day(text, NOW().date()) or (q.get("day") and questions.parse_day(q["day"], NOW().date()))
+    today = NOW().date()
+    # loose: в вопросе и просто «25» — число месяца («какое расписание 25?»), если это не номер урока или кабинета
+    day = questions.parse_day(text, today, loose=True) or \
+        (q.get("day") and questions.parse_day(q["day"], today, loose=True))
+    week = None if day else questions.parse_week(text, today) or (q.get("day") and questions.parse_week(q["day"], today))
+    brk = not day and not week and questions.AFTER_BREAK.search(text)
+    last = _last_q.get(chat_id)
+    if questions.only_day(text, today) and last and time.time() - last[2] < FOLLOW_UP:
+        q["intent"] = last[0]  # «расписание на завтра» … «а на 26?» — тоже расписание
+        found = found or ([last[1]] if last[1] else [])
     odd = not found and q["intent"] in ("homework", "next") and unknown_subject(fixed)
     if odd:  # спросили про предмет, который не узнали: не отвечаем про «любой урок»
         tg("sendMessage", chat_id=chat_id, reply_markup=MENU,
            text=f"Не понял предмет «{odd}». Предметы класса: " + ", ".join(sorted(names)) + ".")
         return True
-    print(f"ЛС: вопрос {q['intent']} ({q['by']}), день {day}, предмет {found[:1]}")
-    tg("sendMessage", chat_id=chat_id, text=answer_question(q["intent"], cid, day, found[0] if found else None),
-       reply_markup=MENU)
+    subject = found[0] if found else None
+    _last_q[chat_id] = (q["intent"], subject, time.time())
+    print(f"ЛС: вопрос {q['intent']} ({q['by']}), день {day}, неделя {week}, предмет {found[:1]}")
+    if brk:
+        day = after_break_day(cid, today)
+    if brk and not day:
+        answer = "Не нашёл в расписании первый день после каникул: дальше, видимо, ещё не выложили."
+    elif week:
+        answer = answer_week(q["intent"] if q["intent"] in ("homework", "day") else "schedule", cid, week, subject)
+    elif q["intent"] == "day":
+        answer = answer_day(cid, day or today, subject)
+    elif q["intent"] == "homework" and day and day < today and ASSIGNED.search(text):
+        answer = answer_assigned(cid, day, subject)
+    else:
+        answer = answer_question(q["intent"], cid, day, subject)
+    if len(answer) > 4000:  # ДЗ на неделю бывает длинным, а Telegram принимает до 4096 символов
+        answer = answer[:3990].rsplit("\n", 1)[0] + "\n…"
+    tg("sendMessage", chat_id=chat_id, text=answer, reply_markup=MENU)
     return True
+
+
+ASSIGNED = re.compile(r"задал|задавал|дали|давали", re.I)  # «что задали вчера» — ДЗ с уроков того дня
 
 
 def _llm_with_typing(chat_id):
