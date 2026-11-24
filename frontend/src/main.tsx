@@ -12,6 +12,7 @@ import PlusnikPage from "./pages/PlusnikPage.tsx";
 import CourseMaterialsPage from "./pages/CourseMaterialsPage.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
 import TeacherDayPage from "./pages/TeacherDayPage.tsx";
+import GamesPage from "./pages/GamesPage.tsx";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
 
@@ -36,6 +37,7 @@ root.render(
                     <Route path="/plusnik/:topic" element={<PlusnikPage />} />
                     <Route path="/courses/:lessonId/materials" element={<CourseMaterialsPage />} />
                     <Route path="/admin/*" element={<AdminPage />} />
+                    <Route path="/games" element={<GamesPage />} />
 
                     {/* Если открыть "/" — отправляем на главную */}
                     <Route path="/" element={<Navigate to="/main" replace />} />

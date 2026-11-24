@@ -41,8 +41,8 @@ use uuid::Uuid;
 
 use crate::routes::notifications::PushNotifications;
 use crate::routes::{
-    admin, auth, classes, files, homework, materials, notifications, plusnik, schedule, telegram,
-    timetable,
+    admin, auth, classes, files, homework, materials, notifications, party, plusnik, schedule,
+    telegram, timetable,
 };
 
 #[derive(Debug)]
@@ -518,6 +518,7 @@ pub fn create_app() -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/health", get(health_check))
+        .merge(party::party_routes())
         .layer(cors_layer())
 }
 
@@ -705,6 +706,7 @@ pub fn create_app_with_auth_and_schedule(
         .merge(materials_routes())
         .merge(notification_routes())
         .merge(admin_routes())
+        .merge(party::party_routes())
         .layer(cors_layer())
         .with_state(AppState {
             login_use_case: Some(login_use_case),

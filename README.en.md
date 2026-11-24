@@ -78,6 +78,7 @@ A unified educational platform for School 179: one entry point for homework, wor
   - Course materials: topics sidebar, file upload (100 MB), external links, drag-and-drop dialog, per-topic caching
   - Math landing page with role-aware views (guest / student / teacher / admin)
   - Admin panel: substitutions & cancellations, timetable, users, announcements, schedule weeks
+  - Games (`/games`): the log-scale estimation game «Порядок величин» (`public/games/logscale/`), with an online party mode: players join a room by a 4-letter code from their own devices. Rooms live in the API's memory (`/api/party`, `crates/presentation/src/routes/party.rs`), clients poll once a second, so no WebSocket setup in nginx is needed
   - Profile + push notification settings
   - PWA: installable manifest, service worker with Web Push (VAPID), click-to-focus tab, renotify by tag, requireInteraction for homework
 - Mobile: Flutter scaffold (single screen)
